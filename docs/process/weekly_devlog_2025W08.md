@@ -27,6 +27,7 @@
 - 增加 KernelStack 原型（连续页内核栈）。
 - 增加 TaskEntry 占位与 dummy task 初始化。
 - 增加调度触发周期参数占位（SCHED_INTERVAL_TICKS）。
+- 调度触发改为设置 need_resched 标志，在空闲上下文执行切换。
 
 ## 问题
 - OSComp 测例与 FS/Net 尚未接入。

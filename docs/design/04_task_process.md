@@ -10,6 +10,7 @@
 - 早期提供 `sleep_ms`、`Waiter`（超时等待）与 `WaitQueue`（等待队列）辅助，后续替换为阻塞原语。
 - 引入最小 `RunQueue` 与 `TaskControlBlock` 作为调度骨架，占位 tick 驱动的轮转逻辑。
 - 增加上下文结构与 `context_switch` 汇编入口，当前仅保留接口占位。
+- 使用 `need_resched` 标志从 tick 中断发起调度请求，切换在空闲上下文执行。
 - 内核栈在早期由帧分配器分配连续页，后续与任务生命周期绑定。
 - TaskControlBlock 支持入口函数指针与栈顶配置，早期用 dummy task 验证流程。
 - 调度触发周期可配置（`SCHED_INTERVAL_TICKS`），避免频繁切换。

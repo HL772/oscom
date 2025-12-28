@@ -1,12 +1,13 @@
 #![allow(dead_code)]
 
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crate::scheduler::RunQueue;
 use crate::stack;
 use crate::task::{TaskControlBlock, TaskState};
 
 static TICK_COUNT: AtomicU64 = AtomicU64::new(0);
+static NEED_RESCHED: AtomicBool = AtomicBool::new(false);
 static RUN_QUEUE: RunQueue = RunQueue::new();
 static mut IDLE_TASK: TaskControlBlock = TaskControlBlock {
     id: 0,
@@ -33,8 +34,6 @@ pub fn tick_count() -> u64 {
 }
 
 pub fn init() {
-    let idle = TaskControlBlock::new();
-    RUN_QUEUE.push(idle);
     TICK_COUNT.store(0, Ordering::Relaxed);
 
     if let Some(stack) = stack::init_idle_stack() {
@@ -74,6 +73,20 @@ pub fn maybe_schedule(ticks: u64, interval: u64) {
         return;
     }
     if ticks % interval == 0 {
+        NEED_RESCHED.store(true, Ordering::Relaxed);
+    }
+}
+
+pub fn yield_if_needed() {
+    if NEED_RESCHED.swap(false, Ordering::Relaxed) {
+        // 调度在空闲上下文中执行，避免在 trap 中切换上下文。
         schedule_once();
+    }
+}
+
+pub fn idle_loop() -> ! {
+    loop {
+        yield_if_needed();
+        crate::cpu::wait_for_interrupt();
     }
 }

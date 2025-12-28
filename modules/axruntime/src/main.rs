@@ -59,7 +59,7 @@ pub extern "C" fn rust_main(hart_id: usize, dtb_addr: usize) -> ! {
 
     runtime::init();
 
-    cpu::idle_loop();
+    runtime::idle_loop();
 }
 
 #[panic_handler]
