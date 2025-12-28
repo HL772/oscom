@@ -11,3 +11,4 @@
 - Enter an idle loop after early initialization to keep the kernel running.
 - Track timer tick count in a dedicated time module.
 - Add a basic sleep_ms helper driven by timer ticks.
+- Initialize a bump frame allocator starting after ekernel within identity map.

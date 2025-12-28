@@ -9,6 +9,7 @@
 - 在内核入口完成 mm 初始化占位调用。
 - 接入 DTB 解析获取物理内存范围输入。
 - 建立 Sv39 identity 页表并启用 paging（satp + sfence.vma）。
+- 帧分配器使用 ekernel 之后的内存区间，限制在 1GiB identity 映射内。
 
 ## 问题与定位
 - 尚未接入设备树内存布局，无法真正分配可用物理内存。

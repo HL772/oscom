@@ -18,6 +18,7 @@
 - 启动后进入 idle 循环等待中断。
 - 增加 time 模块维护 tick 计数。
 - 增加基于 tick 的 sleep_ms 辅助函数。
+- 帧分配器接入 ekernel 之后的可用内存区间。
 
 ## 问题
 - OSComp 测例与 FS/Net 尚未接入。

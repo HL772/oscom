@@ -10,12 +10,14 @@
 - 早期使用简单的 bump frame allocator 作为占位，后续替换为 buddy。
 - 通过 DTB 解析得到物理内存范围，作为初始化输入。
 - 早期页表采用 Sv39 identity 映射，使用 2MiB 页覆盖内核内存区域。
+- 帧分配器起始地址使用 `ekernel` 对齐后的位置，避免覆盖内核镜像。
 
 ## 关键数据结构
 - `PhysAddr/VirtAddr`：物理/虚拟地址封装与对齐工具。
 - `PhysPageNum/VirtPageNum`：页号封装，便于页表映射。
 - `PageTableEntry`：PTE 编解码与标志位管理。
 - `BumpFrameAllocator`：最小可用帧分配占位实现。
+- `alloc_frame`：早期帧分配接口（无回收）。
 
 ## 关键流程图或伪代码
 ```text
@@ -30,6 +32,7 @@ init_mm
 - 早期 bump allocator 无回收能力，仅用于 bring-up。
 - Sv39 细节处理不当会导致页表映射错误与异常。
 - 1GiB 范围内映射的截断风险需在后续细化。
+- 当前帧分配范围限制在 identity 映射的 1GiB 区间内。
 
 ## 测试点
 - QEMU 启动后基本内存分配 sanity check。

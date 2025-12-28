@@ -1,8 +1,9 @@
 #![allow(dead_code)]
 
 use core::arch::asm;
-use core::cmp::min;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::cmp::{max, min};
+use core::mem::MaybeUninit;
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 const PAGE_SIZE: usize = 4096;
 const PAGE_SHIFT: usize = 12;
@@ -11,6 +12,7 @@ const SV39_LEVELS: usize = 3;
 const SV39_ENTRIES: usize = 512;
 
 const KERNEL_BASE: usize = 0x8020_0000;
+const IDENTITY_MAP_SIZE: usize = 1 << 30;
 
 const PTE_V: usize = 1 << 0;
 const PTE_R: usize = 1 << 1;
@@ -68,6 +70,12 @@ struct PageTable {
 
 static MEM_BASE: AtomicUsize = AtomicUsize::new(0);
 static MEM_SIZE: AtomicUsize = AtomicUsize::new(0);
+static FRAME_ALLOC_READY: AtomicBool = AtomicBool::new(false);
+static mut FRAME_ALLOC: MaybeUninit<BumpFrameAllocator> = MaybeUninit::uninit();
+
+extern "C" {
+    static ekernel: u8;
+}
 
 pub fn init(memory: Option<MemoryRegion>) {
     if let Some(region) = memory {
@@ -83,6 +91,7 @@ pub fn init(memory: Option<MemoryRegion>) {
     }
 
     if let Some(region) = memory {
+        init_frame_allocator(region);
         unsafe {
             if let Some(root) = setup_kernel_page_table(region) {
                 enable_paging(root);
@@ -234,13 +243,55 @@ impl PageTable {
 static mut KERNEL_L2: PageTable = PageTable::new();
 static mut KERNEL_L1: PageTable = PageTable::new();
 
+pub fn alloc_frame() -> Option<PhysPageNum> {
+    if !FRAME_ALLOC_READY.load(Ordering::Acquire) {
+        return None;
+    }
+    // Safety: initialized once in init_frame_allocator before any allocations.
+    unsafe { FRAME_ALLOC.assume_init_ref().alloc() }
+}
+
+fn init_frame_allocator(region: MemoryRegion) {
+    let base = region.base as usize;
+    let size = region.size as usize;
+    if size == 0 {
+        crate::println!("mm: no usable memory size");
+        return;
+    }
+
+    let kernel_end = unsafe { &ekernel as *const u8 as usize };
+    let mapped_end = base.saturating_add(min(size, IDENTITY_MAP_SIZE));
+    let start = align_up(max(kernel_end, base), PAGE_SIZE);
+    let end = align_down(mapped_end, PAGE_SIZE);
+
+    if start >= end {
+        crate::println!("mm: no usable memory after kernel");
+        return;
+    }
+
+    let allocator = BumpFrameAllocator::new(PhysAddr::new(start), PhysAddr::new(end));
+    // Safety: single init during early boot, before concurrent use.
+    unsafe {
+        FRAME_ALLOC.write(allocator);
+    }
+    FRAME_ALLOC_READY.store(true, Ordering::Release);
+    let pages = (end - start) / PAGE_SIZE;
+    crate::println!(
+        "mm: frame allocator start={:#x} end={:#x} pages={}",
+        start,
+        end,
+        pages
+    );
+}
+
 unsafe fn setup_kernel_page_table(region: MemoryRegion) -> Option<&'static PageTable> {
+    // Safety: called once during early boot on a single hart.
     if region.size == 0 {
         return None;
     }
 
     let base = align_down(region.base as usize, PAGE_SIZE_2M);
-    let size = align_up(region.size as usize, PAGE_SIZE_2M);
+    let size = align_up(min(region.size as usize, IDENTITY_MAP_SIZE), PAGE_SIZE_2M);
 
     if KERNEL_BASE < base || KERNEL_BASE >= base.saturating_add(size) {
         crate::println!(
@@ -277,6 +328,7 @@ unsafe fn setup_kernel_page_table(region: MemoryRegion) -> Option<&'static PageT
 unsafe fn enable_paging(root: &PageTable) {
     let root_pa = virt_to_phys(root as *const _ as usize);
     let satp_value = SATP_MODE_SV39 | (root_pa >> PAGE_SHIFT);
+    // Safety: switching page tables is safe with identity mapping and no concurrent harts.
     asm!("csrw satp, {0}", in(reg) satp_value);
     asm!("sfence.vma");
 }
