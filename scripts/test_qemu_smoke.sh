@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+ARCH=${ARCH:-riscv64}
+PLATFORM=${PLATFORM:-qemu}
+FS=${FS:-}
+MODE=${MODE:-debug}
+TARGET=riscv64gc-unknown-none-elf
+CRATE=axruntime
+QEMU_BIN=${QEMU_BIN:-qemu-system-riscv64}
+BIOS=${BIOS:-default}
+MEM=${MEM:-512M}
+SMP=${SMP:-1}
+TIMEOUT=${TIMEOUT:-5}
+LOG_DIR="${ROOT}/build"
+LOG_FILE="${LOG_DIR}/qemu-smoke.log"
+
+if [[ "${ARCH}" != "riscv64" || "${PLATFORM}" != "qemu" ]]; then
+  echo "Only ARCH=riscv64 PLATFORM=qemu is supported right now." >&2
+  exit 1
+fi
+
+if ! command -v "${QEMU_BIN}" >/dev/null 2>&1; then
+  echo "QEMU binary not found: ${QEMU_BIN}" >&2
+  exit 1
+fi
+
+mkdir -p "${LOG_DIR}"
+"${ROOT}/scripts/build.sh"
+
+OUT_DIR=debug
+if [[ "${MODE}" == "release" ]]; then
+  OUT_DIR=release
+fi
+KERNEL="${ROOT}/target/${TARGET}/${OUT_DIR}/${CRATE}"
+
+DRIVE_ARGS=()
+if [[ -n "${FS}" ]]; then
+  DRIVE_ARGS=(
+    -drive "file=${FS},format=raw,if=none,id=x0"
+    -device virtio-blk-device,drive=x0
+  )
+fi
+
+set +e
+if command -v timeout >/dev/null 2>&1; then
+  timeout "${TIMEOUT}" "${QEMU_BIN}" \
+    -machine virt \
+    -nographic \
+    -bios "${BIOS}" \
+    -m "${MEM}" \
+    -smp "${SMP}" \
+    -kernel "${KERNEL}" \
+    "${DRIVE_ARGS[@]}" \
+    >"${LOG_FILE}" 2>&1
+  STATUS=$?
+else
+  "${QEMU_BIN}" \
+    -machine virt \
+    -nographic \
+    -bios "${BIOS}" \
+    -m "${MEM}" \
+    -smp "${SMP}" \
+    -kernel "${KERNEL}" \
+    "${DRIVE_ARGS[@]}" \
+    >"${LOG_FILE}" 2>&1
+  STATUS=$?
+fi
+set -e
+
+if ! grep -q "Aurora kernel booting" "${LOG_FILE}"; then
+  echo "Smoke test failed: boot banner not found." >&2
+  cat "${LOG_FILE}" >&2
+  exit 1
+fi
+
+if [[ ${STATUS} -ne 0 && ${STATUS} -ne 124 ]]; then
+  echo "QEMU exited with status ${STATUS}" >&2
+  cat "${LOG_FILE}" >&2
+  exit 1
+fi
+
+if [[ ${STATUS} -eq 124 ]]; then
+  echo "Smoke test passed (boot banner seen; QEMU timed out)." >&2
+  exit 0
+fi
+
+echo "Smoke test passed."

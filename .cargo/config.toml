@@ -1,0 +1,6 @@
+[target.riscv64gc-unknown-none-elf]
+linker = "rust-lld"
+rustflags = [
+  "-C", "link-arg=-Tarch/riscv64/linker.ld",
+  "-C", "link-arg=--gc-sections",
+]

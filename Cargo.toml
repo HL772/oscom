@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = [
+  "modules/axruntime",
+]
+
+[workspace.package]
+edition = "2021"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

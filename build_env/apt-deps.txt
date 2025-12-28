@@ -1,0 +1,6 @@
+# Host build dependencies (Ubuntu/Debian).
+build-essential
+clang
+lld
+qemu-system-riscv64
+gdb-multiarch
