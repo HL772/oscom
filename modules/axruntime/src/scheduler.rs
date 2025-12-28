@@ -7,6 +7,7 @@ use crate::task::{TaskControlBlock, TaskState};
 
 pub struct RunQueue {
     slots: UnsafeCell<[Option<TaskControlBlock>; RunQueue::MAX_TASKS]>,
+    head: UnsafeCell<usize>,
 }
 
 impl RunQueue {
@@ -15,6 +16,7 @@ impl RunQueue {
     pub const fn new() -> Self {
         Self {
             slots: UnsafeCell::new([None; RunQueue::MAX_TASKS]),
+            head: UnsafeCell::new(0),
         }
     }
 
@@ -33,12 +35,15 @@ impl RunQueue {
     pub fn pop_ready(&self) -> Option<TaskControlBlock> {
         // Safety: single-hart early use; no concurrent access yet.
         let slots = unsafe { &mut *self.slots.get() };
-        for slot in slots.iter_mut() {
-            if let Some(task) = slot.take() {
+        let head = unsafe { &mut *self.head.get() };
+        for _ in 0..Self::MAX_TASKS {
+            let idx = *head;
+            *head = (*head + 1) % Self::MAX_TASKS;
+            if let Some(task) = slots[idx].take() {
                 if task.state == TaskState::Ready {
                     return Some(task);
                 }
-                *slot = Some(task);
+                slots[idx] = Some(task);
             }
         }
         None

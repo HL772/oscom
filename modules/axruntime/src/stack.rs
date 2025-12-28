@@ -42,6 +42,7 @@ impl KernelStack {
 
 static mut IDLE_STACK: MaybeUninit<KernelStack> = MaybeUninit::uninit();
 static mut TASK_STACK: MaybeUninit<KernelStack> = MaybeUninit::uninit();
+static mut TASK_STACK2: MaybeUninit<KernelStack> = MaybeUninit::uninit();
 
 pub fn init_idle_stack() -> Option<&'static KernelStack> {
     // Safety: single init during early boot.
@@ -58,5 +59,14 @@ pub fn init_task_stack() -> Option<&'static KernelStack> {
         let stack = KernelStack::new()?;
         TASK_STACK.write(stack);
         Some(TASK_STACK.assume_init_ref())
+    }
+}
+
+pub fn init_task_stack2() -> Option<&'static KernelStack> {
+    // Safety: single init during early boot.
+    unsafe {
+        let stack = KernelStack::new()?;
+        TASK_STACK2.write(stack);
+        Some(TASK_STACK2.assume_init_ref())
     }
 }

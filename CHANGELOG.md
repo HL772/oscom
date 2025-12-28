@@ -23,3 +23,4 @@
 - Add default tick/config constants for scheduler timing.
 - Defer scheduler switches to the idle loop via a resched flag.
 - Add a cooperative yield path for the dummy task.
+- Add round-robin cursor and a second dummy task.

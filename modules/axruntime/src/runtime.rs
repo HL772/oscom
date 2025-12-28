@@ -17,17 +17,25 @@ static mut IDLE_TASK: TaskControlBlock = TaskControlBlock {
     entry: None,
 };
 
-fn dummy_task() -> ! {
+fn dummy_loop(label: &'static str, interval: u64) -> ! {
     let mut last_tick = 0;
     loop {
         let ticks = tick_count();
-        if ticks != last_tick && ticks % 50 == 0 {
-            crate::println!("dummy: yield at tick={}", ticks);
+        if ticks != last_tick && ticks % interval == 0 {
+            crate::println!("dummy({}): yield at tick={}", label, ticks);
             yield_now();
             last_tick = ticks;
         }
         crate::cpu::wait_for_interrupt();
     }
+}
+
+fn dummy_task_a() -> ! {
+    dummy_loop("A", 50);
+}
+
+fn dummy_task_b() -> ! {
+    dummy_loop("B", 80);
 }
 
 pub fn on_tick(ticks: u64) {
@@ -51,11 +59,19 @@ pub fn init() {
     }
 
     if let Some(stack) = stack::init_task_stack() {
-        let task = TaskControlBlock::with_entry(dummy_task, stack.top());
+        let task = TaskControlBlock::with_entry(dummy_task_a, stack.top());
         let ok = RUN_QUEUE.push(task);
-        crate::println!("scheduler: dummy task added={}", ok);
+        crate::println!("scheduler: dummy A added={}", ok);
     } else {
         crate::println!("scheduler: failed to init dummy task stack");
+    }
+
+    if let Some(stack) = stack::init_task_stack2() {
+        let task = TaskControlBlock::with_entry(dummy_task_b, stack.top());
+        let ok = RUN_QUEUE.push(task);
+        crate::println!("scheduler: dummy B added={}", ok);
+    } else {
+        crate::println!("scheduler: failed to init dummy task stack B");
     }
 }
 
