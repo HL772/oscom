@@ -9,6 +9,7 @@
 - 汇编入口保存通用寄存器与关键 CSR（sstatus/sepc/scause/stval），再进入 Rust 处理函数。
 - Rust handler 解析 scause，支持基础的 S-mode ecall 跳过与定时器中断重置。
 - 当前阶段仅覆盖内核态 trap（无用户态上下文切换）。
+- 定时器中断使用 SBI set_timer 重新编程，实现周期性 tick。
 
 ## 关键数据结构
 - TrapFrame：保存通用寄存器与 CSR 的固定布局结构。
@@ -30,3 +31,4 @@ trap_entry (__trap_vector)
 ## 测试点
 - QEMU 启动后触发 S 态 ecall 并返回。
 - 打开定时器中断并观察 handler 被调用。
+- 启动日志打印 timebase 频率与 tick 间隔。

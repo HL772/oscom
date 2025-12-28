@@ -18,6 +18,7 @@ const MAX_DEPTH: usize = 16;
 pub struct DtbInfo {
     pub memory: Option<MemoryRegion>,
     pub uart: Option<MemoryRegion>,
+    pub timebase_frequency: Option<u64>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -167,6 +168,12 @@ pub fn parse(dtb_addr: usize) -> Result<DtbInfo, DtbError> {
                             if kind == "memory" {
                                 state.is_memory = true;
                             }
+                        }
+                    }
+                    Some("timebase-frequency") if info.timebase_frequency.is_none() => {
+                        if len >= 4 {
+                            let freq = unsafe { read_u32_be_ptr(value) } as u64;
+                            info.timebase_frequency = Some(freq);
                         }
                     }
                     Some("compatible") => {

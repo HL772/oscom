@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use core::arch::asm;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use crate::sbi;
 
@@ -56,16 +56,17 @@ const SCAUSE_INTERRUPT_BIT: usize = 1usize << (usize::BITS as usize - 1);
 const SCAUSE_SUPERVISOR_TIMER: usize = 5;
 const SCAUSE_SUPERVISOR_ECALL: usize = 9;
 
-static TIMER_INTERVAL: AtomicUsize = AtomicUsize::new(0);
+static TIMER_INTERVAL: AtomicU64 = AtomicU64::new(0);
+static TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
 
 pub fn init() {
     unsafe { write_stvec(__trap_vector as usize) };
 }
 
-pub fn enable_timer_interrupt(interval_ticks: usize) {
+pub fn enable_timer_interrupt(interval_ticks: u64) {
     TIMER_INTERVAL.store(interval_ticks, Ordering::Relaxed);
     let now = read_time();
-    sbi::set_timer(now + interval_ticks as u64);
+    sbi::set_timer(now + interval_ticks);
     unsafe {
         write_sie(read_sie() | SIE_STIE);
         write_sstatus(read_sstatus() | SSTATUS_SIE);
@@ -86,8 +87,9 @@ extern "C" fn trap_handler(tf: &mut TrapFrame) {
             let interval = TIMER_INTERVAL.load(Ordering::Relaxed);
             if interval != 0 {
                 let now = read_time();
-                sbi::set_timer(now + interval as u64);
+                sbi::set_timer(now + interval);
             }
+            TIMER_TICKS.fetch_add(1, Ordering::Relaxed);
             return;
         }
     } else if code == SCAUSE_SUPERVISOR_ECALL {

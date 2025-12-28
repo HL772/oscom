@@ -14,6 +14,7 @@
 - 接入 DTB 解析以发现内存与 UART 信息。
 - DTB 接入后 QEMU 冒烟测试仍通过。
 - 建立 Sv39 identity 页表并启用分页。
+- 接入 timebase-frequency 并启用定时器 tick。
 
 ## 问题
 - OSComp 测例与 FS/Net 尚未接入。

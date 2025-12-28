@@ -33,7 +33,17 @@ pub extern "C" fn rust_main(hart_id: usize, dtb_addr: usize) -> ! {
         );
     }
 
+    if let Some(freq) = dtb_info.timebase_frequency {
+        crate::println!("dtb: timebase-frequency={}Hz", freq);
+    }
+
     mm::init(dtb_info.memory);
+
+    let timebase = dtb_info.timebase_frequency.unwrap_or(10_000_000);
+    let tick_hz = 10u64;
+    let interval = timebase / tick_hz;
+    crate::println!("timer: tick={}Hz interval={} ticks", tick_hz, interval);
+    trap::enable_timer_interrupt(interval);
 
     sbi::shutdown();
 }
