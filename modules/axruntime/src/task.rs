@@ -11,11 +11,14 @@ pub enum TaskState {
     Blocked,
 }
 
+pub type TaskEntry = fn() -> !;
+
 #[derive(Copy, Clone)]
 pub struct TaskControlBlock {
     pub id: u64,
     pub state: TaskState,
     pub context: Context,
+    pub entry: Option<TaskEntry>,
 }
 
 static NEXT_TASK_ID: AtomicU64 = AtomicU64::new(1);
@@ -27,6 +30,15 @@ impl TaskControlBlock {
             id,
             state: TaskState::Ready,
             context: Context::zero(),
+            entry: None,
         }
+    }
+
+    pub fn with_entry(entry: TaskEntry, stack_top: usize) -> Self {
+        let mut task = Self::new();
+        task.entry = Some(entry);
+        task.context.ra = entry as usize;
+        task.context.sp = stack_top;
+        task
     }
 }

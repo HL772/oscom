@@ -18,3 +18,4 @@
 - Add minimal run queue and scheduler tick hook scaffolding.
 - Add context struct and context_switch assembly stub.
 - Add a kernel stack helper backed by contiguous frames.
+- Add task entry stub and dummy task initialization.

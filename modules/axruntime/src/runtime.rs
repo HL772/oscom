@@ -12,7 +12,14 @@ static mut IDLE_TASK: TaskControlBlock = TaskControlBlock {
     id: 0,
     state: TaskState::Running,
     context: crate::context::Context::zero(),
+    entry: None,
 };
+
+fn dummy_task() -> ! {
+    loop {
+        crate::cpu::wait_for_interrupt();
+    }
+}
 
 pub fn on_tick(ticks: u64) {
     TICK_COUNT.store(ticks, Ordering::Relaxed);
@@ -34,6 +41,14 @@ pub fn init() {
         crate::println!("scheduler: idle stack top={:#x}", stack.top());
     } else {
         crate::println!("scheduler: failed to init idle stack");
+    }
+
+    if let Some(stack) = stack::init_task_stack() {
+        let task = TaskControlBlock::with_entry(dummy_task, stack.top());
+        let ok = RUN_QUEUE.push(task);
+        crate::println!("scheduler: dummy task added={}", ok);
+    } else {
+        crate::println!("scheduler: failed to init dummy task stack");
     }
 }
 

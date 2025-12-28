@@ -11,6 +11,7 @@
 - 引入最小 `RunQueue` 与 `TaskControlBlock` 作为调度骨架，占位 tick 驱动的轮转逻辑。
 - 增加上下文结构与 `context_switch` 汇编入口，当前仅保留接口占位。
 - 内核栈在早期由帧分配器分配连续页，后续与任务生命周期绑定。
+- TaskControlBlock 支持入口函数指针与栈顶配置，早期用 dummy task 验证流程。
 
 ## 关键数据结构
 - TaskControlBlock / ProcessControlBlock：状态、优先级、时间片等字段预留。
@@ -19,6 +20,7 @@
 - WaitQueue：固定容量等待队列，支持 notify_one/notify_all。
 - Context：保存 callee-saved 寄存器的最小上下文结构。
 - KernelStack：基于连续页的内核栈占位实现。
+- TaskEntry：任务入口函数类型，占位启动路径。
 
 ## 关键流程图或伪代码
 ```text

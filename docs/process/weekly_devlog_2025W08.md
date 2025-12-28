@@ -25,6 +25,7 @@
 - 增加 RunQueue/TCB 与调度 tick hook 占位。
 - 增加 Context 结构与 context_switch 汇编入口占位。
 - 增加 KernelStack 原型（连续页内核栈）。
+- 增加 TaskEntry 占位与 dummy task 初始化。
 
 ## 问题
 - OSComp 测例与 FS/Net 尚未接入。
