@@ -3,7 +3,7 @@
 use core::arch::asm;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use crate::sbi;
+use crate::{sbi, time};
 
 // Trap/interrupt helpers are scaffolded for upcoming scheduler/timer work.
 
@@ -57,7 +57,6 @@ const SCAUSE_SUPERVISOR_TIMER: usize = 5;
 const SCAUSE_SUPERVISOR_ECALL: usize = 9;
 
 static TIMER_INTERVAL: AtomicU64 = AtomicU64::new(0);
-static TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
 
 pub fn init() {
     unsafe { write_stvec(__trap_vector as usize) };
@@ -89,7 +88,7 @@ extern "C" fn trap_handler(tf: &mut TrapFrame) {
                 let now = read_time();
                 sbi::set_timer(now + interval);
             }
-            TIMER_TICKS.fetch_add(1, Ordering::Relaxed);
+            time::tick();
             return;
         }
     } else if code == SCAUSE_SUPERVISOR_ECALL {
