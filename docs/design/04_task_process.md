@@ -14,13 +14,14 @@
 - 增加 `yield_now` 协作式让渡，主动入队并清理 CURRENT_TASK，再切回空闲。
 - RunQueue 维护轮转指针，实现最小 RR 顺序。
 - RunQueue 保存 `TaskId`，任务实体存放在固定大小的 TaskTable。
+- 增加 TaskWaitQueue，使用 TaskId 阻塞/唤醒任务并配合 RunQueue。
 - 内核栈在早期由帧分配器分配连续页，任务栈来自固定大小的栈池（上限 `MAX_TASKS`）。
 - TaskControlBlock 支持入口函数指针与栈顶配置，早期用双 dummy task 验证轮转。
 - 调度触发周期可配置（`SCHED_INTERVAL_TICKS`），避免频繁切换。
 
 ## 关键数据结构
 - TaskControlBlock / TaskId / TaskTable：固定槽位管理、状态、上下文等字段预留。
-- RunQueue / WaitQueue：就绪队列与等待队列（后续实现）。
+- RunQueue / TaskWaitQueue / WaitQueue：就绪队列、任务等待队列与 Waiter 等待队列。
 - Waiter：最小超时等待封装，基于 tick + wfi。
 - WaitQueue：固定容量等待队列，支持 notify_one/notify_all。
 - Context：保存 callee-saved 寄存器的最小上下文结构。
@@ -36,6 +37,14 @@ on_tick
 after boot
   -> init run queue
   -> schedule (placeholder)
+
+block_current(waitq)
+  -> mark Blocked + enqueue waitq
+  -> switch to idle
+
+wake_one(waitq)
+  -> dequeue + mark Ready
+  -> enqueue run queue
 ```
 
 ## 风险与权衡

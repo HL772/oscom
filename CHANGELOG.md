@@ -27,3 +27,4 @@
 - Pool early task stacks with a fixed slot limit.
 - Add a task table and store task IDs in the run queue.
 - Fix cooperative yield to requeue the current task.
+- Add a task wait queue with block/wake helpers.

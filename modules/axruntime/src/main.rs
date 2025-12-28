@@ -11,6 +11,7 @@ mod time;
 mod sleep;
 mod wait;
 mod wait_queue;
+mod task_wait_queue;
 mod task;
 mod scheduler;
 mod runtime;

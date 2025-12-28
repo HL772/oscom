@@ -71,6 +71,18 @@ pub fn is_ready(id: TaskId) -> bool {
     }
 }
 
+pub fn set_state(id: TaskId, state: TaskState) -> bool {
+    // Safety: single-hart early boot; task slots are stable.
+    unsafe {
+        if id >= MAX_TASKS || !TASK_USED[id] {
+            return false;
+        }
+        let task = &mut *TASK_TABLE[id].as_mut_ptr();
+        task.state = state;
+        true
+    }
+}
+
 pub fn task_ptr(id: TaskId) -> Option<*mut TaskControlBlock> {
     // Safety: task slots are initialized once and never freed in early boot.
     unsafe {

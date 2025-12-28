@@ -5,10 +5,12 @@ use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use crate::scheduler::RunQueue;
 use crate::stack;
 use crate::task::{self, TaskControlBlock, TaskId, TaskState};
+use crate::task_wait_queue::TaskWaitQueue;
 
 static TICK_COUNT: AtomicU64 = AtomicU64::new(0);
 static NEED_RESCHED: AtomicBool = AtomicBool::new(false);
 static RUN_QUEUE: RunQueue = RunQueue::new();
+static TASK_WAIT_QUEUE: TaskWaitQueue = TaskWaitQueue::new();
 static mut CURRENT_TASK: Option<TaskId> = None;
 static mut IDLE_TASK: TaskControlBlock = TaskControlBlock {
     id: crate::config::MAX_TASKS,
@@ -17,25 +19,31 @@ static mut IDLE_TASK: TaskControlBlock = TaskControlBlock {
     entry: None,
 };
 
-fn dummy_loop(label: &'static str, interval: u64) -> ! {
+fn dummy_task_a() -> ! {
     let mut last_tick = 0;
     loop {
         let ticks = tick_count();
-        if ticks != last_tick && ticks % interval == 0 {
-            crate::println!("dummy({}): yield at tick={}", label, ticks);
-            yield_now();
+        if ticks != last_tick && ticks % 50 == 0 {
+            crate::println!("dummy(A): block at tick={}", ticks);
+            block_current(&TASK_WAIT_QUEUE);
             last_tick = ticks;
         }
         crate::cpu::wait_for_interrupt();
     }
 }
 
-fn dummy_task_a() -> ! {
-    dummy_loop("A", 50);
-}
-
 fn dummy_task_b() -> ! {
-    dummy_loop("B", 80);
+    let mut last_tick = 0;
+    loop {
+        let ticks = tick_count();
+        if ticks != last_tick && ticks % 80 == 0 {
+            let woke = wake_one(&TASK_WAIT_QUEUE);
+            crate::println!("dummy(B): wake_one={} tick={}", woke, ticks);
+            yield_now();
+            last_tick = ticks;
+        }
+        crate::cpu::wait_for_interrupt();
+    }
 }
 
 pub fn on_tick(ticks: u64) {
@@ -136,6 +144,36 @@ pub fn yield_now() {
         CURRENT_TASK = None;
         crate::scheduler::switch(&mut *task_ptr, &IDLE_TASK);
     }
+}
+
+pub fn block_current(queue: &TaskWaitQueue) {
+    // Safety: single-hart early use; CURRENT_TASK is only accessed in init/idle/task contexts.
+    unsafe {
+        let Some(task_id) = CURRENT_TASK else {
+            return;
+        };
+        let Some(task_ptr) = task::task_ptr(task_id) else {
+            return;
+        };
+        if !queue.push(task_id) {
+            return;
+        }
+        NEED_RESCHED.store(true, Ordering::Relaxed);
+        CURRENT_TASK = None;
+        crate::scheduler::switch(&mut *task_ptr, &IDLE_TASK);
+        (*task_ptr).state = TaskState::Running;
+    }
+}
+
+pub fn wake_one(queue: &TaskWaitQueue) -> bool {
+    if let Some(task_id) = queue.notify_one() {
+        let ok = RUN_QUEUE.push(task_id);
+        if !ok {
+            crate::println!("scheduler: run queue full for task {}", task_id);
+        }
+        return ok;
+    }
+    false
 }
 
 pub fn idle_loop() -> ! {
