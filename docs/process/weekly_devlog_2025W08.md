@@ -19,6 +19,7 @@
 - 增加 time 模块维护 tick 计数。
 - 增加基于 tick 的 sleep_ms 辅助函数。
 - 帧分配器接入 ekernel 之后的可用内存区间。
+- 页表页改为从帧分配器动态分配。
 
 ## 问题
 - OSComp 测例与 FS/Net 尚未接入。

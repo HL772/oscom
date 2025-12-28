@@ -11,6 +11,7 @@
 - 通过 DTB 解析得到物理内存范围，作为初始化输入。
 - 早期页表采用 Sv39 identity 映射，使用 2MiB 页覆盖内核内存区域。
 - 帧分配器起始地址使用 `ekernel` 对齐后的位置，避免覆盖内核镜像。
+- 页表页通过早期帧分配器动态分配，避免固定静态页表。
 
 ## 关键数据结构
 - `PhysAddr/VirtAddr`：物理/虚拟地址封装与对齐工具。
@@ -18,6 +19,7 @@
 - `PageTableEntry`：PTE 编解码与标志位管理。
 - `BumpFrameAllocator`：最小可用帧分配占位实现。
 - `alloc_frame`：早期帧分配接口（无回收）。
+- `PageTable`：页表页从 `alloc_frame` 分配并清零。
 
 ## 关键流程图或伪代码
 ```text

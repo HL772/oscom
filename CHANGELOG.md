@@ -12,3 +12,4 @@
 - Track timer tick count in a dedicated time module.
 - Add a basic sleep_ms helper driven by timer ticks.
 - Initialize a bump frame allocator starting after ekernel within identity map.
+- Allocate early page tables from the frame allocator.

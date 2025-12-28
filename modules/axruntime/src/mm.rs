@@ -93,8 +93,8 @@ pub fn init(memory: Option<MemoryRegion>) {
     if let Some(region) = memory {
         init_frame_allocator(region);
         unsafe {
-            if let Some(root) = setup_kernel_page_table(region) {
-                enable_paging(root);
+            if let Some(root_pa) = setup_kernel_page_table(region) {
+                enable_paging(root_pa);
                 crate::println!("mm: paging enabled (sv39 identity map)");
             } else {
                 crate::println!("mm: paging not enabled");
@@ -240,15 +240,21 @@ impl PageTable {
     }
 }
 
-static mut KERNEL_L2: PageTable = PageTable::new();
-static mut KERNEL_L1: PageTable = PageTable::new();
-
 pub fn alloc_frame() -> Option<PhysPageNum> {
     if !FRAME_ALLOC_READY.load(Ordering::Acquire) {
         return None;
     }
     // Safety: initialized once in init_frame_allocator before any allocations.
     unsafe { FRAME_ALLOC.assume_init_ref().alloc() }
+}
+
+unsafe fn alloc_page_table() -> Option<&'static mut PageTable> {
+    let frame = alloc_frame()?;
+    let pa = frame.addr().as_usize();
+    let table = pa as *mut PageTable;
+    // Safety: 早期启动阶段使用恒等映射，且帧分配器返回唯一页帧。
+    core::ptr::write_bytes(table as *mut u8, 0, PAGE_SIZE);
+    Some(&mut *table)
 }
 
 fn init_frame_allocator(region: MemoryRegion) {
@@ -270,7 +276,7 @@ fn init_frame_allocator(region: MemoryRegion) {
     }
 
     let allocator = BumpFrameAllocator::new(PhysAddr::new(start), PhysAddr::new(end));
-    // Safety: single init during early boot, before concurrent use.
+    // Safety: 仅在早期单核初始化时写入，全局只初始化一次。
     unsafe {
         FRAME_ALLOC.write(allocator);
     }
@@ -284,8 +290,8 @@ fn init_frame_allocator(region: MemoryRegion) {
     );
 }
 
-unsafe fn setup_kernel_page_table(region: MemoryRegion) -> Option<&'static PageTable> {
-    // Safety: called once during early boot on a single hart.
+unsafe fn setup_kernel_page_table(region: MemoryRegion) -> Option<usize> {
+    // Safety: 仅在早期单核启动阶段调用。
     if region.size == 0 {
         return None;
     }
@@ -301,17 +307,29 @@ unsafe fn setup_kernel_page_table(region: MemoryRegion) -> Option<&'static PageT
         return None;
     }
 
+    let l2 = match alloc_page_table() {
+        Some(table) => table,
+        None => {
+            crate::println!("mm: alloc l2 page table failed");
+            return None;
+        }
+    };
+    let l1 = match alloc_page_table() {
+        Some(table) => table,
+        None => {
+            crate::println!("mm: alloc l1 page table failed");
+            return None;
+        }
+    };
+
     let l2_index = (base >> 30) & 0x1ff;
     let l1_start = (base >> 21) & 0x1ff;
     let entries = min(size / PAGE_SIZE_2M, SV39_ENTRIES - l1_start);
 
-    KERNEL_L2.zero();
-    KERNEL_L1.zero();
-
     for i in 0..entries {
         let pa = base + i * PAGE_SIZE_2M;
         let index = l1_start + i;
-        KERNEL_L1.entries[index] =
+        l1.entries[index] =
             PageTableEntry::new(PhysPageNum::new(pa >> PAGE_SHIFT), PTE_FLAGS_KERNEL);
     }
 
@@ -319,16 +337,16 @@ unsafe fn setup_kernel_page_table(region: MemoryRegion) -> Option<&'static PageT
         crate::println!("mm: memory region truncated to 1GiB mapping");
     }
 
-    let l1_pa = virt_to_phys(&KERNEL_L1 as *const _ as usize);
-    KERNEL_L2.entries[l2_index] = PageTableEntry::new(PhysPageNum::new(l1_pa >> PAGE_SHIFT), PTE_V);
+    let l1_pa = virt_to_phys(l1 as *const _ as usize);
+    l2.entries[l2_index] = PageTableEntry::new(PhysPageNum::new(l1_pa >> PAGE_SHIFT), PTE_V);
+    let l2_pa = virt_to_phys(l2 as *const _ as usize);
 
-    Some(&KERNEL_L2)
+    Some(l2_pa)
 }
 
-unsafe fn enable_paging(root: &PageTable) {
-    let root_pa = virt_to_phys(root as *const _ as usize);
+unsafe fn enable_paging(root_pa: usize) {
     let satp_value = SATP_MODE_SV39 | (root_pa >> PAGE_SHIFT);
-    // Safety: switching page tables is safe with identity mapping and no concurrent harts.
+    // Safety: 早期阶段仅单核执行，恒等映射保证切换后地址可用。
     asm!("csrw satp, {0}", in(reg) satp_value);
     asm!("sfence.vma");
 }
