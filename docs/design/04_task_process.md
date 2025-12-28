@@ -14,7 +14,7 @@
 - 增加 `yield_now` 协作式让渡，主动入队并清理 CURRENT_TASK，再切回空闲。
 - RunQueue 维护轮转指针，实现最小 RR 顺序。
 - RunQueue 保存 `TaskId`，任务实体存放在固定大小的 TaskTable。
-- 增加 TaskWaitQueue，使用 TaskId 阻塞/唤醒任务并配合 RunQueue。
+- 增加 TaskWaitQueue，使用 TaskId 阻塞/唤醒任务并配合 RunQueue（状态切换由 runtime 负责）。
 - 增加 SleepQueue 与 `sleep_current_ms`，由 tick 触发唤醒并回收到 RunQueue。
 - 内核栈在早期由帧分配器分配连续页，任务栈来自固定大小的栈池（上限 `MAX_TASKS`）。
 - TaskControlBlock 支持入口函数指针与栈顶配置，早期用多 dummy task 验证轮转与睡眠唤醒。

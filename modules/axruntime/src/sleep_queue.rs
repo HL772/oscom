@@ -24,6 +24,7 @@ impl SleepQueue {
     }
 
     pub fn push(&self, task_id: TaskId, wake_tick: u64) -> bool {
+        // Wake ticks are absolute tick counters (not durations).
         // Safety: single-hart early use; no concurrent access yet.
         let slots = unsafe { &mut *self.slots.get() };
         for slot in slots.iter_mut() {
@@ -44,6 +45,7 @@ impl SleepQueue {
     }
 
     pub fn pop_ready(&self, now: u64) -> Option<TaskId> {
+        // Linear scan is fine for early bring-up; no ordering guarantees.
         // Safety: single-hart early use; no concurrent access yet.
         let slots = unsafe { &mut *self.slots.get() };
         for slot in slots.iter_mut() {

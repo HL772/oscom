@@ -14,6 +14,7 @@ static NEED_RESCHED: AtomicBool = AtomicBool::new(false);
 static RUN_QUEUE: RunQueue = RunQueue::new();
 static TASK_WAIT_QUEUE: TaskWaitQueue = TaskWaitQueue::new();
 static SLEEP_QUEUE: SleepQueue = SleepQueue::new();
+// CURRENT_TASK is valid only while executing inside a task context.
 static mut CURRENT_TASK: Option<TaskId> = None;
 static mut IDLE_TASK: TaskControlBlock = TaskControlBlock {
     id: crate::config::MAX_TASKS,
@@ -69,12 +70,16 @@ pub fn on_tick(ticks: u64) {
     }
     let mut woke_any = false;
     while let Some(task_id) = SLEEP_QUEUE.pop_ready(ticks) {
-        if task::set_state(task_id, TaskState::Ready) {
-            if RUN_QUEUE.push(task_id) {
-                woke_any = true;
-            } else {
-                crate::println!("scheduler: run queue full for task {}", task_id);
-            }
+        if !task::set_state(task_id, TaskState::Ready) {
+            continue;
+        }
+        if RUN_QUEUE.push(task_id) {
+            woke_any = true;
+        } else {
+            // Best-effort fallback: re-block and retry next tick.
+            let _ = task::set_state(task_id, TaskState::Blocked);
+            let _ = SLEEP_QUEUE.push(task_id, ticks.saturating_add(1));
+            crate::println!("scheduler: run queue full for task {}", task_id);
         }
     }
     if woke_any {
@@ -139,13 +144,16 @@ pub fn schedule_once() {
         None => return,
     };
 
-    // Safety: single-hart early use; only switching between idle and next.
+    // Safety: single-hart early use; only switching between idle and one task.
     unsafe {
         if CURRENT_TASK.is_some() {
             return;
         }
         CURRENT_TASK = Some(next_id);
-        (*task_ptr).state = TaskState::Running;
+        if !task::set_state(next_id, TaskState::Running) {
+            CURRENT_TASK = None;
+            return;
+        }
         crate::scheduler::switch(&mut IDLE_TASK, &*task_ptr);
         if CURRENT_TASK == Some(next_id) {
             CURRENT_TASK = None;
@@ -170,6 +178,7 @@ pub fn yield_if_needed() {
 }
 
 pub fn yield_now() {
+    // Cooperative yield: requeue the current task and switch back to idle.
     // Safety: single-hart early use; CURRENT_TASK is only accessed in init/idle/task contexts.
     unsafe {
         let Some(task_id) = CURRENT_TASK else {
@@ -178,15 +187,21 @@ pub fn yield_now() {
         let Some(task_ptr) = task::task_ptr(task_id) else {
             return;
         };
+        if !task::set_state(task_id, TaskState::Ready) {
+            return;
+        }
+        if !RUN_QUEUE.push(task_id) {
+            let _ = task::set_state(task_id, TaskState::Running);
+            return;
+        }
         NEED_RESCHED.store(true, Ordering::Relaxed);
-        (*task_ptr).state = TaskState::Ready;
-        RUN_QUEUE.push_back(task_id);
         CURRENT_TASK = None;
         crate::scheduler::switch(&mut *task_ptr, &IDLE_TASK);
     }
 }
 
 pub fn sleep_current_ms(ms: u64) -> bool {
+    // Tick-based sleep: block the current task and let the timer wake it later.
     if ms == 0 {
         return true;
     }
@@ -212,7 +227,7 @@ pub fn sleep_current_ms(ms: u64) -> bool {
             return false;
         }
         if !SLEEP_QUEUE.push(task_id, wake_tick) {
-            let _ = task::set_state(task_id, TaskState::Ready);
+            let _ = task::set_state(task_id, TaskState::Running);
             return false;
         }
         NEED_RESCHED.store(true, Ordering::Relaxed);
@@ -223,6 +238,7 @@ pub fn sleep_current_ms(ms: u64) -> bool {
 }
 
 pub fn block_current(queue: &TaskWaitQueue) {
+    // Block the current task on a wait queue; caller controls the wake-up.
     // Safety: single-hart early use; CURRENT_TASK is only accessed in init/idle/task contexts.
     unsafe {
         let Some(task_id) = CURRENT_TASK else {
@@ -231,20 +247,32 @@ pub fn block_current(queue: &TaskWaitQueue) {
         let Some(task_ptr) = task::task_ptr(task_id) else {
             return;
         };
+        if !task::set_state(task_id, TaskState::Blocked) {
+            return;
+        }
         if !queue.push(task_id) {
+            let _ = task::set_state(task_id, TaskState::Running);
             return;
         }
         NEED_RESCHED.store(true, Ordering::Relaxed);
         CURRENT_TASK = None;
         crate::scheduler::switch(&mut *task_ptr, &IDLE_TASK);
-        (*task_ptr).state = TaskState::Running;
     }
 }
 
 pub fn wake_one(queue: &TaskWaitQueue) -> bool {
+    // Wake a single waiter and enqueue it for scheduling.
     if let Some(task_id) = queue.notify_one() {
+        if !task::set_state(task_id, TaskState::Ready) {
+            return false;
+        }
         let ok = RUN_QUEUE.push(task_id);
         if !ok {
+            let _ = task::set_state(task_id, TaskState::Blocked);
+            let retry = queue.push(task_id);
+            if !retry {
+                crate::println!("scheduler: wait queue full for task {}", task_id);
+            }
             crate::println!("scheduler: run queue full for task {}", task_id);
         }
         return ok;

@@ -36,6 +36,7 @@
 - 增加 TaskWaitQueue 与 block/wake 接口，准备阻塞式同步原语。
 - 引入 SleepQueue 与 sleep_current_ms，tick 到期唤醒睡眠任务。
 - 增加 dummy C 使用 sleep_ms 验证睡眠唤醒。
+- TaskWaitQueue 状态切换调整为由 runtime 统一管理。
 
 ## 问题
 - OSComp 测例与 FS/Net 尚未接入。
