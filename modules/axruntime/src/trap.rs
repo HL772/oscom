@@ -3,7 +3,7 @@
 use core::arch::asm;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use crate::{sbi, time};
+use crate::{runtime, sbi, time};
 
 // Trap/interrupt helpers are scaffolded for upcoming scheduler/timer work.
 
@@ -89,6 +89,7 @@ extern "C" fn trap_handler(tf: &mut TrapFrame) {
                 sbi::set_timer(now + interval);
             }
             time::tick();
+            runtime::on_tick();
             return;
         }
     } else if code == SCAUSE_SUPERVISOR_ECALL {

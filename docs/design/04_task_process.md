@@ -8,6 +8,7 @@
 - Process 作为资源拥有者，Task 作为调度单位，后续支持 clone 语义。
 - 调度器采用 tick 驱动的时间片抢占，初期可用简单 RR。
 - 早期提供 `sleep_ms`、`Waiter`（超时等待）与 `WaitQueue`（等待队列）辅助，后续替换为阻塞原语。
+- 引入最小 `RunQueue` 与 `TaskControlBlock` 作为调度骨架，占位 tick 驱动的轮转逻辑。
 
 ## 关键数据结构
 - TaskControlBlock / ProcessControlBlock：状态、优先级、时间片等字段预留。
@@ -17,18 +18,22 @@
 
 ## 关键流程图或伪代码
 ```text
-schedule
-  -> pick next task
-  -> context switch
-  -> return to task
+on_tick
+  -> update time ticks
+  -> scheduler tick hook
+
+after boot
+  -> init run queue
+  -> schedule (placeholder)
 ```
 
 ## 风险与权衡
 - 早期 sleep/timeout 采用忙等，会浪费 CPU。
 - Tick 频率与调度粒度需要平衡延迟与开销。
-- WaitQueue 目前无锁，仅用于单核启动阶段。
+- RunQueue/WaitQueue 目前无锁，仅用于单核启动阶段。
 
 ## 测试点
 - tick 计数增长与 `sleep_ms` / `wait_timeout_ms` 行为。
 - notify_one/notify_all 的唤醒行为。
+- scheduler tick hook 的日志输出。
 - 后续 busybox/多任务场景回归。

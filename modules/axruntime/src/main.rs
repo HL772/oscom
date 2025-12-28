@@ -11,6 +11,9 @@ mod time;
 mod sleep;
 mod wait;
 mod wait_queue;
+mod task;
+mod scheduler;
+mod runtime;
 
 use core::panic::PanicInfo;
 
@@ -49,6 +52,8 @@ pub extern "C" fn rust_main(hart_id: usize, dtb_addr: usize) -> ! {
     let interval = time::init(timebase, tick_hz);
     crate::println!("timer: tick={}Hz interval={} ticks", tick_hz, interval);
     trap::enable_timer_interrupt(interval);
+
+    runtime::init();
 
     cpu::idle_loop();
 }

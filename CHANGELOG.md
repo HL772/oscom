@@ -15,3 +15,4 @@
 - Allocate early page tables from the frame allocator.
 - Add a Waiter helper for timeout-based waiting.
 - Add a WaitQueue helper with notify_one/notify_all.
+- Add minimal run queue and scheduler tick hook scaffolding.
