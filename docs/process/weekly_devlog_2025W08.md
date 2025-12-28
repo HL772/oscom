@@ -15,6 +15,7 @@
 - DTB 接入后 QEMU 冒烟测试仍通过。
 - 建立 Sv39 identity 页表并启用分页。
 - 接入 timebase-frequency 并启用定时器 tick。
+- 启动后进入 idle 循环等待中断。
 
 ## 问题
 - OSComp 测例与 FS/Net 尚未接入。

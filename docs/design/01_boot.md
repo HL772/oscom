@@ -7,7 +7,7 @@
 ## 设计
 - 链接脚本定义内核加载地址与段布局（.text/.rodata/.data/.bss）。
 - `entry.S` 负责关中断、设置早期栈、清理 BSS、跳转 Rust 入口。
-- Rust 入口 `rust_main` 完成早期日志、DTB 解析、内存/中断/时钟等子系统初始化，并开启早期分页与定时器 tick。
+- Rust 入口 `rust_main` 完成早期日志、DTB 解析、内存/中断/时钟等子系统初始化，并开启早期分页与定时器 tick，最后进入 idle 循环。
 - 平台差异通过 `platforms/` 配置与 `arch/` 入口隔离。
 
 ## 关键数据结构

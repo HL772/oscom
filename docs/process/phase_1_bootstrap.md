@@ -13,6 +13,7 @@
 - 增加 S 态 trap 向量与最小 handler，完成寄存器保存与恢复框架。
 - 增加 DTB 解析以提取内存与 UART 基础信息。
 - 接入 timebase-frequency 并启用定时器 tick。
+- 启动后进入 idle 循环，等待中断驱动进一步工作。
 
 ## 问题与定位
 - 当前仅支持单核与 legacy SBI 接口。

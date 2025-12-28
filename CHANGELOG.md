@@ -8,3 +8,4 @@
 - Add DTB parsing to discover memory and UART information at boot.
 - Enable early Sv39 paging with an identity-mapped kernel page table.
 - Enable periodic timer ticks using SBI set_timer and DTB timebase frequency.
+- Enter an idle loop after early initialization to keep the kernel running.

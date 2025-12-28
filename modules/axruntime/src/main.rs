@@ -6,6 +6,7 @@ mod dtb;
 mod sbi;
 mod trap;
 mod mm;
+mod cpu;
 
 use core::panic::PanicInfo;
 
@@ -45,7 +46,7 @@ pub extern "C" fn rust_main(hart_id: usize, dtb_addr: usize) -> ! {
     crate::println!("timer: tick={}Hz interval={} ticks", tick_hz, interval);
     trap::enable_timer_interrupt(interval);
 
-    sbi::shutdown();
+    cpu::idle_loop();
 }
 
 #[panic_handler]
