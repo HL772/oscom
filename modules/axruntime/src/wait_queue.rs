@@ -1,69 +1,32 @@
 #![allow(dead_code)]
 
-use core::cell::UnsafeCell;
+use crate::task_wait_queue::TaskWaitQueue;
+use crate::wait::WaitResult;
 
-use crate::wait::Waiter;
-
+/// A wait queue that blocks the current task until notified or timed out.
 pub struct WaitQueue {
-    slots: UnsafeCell<[Option<&'static Waiter>; WaitQueue::MAX_WAITERS]>,
+    inner: TaskWaitQueue,
 }
 
 impl WaitQueue {
-    pub const MAX_WAITERS: usize = 8;
-
     pub const fn new() -> Self {
         Self {
-            slots: UnsafeCell::new([None; WaitQueue::MAX_WAITERS]),
+            inner: TaskWaitQueue::new(),
         }
     }
 
-    pub fn push(&self, waiter: &'static Waiter) -> bool {
-        // Safety: single-hart early use; no concurrent access yet.
-        let slots = unsafe { &mut *self.slots.get() };
-        for slot in slots.iter_mut() {
-            if slot.is_none() {
-                *slot = Some(waiter);
-                return true;
-            }
-        }
-        false
+    /// Block the current task on this queue with a millisecond timeout.
+    pub fn wait_timeout_ms(&self, timeout_ms: u64) -> WaitResult {
+        crate::runtime::wait_timeout_ms(&self.inner, timeout_ms)
     }
 
-    pub fn pop(&self, waiter: &'static Waiter) {
-        // Safety: single-hart early use; no concurrent access yet.
-        let slots = unsafe { &mut *self.slots.get() };
-        for slot in slots.iter_mut() {
-            if slot.map_or(false, |w| core::ptr::eq(w, waiter)) {
-                *slot = None;
-                return;
-            }
-        }
-    }
-
+    /// Wake a single waiting task, if any.
     pub fn notify_one(&self) -> bool {
-        // Safety: single-hart early use; no concurrent access yet.
-        let slots = unsafe { &mut *self.slots.get() };
-        for slot in slots.iter_mut() {
-            if let Some(waiter) = slot.take() {
-                waiter.notify();
-                return true;
-            }
-        }
-        false
+        crate::runtime::wake_one(&self.inner)
     }
 
+    /// Wake all waiting tasks until the run queue is full.
     pub fn notify_all(&self) -> usize {
-        // Safety: single-hart early use; no concurrent access yet.
-        let slots = unsafe { &mut *self.slots.get() };
-        let mut count = 0;
-        for slot in slots.iter_mut() {
-            if let Some(waiter) = slot.take() {
-                waiter.notify();
-                count += 1;
-            }
-        }
-        count
+        crate::runtime::wake_all(&self.inner)
     }
 }
-
-unsafe impl Sync for WaitQueue {}

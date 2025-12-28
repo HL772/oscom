@@ -13,8 +13,8 @@
 - Add a basic sleep_ms helper driven by timer ticks.
 - Initialize a bump frame allocator starting after ekernel within identity map.
 - Allocate early page tables from the frame allocator.
-- Add a Waiter helper for timeout-based waiting.
-- Add a WaitQueue helper with notify_one/notify_all.
+- Add a scheduler-backed wait timeout helper for blocking waits.
+- Add a WaitQueue helper that blocks tasks and wakes via notify_one/notify_all.
 - Add minimal run queue and scheduler tick hook scaffolding.
 - Add context struct and context_switch assembly stub.
 - Add a kernel stack helper backed by contiguous frames.
@@ -33,3 +33,4 @@
 - Refine block/wake state transitions for wait queues.
 - Add a trapframe guard for future preemption.
 - Track trapframe pointers in the task table.
+- Track wait completion reasons and validate task state transitions.

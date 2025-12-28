@@ -17,6 +17,9 @@
 - 调整 TaskWaitQueue 为纯 TaskId 容器，状态切换集中在 runtime。
 - 增加 TrapFrameGuard，用于记录当前 trapframe 指针。
 - TaskControlBlock 增加 trapframe 指针字段，为抢占保存上下文做准备。
+- WaitQueue 改为阻塞式等待，结合 TaskWaitQueue + SleepQueue 支持超时。
+- TaskControlBlock 增加 wait_reason，记录等待完成原因。
+- 引入 task 状态验证转换（transition_state），跳过过期队列项。
 
 ## 问题与定位
 - 调度仍处于占位阶段，尚未引入用户态/系统调用上下文保存。
