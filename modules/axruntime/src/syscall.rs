@@ -70,6 +70,8 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_GETEUID => sys_geteuid(),
         SYS_GETGID => sys_getgid(),
         SYS_GETEGID => sys_getegid(),
+        SYS_GETRESUID => sys_getresuid(ctx.args[0], ctx.args[1], ctx.args[2]),
+        SYS_GETRESGID => sys_getresgid(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_GETTID => sys_gettid(),
         SYS_SCHED_YIELD => sys_sched_yield(),
         SYS_SET_TID_ADDRESS => sys_set_tid_address(ctx.args[0]),
@@ -161,6 +163,8 @@ const SYS_GETUID: usize = 174;
 const SYS_GETEUID: usize = 175;
 const SYS_GETGID: usize = 176;
 const SYS_GETEGID: usize = 177;
+const SYS_GETRESUID: usize = 148;
+const SYS_GETRESGID: usize = 150;
 const SYS_GETTID: usize = 178;
 const SYS_SYSINFO: usize = 179;
 const SYS_SCHED_YIELD: usize = 124;
@@ -595,6 +599,40 @@ fn sys_getgid() -> Result<usize, Errno> {
 }
 
 fn sys_getegid() -> Result<usize, Errno> {
+    Ok(0)
+}
+
+fn sys_getresuid(ruid: usize, euid: usize, suid: usize) -> Result<usize, Errno> {
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    if ruid != 0 {
+        UserPtr::new(ruid).write(root_pa, 0usize).ok_or(Errno::Fault)?;
+    }
+    if euid != 0 {
+        UserPtr::new(euid).write(root_pa, 0usize).ok_or(Errno::Fault)?;
+    }
+    if suid != 0 {
+        UserPtr::new(suid).write(root_pa, 0usize).ok_or(Errno::Fault)?;
+    }
+    Ok(0)
+}
+
+fn sys_getresgid(rgid: usize, egid: usize, sgid: usize) -> Result<usize, Errno> {
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    if rgid != 0 {
+        UserPtr::new(rgid).write(root_pa, 0usize).ok_or(Errno::Fault)?;
+    }
+    if egid != 0 {
+        UserPtr::new(egid).write(root_pa, 0usize).ok_or(Errno::Fault)?;
+    }
+    if sgid != 0 {
+        UserPtr::new(sgid).write(root_pa, 0usize).ok_or(Errno::Fault)?;
+    }
     Ok(0)
 }
 

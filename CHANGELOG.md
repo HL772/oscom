@@ -47,7 +47,7 @@
 - Add clock_gettime/gettimeofday/getpid time stubs (MONOTONIC/RAW/BOOTTIME).
 - Add readv/writev helpers (iovcnt=0 returns 0) and route the user smoke through writev.
 - Add uname syscall stub with minimal utsname fields.
-- Add minimal getppid/getuid/geteuid/getgid/getegid stubs.
+- Add minimal getppid/getuid/geteuid/getgid/getegid/getresuid/getresgid stubs.
 - Add gettid and sched_yield stubs (TaskId+1 when available).
 - Add exit_group stub aligned with exit shutdown.
 - Add clock_gettime64 alias to clock_gettime stub.
