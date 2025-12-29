@@ -21,6 +21,7 @@
 - TaskControlBlock 增加 wait_reason，记录等待完成原因。
 - 引入 task 状态验证转换（transition_state），跳过过期队列项。
 - dummy task 接入 WaitQueue 的 wait_timeout/notify 路径，覆盖通知与超时。
+- wait_timeout 返回前清理 SleepQueue 条目，避免通知后残留唤醒项。
 
 ## 问题与定位
 - 调度仍处于占位阶段，尚未引入用户态/系统调用上下文保存。

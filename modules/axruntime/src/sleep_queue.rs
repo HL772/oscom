@@ -58,6 +58,19 @@ impl SleepQueue {
         }
         None
     }
+
+    pub fn remove(&self, task_id: TaskId) -> bool {
+        // Remove a specific sleeper to avoid stale wakeups.
+        // Safety: single-hart early use; no concurrent access yet.
+        let slots = unsafe { &mut *self.slots.get() };
+        for slot in slots.iter_mut() {
+            if slot.map_or(false, |entry| entry.task_id == task_id) {
+                *slot = None;
+                return true;
+            }
+        }
+        false
+    }
 }
 
 unsafe impl Sync for SleepQueue {}

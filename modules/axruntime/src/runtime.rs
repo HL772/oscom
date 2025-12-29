@@ -297,6 +297,7 @@ pub fn wait_timeout_ms(queue: &TaskWaitQueue, timeout_ms: u64) -> WaitResult {
         NEED_RESCHED.store(true, Ordering::Relaxed);
         CURRENT_TASK = None;
         crate::scheduler::switch(&mut *task_ptr, &IDLE_TASK);
+        let _ = SLEEP_QUEUE.remove(task_id);
         // Clear any stale wait-queue entry left by timeout or notify races.
         let _ = queue.pop(task_id);
         match task::take_wait_reason(task_id) {
