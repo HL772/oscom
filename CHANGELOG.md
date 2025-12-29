@@ -44,7 +44,7 @@
 - Add UserPtr/UserSlice helpers to validate and copy user buffers.
 - Add minimal sys_read for fd=0 using SBI getchar (EAGAIN when no input).
 - Make user-mode smoke buffer cross-page to exercise UserSlice chunking.
-- Add clock_gettime/gettimeofday/getpid time stubs based on timebase uptime.
+- Add clock_gettime/gettimeofday/getpid time stubs (MONOTONIC/RAW/BOOTTIME).
 - Add readv/writev helpers (iovcnt=0 returns 0) and route the user smoke through writev.
 - Add uname syscall stub with minimal utsname fields.
 - Add minimal getppid/getuid/geteuid/getgid/getegid stubs.

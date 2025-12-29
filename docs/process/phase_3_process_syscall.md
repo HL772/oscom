@@ -32,7 +32,7 @@
 - 增加 UserPtr/UserSlice 封装用户态访问，并在 sys_write 复用分段遍历。
 - 增加 user-test feature 与 USER_TEST=1 冒烟校验，便于验证 U-mode ecall 输出。
 - 用户态测试字符串跨页布局，用于覆盖 UserSlice 跨页读路径。
-- 增加 clock_gettime/gettimeofday/getpid，占位返回 timebase 时间与固定 PID。
+- 增加 clock_gettime/gettimeofday/getpid，占位支持 MONOTONIC/RAW/BOOTTIME 时间源。
 - 增加 clock_gettime64，占位复用 clock_gettime 逻辑。
 - 增加 nanosleep，占位优先走调度器睡眠，否则使用 timebase 忙等。
 - 增加 clock_getres/clock_getres_time64，占位返回 timebase 精度。
