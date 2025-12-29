@@ -111,6 +111,11 @@ pub fn on_trap_exit() {
     }
 }
 
+pub fn current_task_id() -> Option<TaskId> {
+    // SAFETY: single-hart early use; read-only access to CURRENT_TASK.
+    unsafe { CURRENT_TASK }
+}
+
 pub fn init() {
     TICK_COUNT.store(0, Ordering::Relaxed);
 

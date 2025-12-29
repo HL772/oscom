@@ -544,7 +544,8 @@ fn sys_nanosleep(req: usize, rem: usize) -> Result<usize, Errno> {
 }
 
 fn sys_getpid() -> Result<usize, Errno> {
-    Ok(1)
+    let pid = crate::runtime::current_task_id().map(|id| id + 1).unwrap_or(1);
+    Ok(pid)
 }
 
 fn sys_getppid() -> Result<usize, Errno> {
@@ -568,7 +569,8 @@ fn sys_getegid() -> Result<usize, Errno> {
 }
 
 fn sys_gettid() -> Result<usize, Errno> {
-    Ok(1)
+    let tid = crate::runtime::current_task_id().map(|id| id + 1).unwrap_or(1);
+    Ok(tid)
 }
 
 fn sys_sched_yield() -> Result<usize, Errno> {

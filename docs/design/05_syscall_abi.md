@@ -22,7 +22,7 @@
 - 早期实现 `readv/writev`，复用用户指针校验并支持分段缓冲区。
 - 早期实现 `uname`，返回最小可用的系统信息占位。
 - 早期实现 `getpid/getppid/getuid/geteuid/getgid/getegid` 等身份信息占位。
-- 早期实现 `gettid` 与 `sched_yield`，提供最小线程 ID 与让出路径。
+- 早期实现 `gettid` 与 `sched_yield`，任务上下文可用时返回 TaskId+1。
 - 早期实现 `exit_group`，与 `exit` 同步关机占位。
 - 早期实现 `getcwd`，占位返回根路径。
 - 早期实现 `set_tid_address`，校验指针可写并返回占位 TID。

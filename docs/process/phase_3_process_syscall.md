@@ -39,7 +39,7 @@
 - 增加 readv/writev，占位支持分段缓冲区访问。
 - 增加 uname，占位返回内核与平台信息。
 - 增加 getppid/getuid/geteuid/getgid/getegid 等身份信息占位。
-- 增加 gettid 与 sched_yield，占位支持线程 ID 与让出调度。
+- 增加 gettid 与 sched_yield，占位支持线程 ID；任务上下文可用时返回 TaskId+1。
 - 增加 exit_group，占位同步关机。
 - 增加 getcwd，占位返回根路径。
 - 增加 set_tid_address，占位返回 TID 并校验用户指针。

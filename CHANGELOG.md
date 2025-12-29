@@ -48,7 +48,7 @@
 - Add readv/writev helpers and route the user smoke through writev.
 - Add uname syscall stub with minimal utsname fields.
 - Add minimal getppid/getuid/geteuid/getgid/getegid stubs.
-- Add gettid and sched_yield stubs.
+- Add gettid and sched_yield stubs (TaskId+1 when available).
 - Add exit_group stub aligned with exit shutdown.
 - Add clock_gettime64 alias to clock_gettime stub.
 - Add getcwd stub returning root path.
