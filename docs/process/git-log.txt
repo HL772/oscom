@@ -1,4 +1,24 @@
-* commit 37d496a412f41dd2eeb51362386f7f4058a89bbc (HEAD -> bootstrap-riscv64)
+* commit bc32004ba695935977d885f9e9ccdfede5767757 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:43:13 +0800
+| 
+|     feat(syscall): report user rusage time
+| 
+|  CHANGELOG.md                            |  2 +-
+|  docs/process/phase_3_process_syscall.md |  2 +-
+|  modules/axruntime/src/syscall.rs        | 10 ++++++----
+|  3 files changed, 8 insertions(+), 6 deletions(-)
+| 
+* commit e09517c23da5b2e1628fdd82465c233c65c1ad0a
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:40:58 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 22 +++++++++++++++++++++-
+|  1 file changed, 21 insertions(+), 1 deletion(-)
+| 
+* commit 37d496a412f41dd2eeb51362386f7f4058a89bbc
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 11:40:42 +0800
 | 
