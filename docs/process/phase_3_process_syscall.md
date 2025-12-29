@@ -59,7 +59,7 @@
 - 增加 prctl(PR_SET_NAME/PR_GET_NAME)，占位设置进程名。
 - 增加 sched_getaffinity/sched_setaffinity，占位返回单核亲和性。
 - 增加 getrusage，占位返回零资源统计。
-- 增加 setpgid/getpgid/setsid，占位返回 TaskId+1 作为进程组信息。
+- 增加 setpgid/getpgid/setsid/getpgrp/setpgrp，占位返回 TaskId+1 作为进程组信息。
 
 ## 问题与定位
 - 调度仍处于占位阶段，尚未引入用户态/系统调用上下文保存。

@@ -71,4 +71,4 @@
 - Add prctl stub for process name.
 - Add sched affinity stubs for single CPU.
 - Add getrusage stub returning zero stats.
-- Add setpgid/getpgid/setsid stubs (TaskId+1 when available).
+- Add setpgid/getpgid/setsid/getpgrp/setpgrp stubs (TaskId+1 when available).
