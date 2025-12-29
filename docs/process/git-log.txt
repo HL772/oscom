@@ -1,4 +1,25 @@
-* commit 9df1a16a73ce91930af0b77b9a2220fc2fa29229 (HEAD -> bootstrap-riscv64)
+* commit fd71427f65cb18884249dea2a383ebb5bf3ea2b0 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:06:53 +0800
+| 
+|     feat(syscall): add lseek stub
+| 
+|  CHANGELOG.md                            |  1 +
+|  docs/design/05_syscall_abi.md           |  1 +
+|  docs/process/phase_3_process_syscall.md |  1 +
+|  modules/axruntime/src/syscall.rs        | 10 ++++++++++
+|  4 files changed, 13 insertions(+)
+| 
+* commit 7444ef94fc4bb3f8c73bb6f8ba749f5cb3b25d71
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:05:07 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 24 +++++++++++++++++++++++-
+|  1 file changed, 23 insertions(+), 1 deletion(-)
+| 
+* commit 9df1a16a73ce91930af0b77b9a2220fc2fa29229
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 11:04:45 +0800
 | 
