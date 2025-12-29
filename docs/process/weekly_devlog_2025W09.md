@@ -16,6 +16,7 @@
 - 补充 VFS/文件系统设计文档草案，明确缓存与挂载策略。
 - 补充网络子系统设计文档草案，明确 virtio-net 与协议栈接口。
 - 更新 phase_4/5/6 过程文档，标注当前处于准备期。
+- 补录 W01-W07 周报为空缺说明，保证过程文档完整性。
 - 更新 04_task_process 设计与 phase_3 过程文档。
 - `make test-qemu-smoke ARCH=riscv64 PLATFORM=qemu` 通过。
 
