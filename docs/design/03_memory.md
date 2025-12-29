@@ -13,6 +13,7 @@
 - 帧分配器起始地址使用 `ekernel` 对齐后的位置，避免覆盖内核镜像。
 - 页表页通过早期帧分配器动态分配，避免固定静态页表。
 - 增加页表遍历与用户指针翻译辅助，为 syscall 访问用户内存做准备。
+- 引入 `UserPtr`/`UserSlice` 封装用户态访问与复制路径。
 
 ## 关键数据结构
 - `PhysAddr/VirtAddr`：物理/虚拟地址封装与对齐工具。
@@ -22,6 +23,7 @@
 - `alloc_frame`：早期帧分配接口（无回收）。
 - `PageTable`：页表页从 `alloc_frame` 分配并清零。
 - `translate_user_ptr`：基于当前页表的用户指针翻译与权限检查。
+- `UserPtr/UserSlice`：用户指针与缓冲区访问封装。
 
 ## 关键流程图或伪代码
 ```text

@@ -2,7 +2,8 @@
 
 use core::arch::asm;
 use core::cmp::{max, min};
-use core::mem::MaybeUninit;
+use core::marker::PhantomData;
+use core::mem::{size_of, MaybeUninit};
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 pub const PAGE_SIZE: usize = 4096;
@@ -262,6 +263,129 @@ pub enum UserAccess {
     Read,
     Write,
     Execute,
+}
+
+/// 用户态指针封装，负责在访问前校验页表权限与范围。
+#[derive(Clone, Copy)]
+pub struct UserPtr<T> {
+    ptr: usize,
+    _marker: PhantomData<*const T>,
+}
+
+impl<T> UserPtr<T> {
+    pub const fn new(ptr: usize) -> Self {
+        Self {
+            ptr,
+            _marker: PhantomData,
+        }
+    }
+
+    pub const fn as_usize(self) -> usize {
+        self.ptr
+    }
+}
+
+impl<T: Copy> UserPtr<T> {
+    pub fn read(self, root_pa: usize) -> Option<T> {
+        let size = size_of::<T>();
+        let pa = translate_user_ptr(root_pa, self.ptr, size, UserAccess::Read)?;
+        // SAFETY: translate_user_ptr 已验证用户态权限与范围，
+        // 且当前阶段使用恒等映射，可直接读取对应物理页。
+        unsafe { Some((pa as *const T).read_unaligned()) }
+    }
+
+    pub fn write(self, root_pa: usize, value: T) -> Option<()> {
+        let size = size_of::<T>();
+        let pa = translate_user_ptr(root_pa, self.ptr, size, UserAccess::Write)?;
+        // SAFETY: translate_user_ptr 已验证用户态权限与范围，
+        // 且当前阶段使用恒等映射，可直接写入对应物理页。
+        unsafe {
+            (pa as *mut T).write_unaligned(value);
+        }
+        Some(())
+    }
+}
+
+/// 用户态切片封装，按页分段验证并支持复制。
+#[derive(Clone, Copy)]
+pub struct UserSlice {
+    ptr: usize,
+    len: usize,
+}
+
+impl UserSlice {
+    pub const fn new(ptr: usize, len: usize) -> Self {
+        Self { ptr, len }
+    }
+
+    pub const fn len(self) -> usize {
+        self.len
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.len == 0
+    }
+
+    pub fn for_each_chunk<F>(
+        self,
+        root_pa: usize,
+        access: UserAccess,
+        mut f: F,
+    ) -> Option<usize>
+    where
+        F: FnMut(usize, usize) -> Option<()>,
+    {
+        if self.len == 0 {
+            return Some(0);
+        }
+        let mut addr = self.ptr;
+        let mut remaining = self.len;
+        let mut processed = 0usize;
+        while remaining > 0 {
+            let page_off = addr & (PAGE_SIZE - 1);
+            let chunk = min(remaining, PAGE_SIZE - page_off);
+            let pa = translate_user_ptr(root_pa, addr, chunk, access)?;
+            f(pa, chunk)?;
+            addr = addr.wrapping_add(chunk);
+            remaining -= chunk;
+            processed += chunk;
+        }
+        Some(processed)
+    }
+
+    pub fn copy_to_slice(self, root_pa: usize, dst: &mut [u8]) -> Option<usize> {
+        if dst.len() < self.len {
+            return None;
+        }
+        let mut offset = 0usize;
+        let dst_ptr = dst.as_mut_ptr();
+        self.for_each_chunk(root_pa, UserAccess::Read, |pa, chunk| {
+            // SAFETY: 已验证用户态权限与范围，且 dst 有足够容量。
+            unsafe {
+                core::ptr::copy_nonoverlapping(pa as *const u8, dst_ptr.add(offset), chunk);
+            }
+            offset += chunk;
+            Some(())
+        })?;
+        Some(offset)
+    }
+
+    pub fn copy_from_slice(self, root_pa: usize, src: &[u8]) -> Option<usize> {
+        if src.len() < self.len {
+            return None;
+        }
+        let mut offset = 0usize;
+        let src_ptr = src.as_ptr();
+        self.for_each_chunk(root_pa, UserAccess::Write, |pa, chunk| {
+            // SAFETY: 已验证用户态权限与范围，且 src 有足够数据。
+            unsafe {
+                core::ptr::copy_nonoverlapping(src_ptr.add(offset), pa as *mut u8, chunk);
+            }
+            offset += chunk;
+            Some(())
+        })?;
+        Some(offset)
+    }
 }
 
 pub fn kernel_root_pa() -> usize {

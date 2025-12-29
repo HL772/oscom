@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::mm::{self, UserAccess};
+use crate::mm::{self, UserAccess, UserSlice};
 use crate::sbi;
 use crate::trap::TrapFrame;
 
@@ -71,24 +71,20 @@ fn sys_write(fd: usize, buf: usize, len: usize) -> Result<usize, Errno> {
         return Err(Errno::Fault);
     }
 
-    let mut addr = buf;
-    let mut remaining = len;
+    let slice = UserSlice::new(buf, len);
     let mut written = 0usize;
-    while remaining > 0 {
-        let page_off = addr & (mm::PAGE_SIZE - 1);
-        let chunk = core::cmp::min(remaining, mm::PAGE_SIZE - page_off);
-        let pa = mm::translate_user_ptr(root_pa, addr, chunk, UserAccess::Read)
-            .ok_or(Errno::Fault)?;
-        // SAFETY: 翻译结果确保该片段在用户态可读。
-        unsafe {
-            let src = pa as *const u8;
-            for i in 0..chunk {
-                sbi::console_putchar(*src.add(i));
+    slice
+        .for_each_chunk(root_pa, UserAccess::Read, |pa, chunk| {
+            // SAFETY: 翻译结果确保该片段在用户态可读。
+            unsafe {
+                let src = pa as *const u8;
+                for i in 0..chunk {
+                    sbi::console_putchar(*src.add(i));
+                }
             }
-        }
-        addr = addr.wrapping_add(chunk);
-        remaining -= chunk;
-        written += chunk;
-    }
+            written += chunk;
+            Some(())
+        })
+        .ok_or(Errno::Fault)?;
     Ok(written)
 }

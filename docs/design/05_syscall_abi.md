@@ -11,7 +11,7 @@
 - 将 ABI 细节下沉到架构层（如 `arch/*/syscall.rs`），内核核心只依赖 `SyscallAbi` 抽象。
 - syscall 分发采用静态表（数组/切片）索引，避免早期动态分配。
 - 统一 errno 处理：内核内部使用 `Result<usize, Errno>`，出口转换为 `-errno` 返回给用户态。
-- 用户态内存访问通过 `UserPtr`/`UserSlice` 等封装校验范围与页表映射（后续与 mm 子系统对接）。
+- 用户态内存访问通过 `UserPtr`/`UserSlice` 封装校验范围与页表映射，sys_write 先行接入验证路径。
 - 兼容层为关键 syscall 提供 Linux 语义对齐（如 `getdents64`/`ioctl`/`pipe2`/`dup3`）。
 - 早期实现 `write` 的用户指针翻译与控制台输出，用于验证 U-mode ecall 链路。
 

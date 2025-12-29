@@ -27,6 +27,7 @@
 - trap 入口通过 sscratch 交换内核栈，保证 U-mode trap 使用内核栈。
 - 添加用户态测试映射与 enter_user 入口，用于验证 ecall 路径。
 - 实现最小 sys_write：翻译用户指针并输出到控制台。
+- 增加 UserPtr/UserSlice 封装用户态访问，并在 sys_write 复用分段遍历。
 - 增加 user-test feature 与 USER_TEST=1 冒烟校验，便于验证 U-mode ecall 输出。
 
 ## 问题与定位
