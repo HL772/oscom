@@ -55,7 +55,7 @@
 - Add set_tid_address stub returning TaskId+1.
 - Add close stub for stdio fds.
 - Add getrlimit/prlimit64 stubs with default limits.
-- Add ioctl stubs for TIOCGWINSZ/TIOCSWINSZ/TIOCGPGRP/TIOCSPGRP/TCGETS/TCSETS.
+- Add ioctl stubs for TIOCGWINSZ/TIOCSWINSZ/TIOCGPGRP/TIOCSPGRP/TIOCSCTTY/TCGETS/TCSETS.
 - Add nanosleep stub using scheduler sleep when available.
 - Add sysinfo stub for uptime and memory size.
 - Add getrandom stub with xorshift output.

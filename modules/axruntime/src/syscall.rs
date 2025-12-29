@@ -151,6 +151,7 @@ const TCSETSW: usize = 0x5403;
 const TCSETSF: usize = 0x5404;
 const TIOCGPGRP: usize = 0x540f;
 const TIOCSPGRP: usize = 0x5410;
+const TIOCSCTTY: usize = 0x540e;
 const SYS_CLOCK_GETTIME: usize = 113;
 const SYS_CLOCK_GETTIME64: usize = 403;
 const SYS_CLOCK_GETRES: usize = 114;
@@ -806,6 +807,7 @@ fn sys_ioctl(fd: usize, cmd: usize, arg: usize) -> Result<usize, Errno> {
                 .ok_or(Errno::Fault)?;
             Ok(0)
         }
+        TIOCSCTTY => Ok(0),
         TCGETS => {
             if arg == 0 {
                 return Err(Errno::Fault);

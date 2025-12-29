@@ -45,7 +45,7 @@
 - 增加 set_tid_address，占位返回 TaskId+1 并校验用户指针。
 - 增加 close，占位支持标准输入输出关闭。
 - 增加 getrlimit/prlimit64，占位返回默认资源限制。
-- 增加 ioctl(TIOCGWINSZ/TIOCSWINSZ/TIOCGPGRP/TIOCSPGRP/TCGETS/TCSETS*)，占位返回窗口大小与最小 termios。
+- 增加 ioctl(TIOCGWINSZ/TIOCSWINSZ/TIOCGPGRP/TIOCSPGRP/TIOCSCTTY/TCGETS/TCSETS*)，占位返回窗口大小与最小 termios。
 - 增加 sysinfo，占位返回内存与运行时间信息。
 - 增加 getrandom，占位返回伪随机数据。
 - 增加 fstat，占位返回标准输入输出元数据。
