@@ -420,10 +420,10 @@ fn sys_clock_gettime(clock_id: usize, tp: usize) -> Result<usize, Errno> {
     if tp == 0 {
         return Err(Errno::Fault);
     }
-    let now_ms = time::uptime_ms();
+    let now_ns = time::monotonic_ns();
     let ts = Timespec {
-        tv_sec: (now_ms / 1000) as i64,
-        tv_nsec: ((now_ms % 1000) * 1_000_000) as i64,
+        tv_sec: (now_ns / 1_000_000_000) as i64,
+        tv_nsec: (now_ns % 1_000_000_000) as i64,
     };
     match clock_id {
         CLOCK_REALTIME | CLOCK_MONOTONIC => {
@@ -442,7 +442,10 @@ fn sys_clock_getres(clock_id: usize, tp: usize) -> Result<usize, Errno> {
     if tp == 0 {
         return Ok(0);
     }
-    let hz = time::tick_hz();
+    let hz = match time::timebase_hz() {
+        0 => time::tick_hz(),
+        value => value,
+    };
     let nsec = if hz == 0 {
         0
     } else {
@@ -471,10 +474,10 @@ fn sys_gettimeofday(tv: usize, tz: usize) -> Result<usize, Errno> {
         return Err(Errno::Fault);
     }
     if tv != 0 {
-        let now_ms = time::uptime_ms();
+        let now_ns = time::monotonic_ns();
         let tv_val = Timeval {
-            tv_sec: (now_ms / 1000) as i64,
-            tv_usec: ((now_ms % 1000) * 1_000) as i64,
+            tv_sec: (now_ns / 1_000_000_000) as i64,
+            tv_usec: ((now_ns % 1_000_000_000) / 1_000) as i64,
         };
         UserPtr::new(tv)
             .write(root_pa, tv_val)
@@ -509,9 +512,8 @@ fn sys_nanosleep(req: usize, rem: usize) -> Result<usize, Errno> {
     let total_ns = (ts.tv_sec as u64)
         .saturating_mul(1_000_000_000)
         .saturating_add(ts.tv_nsec as u64);
-    let sleep_ms = total_ns.saturating_add(999_999) / 1_000_000;
-    let deadline = time::uptime_ms().saturating_add(sleep_ms);
-    while time::uptime_ms() < deadline {
+    let deadline = time::monotonic_ns().saturating_add(total_ns);
+    while time::monotonic_ns() < deadline {
         crate::cpu::wait_for_interrupt();
     }
     if rem != 0 {
@@ -687,7 +689,7 @@ fn sys_sysinfo(info: usize) -> Result<usize, Errno> {
         return Err(Errno::Fault);
     }
     let total = mm::memory_size() as u64;
-    let uptime = (time::uptime_ms() / 1000) as i64;
+    let uptime = (time::monotonic_ns() / 1_000_000_000) as i64;
     let sysinfo = Sysinfo {
         uptime,
         loads: [0; 3],

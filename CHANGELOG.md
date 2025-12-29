@@ -43,7 +43,7 @@
 - Add UserPtr/UserSlice helpers to validate and copy user buffers.
 - Add minimal sys_read for fd=0 using SBI getchar (non-blocking placeholder).
 - Make user-mode smoke buffer cross-page to exercise UserSlice chunking.
-- Add clock_gettime/gettimeofday/getpid time stubs based on uptime ticks.
+- Add clock_gettime/gettimeofday/getpid time stubs based on timebase uptime.
 - Add readv/writev helpers and route the user smoke through writev.
 - Add uname syscall stub with minimal utsname fields.
 - Add minimal getppid/getuid/geteuid/getgid/getegid stubs.
@@ -55,7 +55,7 @@
 - Add close stub for stdio fds.
 - Add getrlimit/prlimit64 stubs with default limits.
 - Add ioctl TIOCGWINSZ stub with default 80x24.
-- Add nanosleep stub using tick-based busy wait.
+- Add nanosleep stub using timebase busy wait.
 - Add sysinfo stub for uptime and memory size.
 - Add getrandom stub with xorshift output.
 - Add fstat stub for stdio character device metadata.
@@ -63,7 +63,7 @@
 - Add robust list stubs returning empty state.
 - Add rt_sigaction/rt_sigprocmask stubs.
 - Add fcntl stub for stdio flags.
-- Add clock_getres stubs using tick resolution.
+- Add clock_getres stubs using timebase resolution.
 - Add umask stub with stored mask.
 - Add prctl stub for process name.
 - Add sched affinity stubs for single CPU.
