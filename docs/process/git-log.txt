@@ -1,4 +1,25 @@
-* commit 03db7758939f5eaf695a8af92aef10dc0cf5866f (HEAD -> bootstrap-riscv64)
+* commit 026ea8882c908ce70100813dcec405432cc38cc6 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 13:22:41 +0800
+| 
+|     feat(syscall): add pipe2 and fd table stubs
+| 
+|  CHANGELOG.md                            |   1 +
+|  docs/design/05_syscall_abi.md           |   3 +-
+|  docs/process/phase_3_process_syscall.md |   1 +
+|  modules/axruntime/src/syscall.rs        | 557 +++++++++++++++++++++---------
+|  4 files changed, 403 insertions(+), 159 deletions(-)
+| 
+* commit 086bae2a6701237e7cfe5b67a9eb878463a69b09
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 13:02:35 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 15 ++++++++++++++-
+|  1 file changed, 14 insertions(+), 1 deletion(-)
+| 
+* commit 03db7758939f5eaf695a8af92aef10dc0cf5866f
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 13:02:12 +0800
 | 
