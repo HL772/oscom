@@ -24,7 +24,7 @@
 - 早期实现 `mknodat/symlinkat/linkat/renameat/renameat2`，占位仅校验指针与 AT_FDCWD，未提供真实重命名/链接能力。
 - 早期实现 `statfs/fstatfs`，占位填充基本文件系统信息。
 - 早期实现 `fchmodat/fchownat/utimensat`，占位校验参数与路径，允许根目录与 `/dev` 伪节点。
-- 早期实现 `poll/ppoll`，支持 pipe 可读/可写事件、单 fd 阻塞等待与多 fd 的 sleep-retry 轮询，`nfds=0` 作为睡眠路径，占位忽略 signal mask。
+- 早期实现 `poll/ppoll`，支持 pipe 可读/可写事件、单 fd 阻塞等待；多 fd 复用共享等待队列并定期超时重扫，pipe 读写/关闭会唤醒等待者；`nfds=0` 作为睡眠路径，占位忽略 signal mask。
 - 早期实现 `uname`，返回最小可用的系统信息占位。
 - 早期实现 `getpid/getppid/getuid/geteuid/getgid/getegid/getresuid/getresgid` 等身份信息占位。
 - 早期实现 `gettid` 与 `sched_yield`，任务上下文可用时返回 TaskId+1。

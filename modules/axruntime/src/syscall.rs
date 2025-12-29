@@ -506,6 +506,8 @@ static PIPE_WRITE_WAITERS: [crate::task_wait_queue::TaskWaitQueue; PIPE_SLOTS] =
     crate::task_wait_queue::TaskWaitQueue::new(),
     crate::task_wait_queue::TaskWaitQueue::new(),
 ];
+// SAFETY: poll/ppoll 共享等待队列在单核阶段顺序访问。
+static POLL_WAITERS: crate::task_wait_queue::TaskWaitQueue = crate::task_wait_queue::TaskWaitQueue::new();
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -1943,6 +1945,10 @@ fn pipe_write_queue(pipe_id: usize) -> &'static crate::task_wait_queue::TaskWait
     &PIPE_WRITE_WAITERS[pipe_id]
 }
 
+fn ppoll_wait_queue() -> &'static crate::task_wait_queue::TaskWaitQueue {
+    &POLL_WAITERS
+}
+
 fn default_statfs() -> Statfs {
     // 使用内存容量填充占位 statfs，保证用户态工具有可读值。
     const TMPFS_MAGIC: u64 = 0x0102_1994;
@@ -2218,6 +2224,8 @@ fn pipe_release(kind: FdKind) {
     if unsafe { PIPES[pipe_id].readers == 0 } {
         let _ = crate::runtime::wake_all(pipe_write_queue(pipe_id));
     }
+    // fd 关闭可能触发 HUP/ERR，唤醒 poll/ppoll 等待者。
+    let _ = crate::runtime::wake_all(ppoll_wait_queue());
     if unsafe { PIPES[pipe_id].readers == 0 && PIPES[pipe_id].writers == 0 } {
         unsafe {
             PIPES[pipe_id] = EMPTY_PIPE;
@@ -2270,6 +2278,7 @@ fn pipe_read(pipe_id: usize, root_pa: usize, buf: usize, len: usize, nonblock: b
         offset += chunk;
     }
     let _ = crate::runtime::wake_one(pipe_write_queue(pipe_id));
+    let _ = crate::runtime::wake_all(ppoll_wait_queue());
     Ok(to_read)
 }
 
@@ -2320,6 +2329,7 @@ fn pipe_write(pipe_id: usize, root_pa: usize, buf: usize, len: usize, nonblock: 
         offset += chunk;
     }
     let _ = crate::runtime::wake_one(pipe_read_queue(pipe_id));
+    let _ = crate::runtime::wake_all(ppoll_wait_queue());
     Ok(to_write)
 }
 
@@ -2430,22 +2440,20 @@ fn ppoll_wait(root_pa: usize, fds: usize, nfds: usize, timeout_ms: Option<u64>) 
             }
         }
     }
-    // 多 fd 情况使用简单的 sleep-retry 轮询，避免引入复杂的多队列等待。
+    // 多 fd 情况使用共享等待队列 + 周期性超时，减少纯 sleep-retry 轮询。
     let mut remaining_ms = timeout_ms;
     loop {
-        let sleep_ms = match remaining_ms {
+        let wait_ms = match remaining_ms {
             Some(0) => return Ok(0),
             Some(ms) => core::cmp::min(ms, PPOLL_RETRY_SLEEP_MS),
             None => PPOLL_RETRY_SLEEP_MS,
         };
-        if sleep_ms == 0 {
+        if wait_ms == 0 {
             return Ok(0);
         }
-        if !crate::runtime::sleep_current_ms(sleep_ms) {
-            return Ok(0);
-        }
+        let _ = crate::runtime::wait_timeout_ms(ppoll_wait_queue(), wait_ms);
         if let Some(ms) = remaining_ms {
-            remaining_ms = Some(ms.saturating_sub(sleep_ms));
+            remaining_ms = Some(ms.saturating_sub(wait_ms));
         }
         let (ready_retry, _) = ppoll_scan(root_pa, fds, nfds)?;
         if ready_retry > 0 {
