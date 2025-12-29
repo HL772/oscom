@@ -79,6 +79,8 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_SYSINFO => sys_sysinfo(ctx.args[0]),
         SYS_GETRANDOM => sys_getrandom(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_FSTAT => sys_fstat(ctx.args[0], ctx.args[1]),
+        SYS_DUP => sys_dup(ctx.args[0]),
+        SYS_DUP3 => sys_dup3(ctx.args[0], ctx.args[1], ctx.args[2]),
         _ => Err(Errno::NoSys),
     }
 }
@@ -96,6 +98,8 @@ const SYS_PRLIMIT64: usize = 261;
 const SYS_IOCTL: usize = 29;
 const SYS_GETRANDOM: usize = 278;
 const SYS_FSTAT: usize = 80;
+const SYS_DUP: usize = 23;
+const SYS_DUP3: usize = 24;
 
 const TIOCGWINSZ: usize = 0x5413;
 const SYS_CLOCK_GETTIME: usize = 113;
@@ -118,6 +122,7 @@ const CLOCK_REALTIME: usize = 0;
 const CLOCK_MONOTONIC: usize = 1;
 const IOV_MAX: usize = 1024;
 const S_IFCHR: u32 = 0o020000;
+const O_CLOEXEC: usize = 0x80000;
 
 static RNG_STATE: AtomicU64 = AtomicU64::new(0);
 
@@ -675,6 +680,29 @@ fn sys_fstat(fd: usize, stat_ptr: usize) -> Result<usize, Errno> {
         .write(root_pa, stat)
         .ok_or(Errno::Fault)?;
     Ok(0)
+}
+
+fn sys_dup(oldfd: usize) -> Result<usize, Errno> {
+    if oldfd <= 2 {
+        return Ok(oldfd);
+    }
+    Err(Errno::Badf)
+}
+
+fn sys_dup3(oldfd: usize, newfd: usize, flags: usize) -> Result<usize, Errno> {
+    if oldfd > 2 {
+        return Err(Errno::Badf);
+    }
+    if oldfd == newfd {
+        return Err(Errno::Inval);
+    }
+    if flags != 0 && flags != O_CLOEXEC {
+        return Err(Errno::Inval);
+    }
+    if newfd <= 2 {
+        return Ok(newfd);
+    }
+    Err(Errno::Badf)
 }
 
 fn load_iovec(root_pa: usize, iov_ptr: usize, index: usize) -> Result<Iovec, Errno> {
