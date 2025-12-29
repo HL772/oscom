@@ -50,7 +50,7 @@
 - Add mknodat/symlinkat/linkat/renameat/renameat2 stubs with AT_FDCWD-only path validation.
 - Add statfs/fstatfs stubs returning placeholder filesystem stats.
 - Add fchmodat/fchownat/utimensat stubs for root and /dev pseudo paths.
-- Add ppoll stub that reports pipe readiness and can block for a single pipe fd.
+- Add ppoll stub that reports pipe readiness, blocks on a single pipe fd, and sleep-retries for multi-fd waits.
 - Track O_NONBLOCK via fcntl and honor it for pipe reads/writes.
 - Add uname syscall stub with minimal utsname fields.
 - Add minimal getppid/getuid/geteuid/getgid/getegid/getresuid/getresgid stubs.

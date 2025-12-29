@@ -265,6 +265,7 @@ const POLLOUT: u16 = 0x004;
 const POLLERR: u16 = 0x008;
 const POLLHUP: u16 = 0x010;
 const POLLNVAL: u16 = 0x020;
+const PPOLL_RETRY_SLEEP_MS: u64 = 10;
 const PR_SET_NAME: usize = 15;
 const PR_GET_NAME: usize = 16;
 const GRND_NONBLOCK: usize = 0x1;
@@ -1031,59 +1032,52 @@ fn sys_ppoll(fds: usize, nfds: usize, tmo: usize, _sigmask: usize, _sigsetsize: 
     let total = nfds.checked_mul(stride).ok_or(Errno::Fault)?;
     validate_user_read(root_pa, fds, total)?;
     validate_user_write(root_pa, fds, total)?;
-    let mut ready = 0usize;
-    let mut single_fd = None;
-    let mut single_events = 0u16;
-    for index in 0..nfds {
-        let base = index
-            .checked_mul(stride)
-            .and_then(|off| fds.checked_add(off))
-            .ok_or(Errno::Fault)?;
-        let mut pollfd = UserPtr::<PollFd>::new(base)
-            .read(root_pa)
-            .ok_or(Errno::Fault)?;
-        let events = pollfd.events as u16;
-        let revents = poll_revents_for_fd(pollfd.fd, events);
-        if revents != 0 {
-            ready += 1;
-        }
-        if nfds == 1 {
-            single_fd = Some(pollfd.fd);
-            single_events = events;
-        }
-        pollfd.revents = revents as i16;
-        UserPtr::new(base)
-            .write(root_pa, pollfd)
-            .ok_or(Errno::Fault)?;
-    }
-    if ready > 0 || !can_block_current() || nfds != 1 {
+    let (ready, single) = ppoll_scan(root_pa, fds, nfds)?;
+    if ready > 0 || !can_block_current() {
         return Ok(ready);
     }
-    let Some(fd) = single_fd else {
-        return Ok(0);
-    };
-    let Some(queue) = ppoll_single_waiter_queue(fd, single_events) else {
-        return Ok(0);
-    };
     let timeout_ms = ppoll_timeout_ms(root_pa, tmo)?;
-    if let Some(timeout_ms) = timeout_ms {
-        if timeout_ms == 0 {
+    if let Some(0) = timeout_ms {
+        return Ok(0);
+    }
+    if nfds == 1 {
+        if let Some((fd, events)) = single {
+            if let Some(queue) = ppoll_single_waiter_queue(fd, events) {
+                if let Some(timeout_ms) = timeout_ms {
+                    let _ = crate::runtime::wait_timeout_ms(queue, timeout_ms);
+                } else {
+                    crate::runtime::block_current(queue);
+                }
+                let (ready_after, _) = ppoll_scan(root_pa, fds, nfds)?;
+                return Ok(ready_after);
+            }
+        }
+    }
+    // 多 fd 情况使用简单的 sleep-retry 轮询，避免引入复杂的多队列等待。
+    let mut remaining_ms = timeout_ms;
+    loop {
+        let sleep_ms = match remaining_ms {
+            Some(0) => return Ok(0),
+            Some(ms) => core::cmp::min(ms, PPOLL_RETRY_SLEEP_MS),
+            None => PPOLL_RETRY_SLEEP_MS,
+        };
+        if sleep_ms == 0 {
             return Ok(0);
         }
-        let _ = crate::runtime::wait_timeout_ms(queue, timeout_ms);
-    } else {
-        crate::runtime::block_current(queue);
+        if !crate::runtime::sleep_current_ms(sleep_ms) {
+            return Ok(0);
+        }
+        if let Some(ms) = remaining_ms {
+            remaining_ms = Some(ms.saturating_sub(sleep_ms));
+        }
+        let (ready_retry, _) = ppoll_scan(root_pa, fds, nfds)?;
+        if ready_retry > 0 {
+            return Ok(ready_retry);
+        }
+        if !can_block_current() {
+            return Ok(0);
+        }
     }
-    let base = fds;
-    let mut pollfd = UserPtr::<PollFd>::new(base)
-        .read(root_pa)
-        .ok_or(Errno::Fault)?;
-    let revents = poll_revents_for_fd(pollfd.fd, pollfd.events as u16);
-    pollfd.revents = revents as i16;
-    UserPtr::new(base)
-        .write(root_pa, pollfd)
-        .ok_or(Errno::Fault)?;
-    Ok(if revents != 0 { 1 } else { 0 })
 }
 
 fn sys_clock_gettime(clock_id: usize, tp: usize) -> Result<usize, Errno> {
@@ -2440,6 +2434,35 @@ fn poll_revents_for_fd(fd: i32, events: u16) -> u16 {
         }
         _ => 0,
     }
+}
+
+fn ppoll_scan(root_pa: usize, fds: usize, nfds: usize) -> Result<(usize, Option<(i32, u16)>), Errno> {
+    let stride = size_of::<PollFd>();
+    let mut ready = 0usize;
+    let mut single = None;
+    for index in 0..nfds {
+        let base = index
+            .checked_mul(stride)
+            .and_then(|off| fds.checked_add(off))
+            .ok_or(Errno::Fault)?;
+        let mut pollfd = UserPtr::<PollFd>::new(base)
+            .read(root_pa)
+            .ok_or(Errno::Fault)?;
+        let events = pollfd.events as u16;
+        let revents = poll_revents_for_fd(pollfd.fd, events);
+        if revents != 0 {
+            ready += 1;
+        }
+        if nfds == 1 {
+            single = Some((pollfd.fd, events));
+        }
+        // 每次扫描都回写 revents，确保用户态可直接读取最新状态。
+        pollfd.revents = revents as i16;
+        UserPtr::new(base)
+            .write(root_pa, pollfd)
+            .ok_or(Errno::Fault)?;
+    }
+    Ok((ready, single))
 }
 
 fn ppoll_timeout_ms(root_pa: usize, tmo: usize) -> Result<Option<u64>, Errno> {

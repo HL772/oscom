@@ -41,7 +41,7 @@
 - 增加 mknodat/symlinkat/linkat/renameat/renameat2，占位校验 AT_FDCWD 与路径指针。
 - 增加 statfs/fstatfs，占位填充基本文件系统信息。
 - 增加 fchmodat/fchownat/utimensat，占位支持根目录与 `/dev` 伪节点。
-- 增加 ppoll，支持 pipe 可读/可写事件与单 fd 阻塞等待。
+- 增加 ppoll，支持 pipe 可读/可写事件、单 fd 阻塞等待与多 fd sleep-retry 轮询等待。
 - 增加 uname，占位返回内核与平台信息。
 - 增加 getppid/getuid/geteuid/getgid/getegid/getresuid/getresgid 等身份信息占位。
 - 增加 gettid 与 sched_yield，占位支持线程 ID；任务上下文可用时返回 TaskId+1。
