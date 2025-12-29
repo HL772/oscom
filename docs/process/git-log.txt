@@ -1,4 +1,27 @@
-* commit bcb2d707830ce4c1ce163a1a139a9eaacf3dff8a (HEAD -> bootstrap-riscv64)
+* commit 44b1b02a136b5debabd522f307cfae6a3071b254 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 20:08:19 +0800
+| 
+|     feat(syscall): key private futex by address space
+| 
+|  CHANGELOG.md                            |  1 +
+|  docs/design/05_syscall_abi.md           |  1 +
+|  docs/process/phase_3_process_syscall.md |  1 +
+|  modules/axruntime/src/futex.rs          | 50 ++++++++++++++++++++++---------
+|  modules/axruntime/src/process.rs        |  2 +-
+|  modules/axruntime/src/syscall.rs        | 12 ++++++--
+|  6 files changed, 50 insertions(+), 17 deletions(-)
+| 
+* commit ae93c2133d1cb0b822cfa3b32e28b097fd7db858
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 20:02:14 +0800
+| 
+|     chore(process): refresh git log
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit bcb2d707830ce4c1ce163a1a139a9eaacf3dff8a
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 20:02:04 +0800
 | 
