@@ -1,4 +1,25 @@
-* commit ca2887ef0c5d5833134ab2fbade5cfdb99e8e7ac (HEAD -> bootstrap-riscv64)
+* commit 17a88db20a32fb2eff7399f621815ebff31cfda6 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:14:47 +0800
+| 
+|     feat(syscall): align pgid with task id
+| 
+|  CHANGELOG.md                            |  2 +-
+|  docs/design/05_syscall_abi.md           |  2 +-
+|  docs/process/phase_3_process_syscall.md |  2 +-
+|  modules/axruntime/src/syscall.rs        | 15 +++++++++------
+|  4 files changed, 12 insertions(+), 9 deletions(-)
+| 
+* commit 27e6a57ff2bc04ecb7b06862ab677e776f071416
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:13:42 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit ca2887ef0c5d5833134ab2fbade5cfdb99e8e7ac
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 11:13:26 +0800
 | 
