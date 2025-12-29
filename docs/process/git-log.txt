@@ -1,4 +1,30 @@
-* commit ecc566fe7b5edf0cfd38ec9f5ed1932e43e3261d (HEAD -> bootstrap-riscv64)
+* commit fd964493ec377108fcd6b4b171df3b3585032ebb (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 17:44:19 +0800
+| 
+|     feat(mm): add frame refcounting for CoW cleanup
+| 
+|  CHANGELOG.md                            |   1 +
+|  docs/design/03_memory.md                |   4 +-
+|  docs/design/04_task_process.md          |   1 +
+|  docs/process/phase_2_mm.md              |   3 +-
+|  docs/process/phase_3_process_syscall.md |   1 +
+|  modules/axruntime/src/mm.rs             | 200 ++++++++++++++++++++++++++++--
+|  modules/axruntime/src/process.rs        |  24 +++-
+|  modules/axruntime/src/runtime.rs        |   4 +-
+|  modules/axruntime/src/syscall.rs        |   4 +
+|  9 files changed, 229 insertions(+), 13 deletions(-)
+| 
+* commit 4b339c8936d7c5bc6520b988fea241a5ec7d10cf
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 17:03:08 +0800
+| 
+|     chore(docs): update git history logs
+| 
+|  docs/process/git-log.txt | 30 +++++++++++++++++++++++++++++-
+|  1 file changed, 29 insertions(+), 1 deletion(-)
+| 
+* commit ecc566fe7b5edf0cfd38ec9f5ed1932e43e3261d
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 17:02:50 +0800
 | 
