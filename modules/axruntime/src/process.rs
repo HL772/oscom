@@ -20,6 +20,7 @@ static mut PROC_STATE: [ProcState; MAX_PROCS] = [ProcState::Empty; MAX_PROCS];
 static mut PROC_PPID: [usize; MAX_PROCS] = [0; MAX_PROCS];
 static mut PROC_EXIT: [i32; MAX_PROCS] = [0; MAX_PROCS];
 static mut PROC_ROOT: [usize; MAX_PROCS] = [0; MAX_PROCS];
+static mut PROC_CLEARTID: [usize; MAX_PROCS] = [0; MAX_PROCS];
 // 固定大小等待队列：每个父进程一个，用于 waitpid 阻塞。
 static PROC_WAITERS: [TaskWaitQueue; MAX_PROCS] = [
     TaskWaitQueue::new(),
@@ -42,6 +43,7 @@ pub fn init_process(task_id: TaskId, parent_pid: usize, root_pa: usize) -> usize
             PROC_PPID[idx] = parent_pid;
             PROC_EXIT[idx] = 0;
             PROC_ROOT[idx] = root_pa;
+            PROC_CLEARTID[idx] = 0;
         }
     }
     pid
@@ -67,6 +69,16 @@ pub fn exit_current(code: i32) -> bool {
     let idx = task_id;
     // SAFETY: early boot single-hart; process table reads are serialized.
     let parent = unsafe { PROC_PPID.get(idx).copied().unwrap_or(0) };
+    let (root_pa, clear_tid) = unsafe {
+        (
+            PROC_ROOT.get(idx).copied().unwrap_or(0),
+            PROC_CLEARTID.get(idx).copied().unwrap_or(0),
+        )
+    };
+    if root_pa != 0 && clear_tid != 0 {
+        // 清零 child_tid（futex 唤醒未实现，后续补齐）。
+        let _ = mm::UserPtr::new(clear_tid).write(root_pa, 0usize);
+    }
     // SAFETY: early boot single-hart; process table writes are serialized.
     unsafe {
         if idx >= MAX_PROCS || PROC_STATE[idx] == ProcState::Empty {
@@ -74,6 +86,7 @@ pub fn exit_current(code: i32) -> bool {
         }
         PROC_STATE[idx] = ProcState::Zombie;
         PROC_EXIT[idx] = code;
+        PROC_CLEARTID[idx] = 0;
     }
     if parent != 0 {
         let parent_idx = parent.saturating_sub(1);
@@ -95,6 +108,33 @@ pub fn update_current_root(root_pa: usize) -> bool {
             return false;
         }
         PROC_ROOT[idx] = root_pa;
+        true
+    }
+}
+
+pub fn set_current_clear_tid(tidptr: usize) -> bool {
+    let Some(task_id) = runtime::current_task_id() else {
+        return false;
+    };
+    let idx = task_id;
+    // SAFETY: early boot single-hart; process table writes are serialized.
+    unsafe {
+        if idx >= MAX_PROCS || PROC_STATE[idx] == ProcState::Empty {
+            return false;
+        }
+        PROC_CLEARTID[idx] = tidptr;
+        true
+    }
+}
+
+pub fn set_clear_tid(pid: usize, tidptr: usize) -> bool {
+    let idx = pid.saturating_sub(1);
+    // SAFETY: early boot single-hart; process table writes are serialized.
+    unsafe {
+        if idx >= MAX_PROCS || PROC_STATE[idx] == ProcState::Empty {
+            return false;
+        }
+        PROC_CLEARTID[idx] = tidptr;
         true
     }
 }
@@ -141,6 +181,7 @@ pub fn waitpid(target: isize, status: usize, options: usize) -> Result<usize, Er
                     PROC_PPID[idx] = 0;
                     PROC_EXIT[idx] = 0;
                     PROC_ROOT[idx] = 0;
+                    PROC_CLEARTID[idx] = 0;
                     if root != 0 {
                         crate::mm::release_user_root(root);
                     }

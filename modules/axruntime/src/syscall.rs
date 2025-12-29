@@ -608,8 +608,10 @@ fn sys_clone(
 ) -> Result<usize, Errno> {
     const CLONE_SIGNAL_MASK: usize = 0xff;
     const CLONE_PARENT_SETTID: usize = 0x0010_0000;
+    const CLONE_CHILD_CLEARTID: usize = 0x0020_0000;
     const CLONE_CHILD_SETTID: usize = 0x0100_0000;
-    const CLONE_SUPPORTED: usize = CLONE_SIGNAL_MASK | CLONE_PARENT_SETTID | CLONE_CHILD_SETTID;
+    const CLONE_SUPPORTED: usize =
+        CLONE_SIGNAL_MASK | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID | CLONE_CHILD_SETTID;
 
     // clone 目前按 fork 语义处理：仅支持最小 tid 写回标志位。
     if (flags & !CLONE_SUPPORTED) != 0 {
@@ -626,7 +628,7 @@ fn sys_clone(
             return Err(Errno::Fault);
         }
     }
-    if (flags & CLONE_CHILD_SETTID) != 0 {
+    if (flags & (CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID)) != 0 {
         if ctid == 0
             || mm::translate_user_ptr(root_pa, ctid, size_of::<usize>(), mm::UserAccess::Write).is_none()
         {
@@ -650,6 +652,9 @@ fn sys_clone(
         mm::UserPtr::new(ctid)
             .write(child_root, pid)
             .ok_or(Errno::Fault)?;
+    }
+    if (flags & CLONE_CHILD_CLEARTID) != 0 {
+        let _ = crate::process::set_clear_tid(pid, ctid);
     }
     Ok(pid)
 }
@@ -1354,6 +1359,7 @@ fn sys_set_tid_address(tidptr: usize) -> Result<usize, Errno> {
     if mm::translate_user_ptr(root_pa, tidptr, size, UserAccess::Write).is_none() {
         return Err(Errno::Fault);
     }
+    let _ = crate::process::set_current_clear_tid(tidptr);
     Ok(current_pid())
 }
 

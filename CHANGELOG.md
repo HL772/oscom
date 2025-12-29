@@ -61,6 +61,7 @@
 - Track user task root/entry/sp/trapframe and add a trapframe resume path for user tasks.
 - Add clone syscall with fork-like semantics backed by CoW page table cloning.
 - Support CLONE_PARENT_SETTID/CLONE_CHILD_SETTID in clone and reject other flags.
+- Add CLONE_CHILD_CLEARTID handling and clear_tid tracking on exit.
 - Extend USER_TEST to cover clone tid writeback validation.
 - Build clone_user_root from kernel mappings to avoid sharing parent page tables.
 - Add PTE_COW and page-fault handling to copy pages on first write.
