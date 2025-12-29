@@ -208,3 +208,29 @@ impl VfsOps for MemFs {
         Err(VfsError::NotSupported)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_paths() {
+        let fs = MemFs::new();
+        assert_eq!(fs.resolve_path("/").unwrap(), ROOT_ID);
+        assert_eq!(fs.resolve_path("/dev/null").unwrap(), DEV_NULL_ID);
+        assert_eq!(fs.resolve_path("/dev/zero").unwrap(), DEV_ZERO_ID);
+        assert_eq!(fs.resolve_path("/init").unwrap(), INIT_ID);
+        assert_eq!(fs.resolve_path("dev").unwrap_err(), ResolveError::Invalid);
+        assert_eq!(fs.resolve_path("/init/child").unwrap_err(), ResolveError::NotDir);
+    }
+
+    #[test]
+    fn metadata_basics() {
+        let fs = MemFs::new();
+        let root_meta = fs.metadata_for(ROOT_ID).unwrap();
+        assert_eq!(root_meta.file_type, FileType::Dir);
+        assert_eq!(root_meta.mode, 0o755);
+        let init_meta = fs.metadata_for(INIT_ID).unwrap();
+        assert_eq!(init_meta.file_type, FileType::File);
+    }
+}
