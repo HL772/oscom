@@ -39,6 +39,7 @@
 - 早期实现 `umask`，返回并更新进程掩码占位。
 - 早期实现 `prctl(PR_SET_NAME/PR_GET_NAME)`，占位处理进程名。
 - 早期实现 `sched_getaffinity/sched_setaffinity`，占位返回单核亲和性。
+- 早期实现 `getrusage`，占位返回零资源统计。
 
 ## 关键数据结构
 - `SyscallAbi`：抽象获取 syscall 号与参数、设置返回值与 `sepc` 前进。

@@ -92,6 +92,7 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_PRCTL => sys_prctl(ctx.args[0], ctx.args[1]),
         SYS_SCHED_SETAFFINITY => sys_sched_setaffinity(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_SCHED_GETAFFINITY => sys_sched_getaffinity(ctx.args[0], ctx.args[1], ctx.args[2]),
+        SYS_GETRUSAGE => sys_getrusage(ctx.args[0], ctx.args[1]),
         _ => Err(Errno::NoSys),
     }
 }
@@ -120,6 +121,7 @@ const SYS_UMASK: usize = 166;
 const SYS_PRCTL: usize = 167;
 const SYS_SCHED_SETAFFINITY: usize = 122;
 const SYS_SCHED_GETAFFINITY: usize = 123;
+const SYS_GETRUSAGE: usize = 165;
 
 const TIOCGWINSZ: usize = 0x5413;
 const SYS_CLOCK_GETTIME: usize = 113;
@@ -154,6 +156,9 @@ const F_GETFL: usize = 3;
 const F_SETFL: usize = 4;
 const PR_SET_NAME: usize = 15;
 const PR_GET_NAME: usize = 16;
+const RUSAGE_SELF: isize = 0;
+const RUSAGE_CHILDREN: isize = -1;
+const RUSAGE_THREAD: isize = 1;
 
 static RNG_STATE: AtomicU64 = AtomicU64::new(0);
 static UMASK: AtomicU64 = AtomicU64::new(0);
@@ -255,6 +260,34 @@ struct SigAction {
     sa_flags: usize,
     sa_restorer: usize,
     sa_mask: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct KernelTimeval {
+    tv_sec: isize,
+    tv_usec: isize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Rusage {
+    ru_utime: KernelTimeval,
+    ru_stime: KernelTimeval,
+    ru_maxrss: isize,
+    ru_ixrss: isize,
+    ru_idrss: isize,
+    ru_isrss: isize,
+    ru_minflt: isize,
+    ru_majflt: isize,
+    ru_nswap: isize,
+    ru_inblock: isize,
+    ru_oublock: isize,
+    ru_msgsnd: isize,
+    ru_msgrcv: isize,
+    ru_nsignals: isize,
+    ru_nvcsw: isize,
+    ru_nivcsw: isize,
 }
 
 #[repr(C)]
@@ -932,6 +965,46 @@ fn sys_sched_getaffinity(_pid: usize, len: usize, mask: usize) -> Result<usize, 
         .write(root_pa, 1)
         .ok_or(Errno::Fault)?;
     Ok(size)
+}
+
+fn sys_getrusage(who: usize, usage: usize) -> Result<usize, Errno> {
+    if usage == 0 {
+        return Err(Errno::Fault);
+    }
+    let who = who as isize;
+    if who != RUSAGE_SELF && who != RUSAGE_CHILDREN && who != RUSAGE_THREAD {
+        return Err(Errno::Inval);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    let zero = KernelTimeval {
+        tv_sec: 0,
+        tv_usec: 0,
+    };
+    let usage_val = Rusage {
+        ru_utime: zero,
+        ru_stime: zero,
+        ru_maxrss: 0,
+        ru_ixrss: 0,
+        ru_idrss: 0,
+        ru_isrss: 0,
+        ru_minflt: 0,
+        ru_majflt: 0,
+        ru_nswap: 0,
+        ru_inblock: 0,
+        ru_oublock: 0,
+        ru_msgsnd: 0,
+        ru_msgrcv: 0,
+        ru_nsignals: 0,
+        ru_nvcsw: 0,
+        ru_nivcsw: 0,
+    };
+    UserPtr::new(usage)
+        .write(root_pa, usage_val)
+        .ok_or(Errno::Fault)?;
+    Ok(0)
 }
 
 fn load_iovec(root_pa: usize, iov_ptr: usize, index: usize) -> Result<Iovec, Errno> {

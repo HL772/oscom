@@ -67,3 +67,4 @@
 - Add umask stub with stored mask.
 - Add prctl stub for process name.
 - Add sched affinity stubs for single CPU.
+- Add getrusage stub returning zero stats.
