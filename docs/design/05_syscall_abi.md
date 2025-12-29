@@ -36,7 +36,7 @@
 - 早期实现 `lseek`，对标准输入输出返回 ESPIPE 占位。
 - 早期实现 `set_robust_list/get_robust_list`，占位返回空链表。
 - 早期实现 `rt_sigaction/rt_sigprocmask`，占位接受信号配置请求。
-- 早期实现 `fcntl`，占位支持标准输入输出标志查询/设置。
+- 早期实现 `fcntl`，占位支持标准输入输出标志查询/设置（F_GETFL 返回基础读写模式）。
 - 早期实现 `umask`，返回并更新进程掩码占位。
 - 早期实现 `prctl(PR_SET_NAME/PR_GET_NAME)`，占位处理进程名。
 - 早期实现 `sched_getaffinity/sched_setaffinity`，占位返回单核亲和性。

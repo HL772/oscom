@@ -160,6 +160,9 @@ const CLOCK_MONOTONIC: usize = 1;
 const IOV_MAX: usize = 1024;
 const S_IFCHR: u32 = 0o020000;
 const O_CLOEXEC: usize = 0x80000;
+const O_RDONLY: usize = 0;
+const O_WRONLY: usize = 1;
+const O_RDWR: usize = 2;
 const SIG_BLOCK: usize = 0;
 const SIG_UNBLOCK: usize = 1;
 const SIG_SETMASK: usize = 2;
@@ -965,7 +968,14 @@ fn sys_fcntl(fd: usize, cmd: usize, _arg: usize) -> Result<usize, Errno> {
     match cmd {
         F_GETFD => Ok(0),
         F_SETFD => Ok(0),
-        F_GETFL => Ok(0),
+        F_GETFL => {
+            let mode = match fd {
+                0 => O_RDONLY,
+                1 | 2 => O_WRONLY,
+                _ => O_RDWR,
+            };
+            Ok(mode)
+        }
         F_SETFL => Ok(0),
         _ => Err(Errno::Inval),
     }

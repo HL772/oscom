@@ -65,7 +65,7 @@
 - Add lseek stub returning ESPIPE for stdio.
 - Add robust list stubs returning empty state.
 - Add rt_sigaction/rt_sigprocmask stubs.
-- Add fcntl stub for stdio flags.
+- Add fcntl stub returning stdio access mode.
 - Add clock_getres stubs using timebase resolution.
 - Add umask stub with stored mask.
 - Add prctl stub for process name.

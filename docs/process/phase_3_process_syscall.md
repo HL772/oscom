@@ -54,7 +54,7 @@
 - 增加 lseek，占位返回 ESPIPE 避免误判可寻址。
 - 增加 set_robust_list/get_robust_list，占位返回空链表。
 - 增加 rt_sigaction/rt_sigprocmask，占位支持信号配置。
-- 增加 fcntl，占位支持标准输入输出标志。
+- 增加 fcntl，占位支持标准输入输出标志并返回基础读写模式。
 - 增加 umask，占位记录进程掩码。
 - 增加 prctl(PR_SET_NAME/PR_GET_NAME)，占位设置进程名。
 - 增加 sched_getaffinity/sched_setaffinity，占位返回单核亲和性。
