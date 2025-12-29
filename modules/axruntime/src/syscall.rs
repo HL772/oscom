@@ -260,6 +260,11 @@ const F_GETFD: usize = 1;
 const F_SETFD: usize = 2;
 const F_GETFL: usize = 3;
 const F_SETFL: usize = 4;
+const POLLIN: u16 = 0x001;
+const POLLOUT: u16 = 0x004;
+const POLLERR: u16 = 0x008;
+const POLLHUP: u16 = 0x010;
+const POLLNVAL: u16 = 0x020;
 const PR_SET_NAME: usize = 15;
 const PR_GET_NAME: usize = 16;
 const GRND_NONBLOCK: usize = 0x1;
@@ -994,7 +999,7 @@ fn sys_utimensat(dirfd: usize, pathname: usize, times: usize, flags: usize) -> R
     }
 }
 
-fn sys_ppoll(fds: usize, nfds: usize, _tmo: usize, _sigmask: usize, _sigsetsize: usize) -> Result<usize, Errno> {
+fn sys_ppoll(fds: usize, nfds: usize, tmo: usize, _sigmask: usize, _sigsetsize: usize) -> Result<usize, Errno> {
     if nfds == 0 {
         return Ok(0);
     }
@@ -1007,22 +1012,61 @@ fn sys_ppoll(fds: usize, nfds: usize, _tmo: usize, _sigmask: usize, _sigsetsize:
     }
     let stride = size_of::<PollFd>();
     let total = nfds.checked_mul(stride).ok_or(Errno::Fault)?;
+    validate_user_read(root_pa, fds, total)?;
     validate_user_write(root_pa, fds, total)?;
-    let revents_off = 6usize;
+    let mut ready = 0usize;
+    let mut single_fd = None;
+    let mut single_events = 0u16;
     for index in 0..nfds {
         let base = index
             .checked_mul(stride)
             .and_then(|off| fds.checked_add(off))
             .ok_or(Errno::Fault)?;
-        let addr = base.checked_add(revents_off).ok_or(Errno::Fault)?;
-        let pa = mm::translate_user_ptr(root_pa, addr, size_of::<u16>(), UserAccess::Write)
+        let mut pollfd = UserPtr::<PollFd>::new(base)
+            .read(root_pa)
             .ok_or(Errno::Fault)?;
-        // SAFETY: 翻译结果确保该片段在用户态可写。
-        unsafe {
-            (pa as *mut u16).write(0);
+        let events = pollfd.events as u16;
+        let revents = poll_revents_for_fd(pollfd.fd, events);
+        if revents != 0 {
+            ready += 1;
         }
+        if nfds == 1 {
+            single_fd = Some(pollfd.fd);
+            single_events = events;
+        }
+        pollfd.revents = revents as i16;
+        UserPtr::new(base)
+            .write(root_pa, pollfd)
+            .ok_or(Errno::Fault)?;
     }
-    Ok(0)
+    if ready > 0 || !can_block_current() || nfds != 1 {
+        return Ok(ready);
+    }
+    let Some(fd) = single_fd else {
+        return Ok(0);
+    };
+    let Some(queue) = ppoll_single_waiter_queue(fd, single_events) else {
+        return Ok(0);
+    };
+    let timeout_ms = ppoll_timeout_ms(root_pa, tmo)?;
+    if let Some(timeout_ms) = timeout_ms {
+        if timeout_ms == 0 {
+            return Ok(0);
+        }
+        let _ = crate::runtime::wait_timeout_ms(queue, timeout_ms);
+    } else {
+        crate::runtime::block_current(queue);
+    }
+    let base = fds;
+    let mut pollfd = UserPtr::<PollFd>::new(base)
+        .read(root_pa)
+        .ok_or(Errno::Fault)?;
+    let revents = poll_revents_for_fd(pollfd.fd, pollfd.events as u16);
+    pollfd.revents = revents as i16;
+    UserPtr::new(base)
+        .write(root_pa, pollfd)
+        .ok_or(Errno::Fault)?;
+    Ok(if revents != 0 { 1 } else { 0 })
 }
 
 fn sys_clock_gettime(clock_id: usize, tp: usize) -> Result<usize, Errno> {
@@ -2256,6 +2300,111 @@ fn pipe_write(pipe_id: usize, root_pa: usize, buf: usize, len: usize) -> Result<
     }
     let _ = crate::runtime::wake_one(pipe_read_queue(pipe_id));
     Ok(to_write)
+}
+
+fn pipe_snapshot(pipe_id: usize) -> Option<(usize, usize, usize)> {
+    if pipe_id >= PIPE_SLOTS {
+        return None;
+    }
+    // SAFETY: 单核早期阶段串行读取 pipe 状态。
+    let pipe = unsafe { &PIPES[pipe_id] };
+    if !pipe.used {
+        return None;
+    }
+    Some((pipe.len, pipe.readers, pipe.writers))
+}
+
+fn poll_revents_for_fd(fd: i32, events: u16) -> u16 {
+    if fd < 0 {
+        return POLLNVAL;
+    }
+    let fd = fd as usize;
+    let kind = match resolve_fd(fd) {
+        Some(kind) => kind,
+        None => return POLLNVAL,
+    };
+    match kind {
+        FdKind::PipeRead(pipe_id) => {
+            let (len, _readers, writers) = match pipe_snapshot(pipe_id) {
+                Some(state) => state,
+                None => return POLLNVAL,
+            };
+            let mut revents = 0u16;
+            if (events & POLLIN) != 0 && len > 0 {
+                revents |= POLLIN;
+            }
+            if writers == 0 {
+                revents |= POLLHUP;
+                if (events & POLLIN) != 0 {
+                    revents |= POLLIN;
+                }
+            }
+            revents
+        }
+        FdKind::PipeWrite(pipe_id) => {
+            let (len, readers, _writers) = match pipe_snapshot(pipe_id) {
+                Some(state) => state,
+                None => return POLLNVAL,
+            };
+            let mut revents = 0u16;
+            if readers == 0 {
+                revents |= POLLERR | POLLHUP;
+                return revents;
+            }
+            let avail = PIPE_BUFFER_SIZE.saturating_sub(len);
+            if (events & POLLOUT) != 0 && avail > 0 {
+                revents |= POLLOUT;
+            }
+            revents
+        }
+        FdKind::Stdout | FdKind::Stderr => {
+            if (events & POLLOUT) != 0 {
+                POLLOUT
+            } else {
+                0
+            }
+        }
+        FdKind::DevNull | FdKind::DevZero => {
+            let mut revents = 0u16;
+            if (events & POLLIN) != 0 {
+                revents |= POLLIN;
+            }
+            if (events & POLLOUT) != 0 {
+                revents |= POLLOUT;
+            }
+            revents
+        }
+        _ => 0,
+    }
+}
+
+fn ppoll_timeout_ms(root_pa: usize, tmo: usize) -> Result<Option<u64>, Errno> {
+    if tmo == 0 {
+        return Ok(None);
+    }
+    let ts = UserPtr::<Timespec>::new(tmo)
+        .read(root_pa)
+        .ok_or(Errno::Fault)?;
+    if ts.tv_sec < 0 || ts.tv_nsec < 0 || ts.tv_nsec >= 1_000_000_000 {
+        return Err(Errno::Inval);
+    }
+    let total_ns = (ts.tv_sec as u64)
+        .saturating_mul(1_000_000_000)
+        .saturating_add(ts.tv_nsec as u64);
+    let timeout_ms = total_ns.saturating_add(999_999) / 1_000_000;
+    Ok(Some(timeout_ms))
+}
+
+fn ppoll_single_waiter_queue(fd: i32, events: u16) -> Option<&'static crate::task_wait_queue::TaskWaitQueue> {
+    if fd < 0 {
+        return None;
+    }
+    let kind = resolve_fd(fd as usize)?;
+    match kind {
+        FdKind::PipeRead(pipe_id) if (events & POLLIN) != 0 => Some(pipe_read_queue(pipe_id)),
+        FdKind::PipeWrite(pipe_id) if (events & POLLOUT) != 0 => Some(pipe_write_queue(pipe_id)),
+        _ => None,
+    }
 }
 
 fn read_from_kind(kind: FdKind, root_pa: usize, buf: usize, len: usize) -> Result<usize, Errno> {
