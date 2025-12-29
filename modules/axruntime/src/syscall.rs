@@ -74,6 +74,7 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_GETRLIMIT => sys_getrlimit(ctx.args[0], ctx.args[1]),
         SYS_PRLIMIT64 => sys_prlimit64(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_IOCTL => sys_ioctl(ctx.args[0], ctx.args[1], ctx.args[2]),
+        SYS_SYSINFO => sys_sysinfo(ctx.args[0]),
         _ => Err(Errno::NoSys),
     }
 }
@@ -102,6 +103,7 @@ const SYS_GETEUID: usize = 175;
 const SYS_GETGID: usize = 176;
 const SYS_GETEGID: usize = 177;
 const SYS_GETTID: usize = 178;
+const SYS_SYSINFO: usize = 179;
 const SYS_SCHED_YIELD: usize = 124;
 const SYS_SET_TID_ADDRESS: usize = 96;
 const SYS_UNAME: usize = 160;
@@ -154,6 +156,25 @@ struct Utsname {
 struct Rlimit {
     rlim_cur: u64,
     rlim_max: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Sysinfo {
+    uptime: i64,
+    loads: [u64; 3],
+    totalram: u64,
+    freeram: u64,
+    sharedram: u64,
+    bufferram: u64,
+    totalswap: u64,
+    freeswap: u64,
+    procs: u16,
+    pad: u16,
+    totalhigh: u64,
+    freehigh: u64,
+    mem_unit: u32,
+    _pad2: u32,
 }
 
 #[repr(C)]
@@ -508,6 +529,38 @@ fn sys_ioctl(fd: usize, cmd: usize, arg: usize) -> Result<usize, Errno> {
         ws_ypixel: 0,
     };
     UserPtr::new(arg).write(root_pa, winsz).ok_or(Errno::Fault)?;
+    Ok(0)
+}
+
+fn sys_sysinfo(info: usize) -> Result<usize, Errno> {
+    if info == 0 {
+        return Err(Errno::Fault);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    let total = mm::memory_size() as u64;
+    let uptime = (time::uptime_ms() / 1000) as i64;
+    let sysinfo = Sysinfo {
+        uptime,
+        loads: [0; 3],
+        totalram: total,
+        freeram: total,
+        sharedram: 0,
+        bufferram: 0,
+        totalswap: 0,
+        freeswap: 0,
+        procs: 1,
+        pad: 0,
+        totalhigh: 0,
+        freehigh: 0,
+        mem_unit: 1,
+        _pad2: 0,
+    };
+    UserPtr::new(info)
+        .write(root_pa, sysinfo)
+        .ok_or(Errno::Fault)?;
     Ok(0)
 }
 

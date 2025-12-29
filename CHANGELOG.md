@@ -56,3 +56,4 @@
 - Add getrlimit/prlimit64 stubs with default limits.
 - Add ioctl TIOCGWINSZ stub with default 80x24.
 - Add nanosleep stub using tick-based busy wait.
+- Add sysinfo stub for uptime and memory size.

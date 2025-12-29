@@ -25,6 +25,7 @@
 - `translate_user_ptr`：基于当前页表的用户指针翻译与权限检查。
 - `UserPtr/UserSlice`：用户指针与缓冲区访问封装。
 - `UserPtr` 内部复用 `UserSlice`，支持跨页结构体读写。
+- `memory_size`：暴露物理内存大小供系统信息查询。
 
 ## 关键流程图或伪代码
 ```text

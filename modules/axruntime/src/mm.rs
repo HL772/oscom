@@ -393,6 +393,10 @@ pub fn kernel_root_pa() -> usize {
     KERNEL_ROOT_PA.load(Ordering::Relaxed)
 }
 
+pub fn memory_size() -> usize {
+    MEM_SIZE.load(Ordering::Relaxed)
+}
+
 pub fn current_root_pa() -> usize {
     let satp = read_satp();
     let ppn = satp & PPN_MASK;

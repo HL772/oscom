@@ -28,6 +28,7 @@
 - 早期实现 `close`，允许关闭标准输入输出。
 - 早期实现 `getrlimit/prlimit64`，返回默认无限资源限制占位。
 - 早期实现 `ioctl(TIOCGWINSZ)`，为终端提供默认窗口大小。
+- 早期实现 `sysinfo`，提供最小内存与运行时间信息占位。
 
 ## 关键数据结构
 - `SyscallAbi`：抽象获取 syscall 号与参数、设置返回值与 `sepc` 前进。
