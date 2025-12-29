@@ -454,6 +454,7 @@ enum FdKind {
     DevZero,
     DirRoot,
     DirDev,
+    DirProc,
     InitFile,
     PipeRead(usize),
     PipeWrite(usize),
@@ -833,13 +834,14 @@ fn sys_openat(_dirfd: usize, pathname: usize, flags: usize, _mode: usize) -> Res
     let kind = match (mount, inode) {
         (MountId::Root, memfs::ROOT_ID) => FdKind::DirRoot,
         (MountId::Dev, devfs::ROOT_ID) => FdKind::DirDev,
+        (MountId::Proc, procfs::ROOT_ID) => FdKind::DirProc,
         (MountId::Dev, devfs::DEV_NULL_ID) => FdKind::DevNull,
         (MountId::Dev, devfs::DEV_ZERO_ID) => FdKind::DevZero,
         (MountId::Root, memfs::INIT_ID) => FdKind::InitFile,
         _ => return Err(Errno::NoEnt),
     };
     match kind {
-        FdKind::DirRoot | FdKind::DirDev => {
+        FdKind::DirRoot | FdKind::DirDev | FdKind::DirProc => {
             if accmode != O_RDONLY {
                 return Err(Errno::IsDir);
             }
@@ -999,9 +1001,11 @@ fn sys_getdents64(fd: usize, buf: usize, len: usize) -> Result<usize, Errno> {
     let entry = resolve_fd(fd).ok_or(Errno::Badf)?;
     let rootfs = memfs::MemFs::new();
     let devfs = devfs::DevFs::new();
+    let proc_fs = procfs::ProcFs::new();
     let entries = match entry.kind {
         FdKind::DirRoot => rootfs.dir_entries(memfs::ROOT_ID),
         FdKind::DirDev => devfs.dir_entries(devfs::ROOT_ID),
+        FdKind::DirProc => proc_fs.dir_entries(procfs::ROOT_ID),
         _ => None,
     }
     .ok_or(Errno::NotDir)?;
@@ -1819,6 +1823,10 @@ fn sys_fstat(fd: usize, stat_ptr: usize) -> Result<usize, Errno> {
         FdKind::PipeRead(_) | FdKind::PipeWrite(_) => (S_IFIFO | 0o600, 0),
         FdKind::DirRoot => vfs_meta_for(&rootfs, memfs::ROOT_ID)?,
         FdKind::DirDev => vfs_meta_for(&devfs, devfs::ROOT_ID)?,
+        FdKind::DirProc => {
+            let proc_fs = procfs::ProcFs::new();
+            vfs_meta_for(&proc_fs, procfs::ROOT_ID)?
+        }
         FdKind::DevNull => vfs_meta_for(&devfs, devfs::DEV_NULL_ID)?,
         FdKind::DevZero => vfs_meta_for(&devfs, devfs::DEV_ZERO_ID)?,
         FdKind::InitFile => vfs_meta_for(&rootfs, memfs::INIT_ID)?,
@@ -1946,7 +1954,7 @@ fn sys_fcntl(fd: usize, cmd: usize, arg: usize) -> Result<usize, Errno> {
             let mode = match entry.kind {
                 FdKind::Stdin | FdKind::PipeRead(_) => O_RDONLY,
                 FdKind::Stdout | FdKind::Stderr | FdKind::PipeWrite(_) => O_WRONLY,
-                FdKind::DirRoot | FdKind::DirDev => O_RDONLY,
+                FdKind::DirRoot | FdKind::DirDev | FdKind::DirProc => O_RDONLY,
                 _ => O_RDWR,
             };
             Ok(mode | entry.flags)
@@ -3005,7 +3013,7 @@ fn read_from_entry(fd: usize, entry: FdEntry, root_pa: usize, buf: usize, len: u
             let nonblock = (entry.flags & O_NONBLOCK) != 0;
             pipe_read(pipe_id, root_pa, buf, len, nonblock)
         }
-        FdKind::DirRoot | FdKind::DirDev => Err(Errno::IsDir),
+        FdKind::DirRoot | FdKind::DirDev | FdKind::DirProc => Err(Errno::IsDir),
         FdKind::Stdout | FdKind::Stderr | FdKind::PipeWrite(_) => Err(Errno::Badf),
         FdKind::Empty => Err(Errno::Badf),
     }
@@ -3122,7 +3130,7 @@ fn write_to_entry(fd: usize, entry: FdEntry, root_pa: usize, buf: usize, len: us
             let nonblock = (entry.flags & O_NONBLOCK) != 0;
             pipe_write(pipe_id, root_pa, buf, len, nonblock)
         }
-        FdKind::DirRoot | FdKind::DirDev => Err(Errno::IsDir),
+        FdKind::DirRoot | FdKind::DirDev | FdKind::DirProc => Err(Errno::IsDir),
         FdKind::Stdin | FdKind::PipeRead(_) => Err(Errno::Badf),
         FdKind::Empty => Err(Errno::Badf),
     }
