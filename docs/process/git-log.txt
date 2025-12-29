@@ -1,4 +1,25 @@
-* commit 026ea8882c908ce70100813dcec405432cc38cc6 (HEAD -> bootstrap-riscv64)
+* commit 053729564a3b45824c1cacda294ac6c9cc0b9728 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 14:27:02 +0800
+| 
+|     feat(syscall): add pipe blocking semantics
+| 
+|  CHANGELOG.md                            |   2 +-
+|  docs/design/05_syscall_abi.md           |   2 +-
+|  docs/process/phase_3_process_syscall.md |   2 +-
+|  modules/axruntime/src/syscall.rs        | 109 ++++++++++++++++++++++++------
+|  4 files changed, 90 insertions(+), 25 deletions(-)
+| 
+* commit 336adfc172ca73b95596afd9b758069341cfdc36
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 13:23:03 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit 026ea8882c908ce70100813dcec405432cc38cc6
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 13:22:41 +0800
 | 
