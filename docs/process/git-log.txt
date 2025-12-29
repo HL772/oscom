@@ -1,4 +1,25 @@
-* commit 17a88db20a32fb2eff7399f621815ebff31cfda6 (HEAD -> bootstrap-riscv64)
+* commit 382673d1cb40f861ca5858d848332eb96992068f (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:15:54 +0800
+| 
+|     feat(syscall): report stdio access modes
+| 
+|  CHANGELOG.md                            |  2 +-
+|  docs/design/05_syscall_abi.md           |  2 +-
+|  docs/process/phase_3_process_syscall.md |  2 +-
+|  modules/axruntime/src/syscall.rs        | 12 +++++++++++-
+|  4 files changed, 14 insertions(+), 4 deletions(-)
+| 
+* commit c96cd84324f4f5f1e87cef79d864216975c95beb
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:15:01 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit 17a88db20a32fb2eff7399f621815ebff31cfda6
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 11:14:47 +0800
 | 
