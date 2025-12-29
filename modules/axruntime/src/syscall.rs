@@ -11,11 +11,13 @@ use crate::trap::TrapFrame;
 #[repr(i32)]
 #[derive(Debug, Clone, Copy)]
 pub enum Errno {
+    NoEnt = 2,
     NoSys = 38,
     Fault = 14,
     Inval = 22,
     Badf = 9,
     Pipe = 29,
+    NotDir = 20,
     Range = 34,
     Again = 11,
 }
@@ -58,6 +60,9 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_WRITE => sys_write(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_READV => sys_readv(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_WRITEV => sys_writev(ctx.args[0], ctx.args[1], ctx.args[2]),
+        SYS_OPENAT => sys_openat(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
+        SYS_GETDENTS64 => sys_getdents64(ctx.args[0], ctx.args[1], ctx.args[2]),
+        SYS_NEWFSTATAT => sys_newfstatat(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_CLOCK_GETTIME => sys_clock_gettime(ctx.args[0], ctx.args[1]),
         SYS_CLOCK_GETTIME64 => sys_clock_gettime(ctx.args[0], ctx.args[1]),
         SYS_CLOCK_GETRES => sys_clock_getres(ctx.args[0], ctx.args[1]),
@@ -117,6 +122,9 @@ const SYS_READ: usize = 63;
 const SYS_WRITE: usize = 64;
 const SYS_READV: usize = 65;
 const SYS_WRITEV: usize = 66;
+const SYS_OPENAT: usize = 56;
+const SYS_GETDENTS64: usize = 61;
+const SYS_NEWFSTATAT: usize = 79;
 const SYS_GETCWD: usize = 17;
 const SYS_CLOSE: usize = 57;
 const SYS_GETRLIMIT: usize = 163;
@@ -470,6 +478,45 @@ fn sys_writev(fd: usize, iov_ptr: usize, iovcnt: usize) -> Result<usize, Errno> 
         }
     }
     Ok(total)
+}
+
+fn sys_openat(_dirfd: usize, pathname: usize, _flags: usize, _mode: usize) -> Result<usize, Errno> {
+    if pathname == 0 {
+        return Err(Errno::Fault);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    if mm::translate_user_ptr(root_pa, pathname, 1, UserAccess::Read).is_none() {
+        return Err(Errno::Fault);
+    }
+    Err(Errno::NoEnt)
+}
+
+fn sys_getdents64(fd: usize, _buf: usize, _len: usize) -> Result<usize, Errno> {
+    if fd <= 2 {
+        return Err(Errno::NotDir);
+    }
+    Err(Errno::Badf)
+}
+
+fn sys_newfstatat(_dirfd: usize, pathname: usize, stat_ptr: usize, _flags: usize) -> Result<usize, Errno> {
+    if pathname == 0 || stat_ptr == 0 {
+        return Err(Errno::Fault);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    if mm::translate_user_ptr(root_pa, pathname, 1, UserAccess::Read).is_none() {
+        return Err(Errno::Fault);
+    }
+    let size = size_of::<Stat>();
+    if mm::translate_user_ptr(root_pa, stat_ptr, size, UserAccess::Write).is_none() {
+        return Err(Errno::Fault);
+    }
+    Err(Errno::NoEnt)
 }
 
 fn sys_clock_gettime(clock_id: usize, tp: usize) -> Result<usize, Errno> {

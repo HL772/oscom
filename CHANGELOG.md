@@ -46,6 +46,7 @@
 - Make user-mode smoke buffer cross-page to exercise UserSlice chunking.
 - Add clock_gettime/gettimeofday/getpid time stubs (MONOTONIC/RAW/BOOTTIME).
 - Add readv/writev helpers (iovcnt=0 returns 0) and route the user smoke through writev.
+- Add openat/newfstatat/getdents64 stubs returning ENOENT/ENOTDIR.
 - Add uname syscall stub with minimal utsname fields.
 - Add minimal getppid/getuid/geteuid/getgid/getegid/getresuid/getresgid stubs.
 - Add gettid and sched_yield stubs (TaskId+1 when available).
