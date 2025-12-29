@@ -47,6 +47,7 @@
 - Add clock_gettime/gettimeofday/getpid time stubs (MONOTONIC/RAW/BOOTTIME/COARSE).
 - Add readv/writev helpers (iovcnt=0 returns 0) and route the user smoke through writev.
 - Add open/openat/newfstatat/getdents64/faccessat/statx/readlinkat stubs returning ENOENT/ENOTDIR with /dev/null and /dev/zero support plus buffer validation.
+- Add ppoll stub clearing revents and returning 0.
 - Add uname syscall stub with minimal utsname fields.
 - Add minimal getppid/getuid/geteuid/getgid/getegid/getresuid/getresgid stubs.
 - Add gettid and sched_yield stubs (TaskId+1 when available).

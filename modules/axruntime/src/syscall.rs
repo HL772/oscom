@@ -68,6 +68,8 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_FACCESSAT => sys_faccessat(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_STATX => sys_statx(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3], ctx.args[4]),
         SYS_READLINKAT => sys_readlinkat(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
+        SYS_PPOLL => sys_ppoll(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3], ctx.args[4]),
+        SYS_PPOLL_TIME64 => sys_ppoll(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3], ctx.args[4]),
         SYS_CLOCK_GETTIME => sys_clock_gettime(ctx.args[0], ctx.args[1]),
         SYS_CLOCK_GETTIME64 => sys_clock_gettime(ctx.args[0], ctx.args[1]),
         SYS_CLOCK_GETRES => sys_clock_getres(ctx.args[0], ctx.args[1]),
@@ -136,6 +138,8 @@ const SYS_NEWFSTATAT: usize = 79;
 const SYS_READLINKAT: usize = 78;
 const SYS_FACCESSAT: usize = 48;
 const SYS_STATX: usize = 291;
+const SYS_PPOLL: usize = 73;
+const SYS_PPOLL_TIME64: usize = 414;
 const SYS_GETCWD: usize = 17;
 const SYS_CHDIR: usize = 49;
 const SYS_FCHDIR: usize = 50;
@@ -390,6 +394,14 @@ struct Termios {
     c_cc: [u8; 19],
     c_ispeed: u32,
     c_ospeed: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct PollFd {
+    fd: i32,
+    events: i16,
+    revents: i16,
 }
 
 fn sys_exit(_code: usize) -> Result<usize, Errno> {
@@ -684,6 +696,37 @@ fn sys_readlinkat(_dirfd: usize, pathname: usize, buf: usize, len: usize) -> Res
         return Err(Errno::Inval);
     }
     Err(Errno::NoEnt)
+}
+
+fn sys_ppoll(fds: usize, nfds: usize, _tmo: usize, _sigmask: usize, _sigsetsize: usize) -> Result<usize, Errno> {
+    if nfds == 0 {
+        return Ok(0);
+    }
+    if fds == 0 {
+        return Err(Errno::Fault);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    let stride = size_of::<PollFd>();
+    let total = nfds.checked_mul(stride).ok_or(Errno::Fault)?;
+    validate_user_write(root_pa, fds, total)?;
+    let revents_off = 6usize;
+    for index in 0..nfds {
+        let base = index
+            .checked_mul(stride)
+            .and_then(|off| fds.checked_add(off))
+            .ok_or(Errno::Fault)?;
+        let addr = base.checked_add(revents_off).ok_or(Errno::Fault)?;
+        let pa = mm::translate_user_ptr(root_pa, addr, size_of::<u16>(), UserAccess::Write)
+            .ok_or(Errno::Fault)?;
+        // SAFETY: 翻译结果确保该片段在用户态可写。
+        unsafe {
+            (pa as *mut u16).write(0);
+        }
+    }
+    Ok(0)
 }
 
 fn sys_clock_gettime(clock_id: usize, tp: usize) -> Result<usize, Errno> {
