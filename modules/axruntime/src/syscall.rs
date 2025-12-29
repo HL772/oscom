@@ -65,6 +65,7 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_OPENAT => sys_openat(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_GETDENTS64 => sys_getdents64(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_NEWFSTATAT => sys_newfstatat(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
+        SYS_FACCESSAT => sys_faccessat(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_CLOCK_GETTIME => sys_clock_gettime(ctx.args[0], ctx.args[1]),
         SYS_CLOCK_GETTIME64 => sys_clock_gettime(ctx.args[0], ctx.args[1]),
         SYS_CLOCK_GETRES => sys_clock_getres(ctx.args[0], ctx.args[1]),
@@ -128,6 +129,7 @@ const SYS_OPEN: usize = 1024;
 const SYS_OPENAT: usize = 56;
 const SYS_GETDENTS64: usize = 61;
 const SYS_NEWFSTATAT: usize = 79;
+const SYS_FACCESSAT: usize = 48;
 const SYS_GETCWD: usize = 17;
 const SYS_CLOSE: usize = 57;
 const SYS_GETRLIMIT: usize = 163;
@@ -617,6 +619,20 @@ fn sys_newfstatat(_dirfd: usize, pathname: usize, stat_ptr: usize, _flags: usize
     let size = size_of::<Stat>();
     if mm::translate_user_ptr(root_pa, stat_ptr, size, UserAccess::Write).is_none() {
         return Err(Errno::Fault);
+    }
+    Err(Errno::NoEnt)
+}
+
+fn sys_faccessat(_dirfd: usize, pathname: usize, _mode: usize, _flags: usize) -> Result<usize, Errno> {
+    if pathname == 0 {
+        return Err(Errno::Fault);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    if user_path_eq(root_pa, pathname, DEV_NULL_PATH)? || user_path_eq(root_pa, pathname, DEV_ZERO_PATH)? {
+        return Ok(0);
     }
     Err(Errno::NoEnt)
 }
