@@ -61,6 +61,7 @@
 - Add PTE_COW and page-fault handling to copy pages on first write.
 - Add frame refcounting and release of user address spaces on waitpid/execve.
 - Extend user-mode smoke to cover clone/wait4 and CoW write path validation.
+- Extend user-mode smoke to cover multi-fd ppoll scan path.
 - Track O_NONBLOCK via fcntl and honor it for pipe reads/writes.
 - Add uname syscall stub with minimal utsname fields.
 - Add minimal getppid/getuid/geteuid/getgid/getegid/getresuid/getresgid stubs.
