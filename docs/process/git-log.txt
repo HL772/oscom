@@ -1,4 +1,25 @@
-* commit 92035cb03e442477e69c26ae178839fff5af32f8 (HEAD -> bootstrap-riscv64)
+* commit 38b65aebb5b2f5a2f5245000187cbf124690da6a (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 15:39:32 +0800
+| 
+|     feat(syscall): wake poll waiters on pipe events
+| 
+|  CHANGELOG.md                            |  2 +-
+|  docs/design/05_syscall_abi.md           |  2 +-
+|  docs/process/phase_3_process_syscall.md |  2 +-
+|  modules/axruntime/src/syscall.rs        | 22 +++++++++++++++-------
+|  4 files changed, 18 insertions(+), 10 deletions(-)
+| 
+* commit 1c14c4573bd9704dbd03c8147382cdc419ddc11b
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 15:29:35 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit 92035cb03e442477e69c26ae178839fff5af32f8
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 15:29:26 +0800
 | 
