@@ -253,6 +253,7 @@ const CLOCK_BOOTTIME: usize = 7;
 const IOV_MAX: usize = 1024;
 const S_IFCHR: u32 = 0o020000;
 const S_IFDIR: u32 = 0o040000;
+const S_IFREG: u32 = 0o100000;
 const O_CLOEXEC: usize = 0x80000;
 const O_NONBLOCK: usize = 0x4000;
 const O_RDONLY: usize = 0;
@@ -286,6 +287,7 @@ const POLLHUP: u16 = 0x010;
 const POLLNVAL: u16 = 0x020;
 const DT_CHR: u8 = 2;
 const DT_DIR: u8 = 4;
+const DT_REG: u8 = 8;
 const PPOLL_RETRY_SLEEP_MS: u64 = 10;
 const PR_SET_NAME: usize = 15;
 const PR_GET_NAME: usize = 16;
@@ -455,6 +457,7 @@ enum FdKind {
     DevZero,
     DirRoot,
     DirDev,
+    InitFile,
     PipeRead(usize),
     PipeWrite(usize),
 }
@@ -471,6 +474,7 @@ enum KnownPath {
     DevDir,
     DevNull,
     DevZero,
+    Init,
 }
 
 #[derive(Clone, Copy)]
@@ -490,10 +494,11 @@ struct DirEntry {
     dtype: u8,
 }
 
-const ROOT_DIRENTS: [DirEntry; 3] = [
+const ROOT_DIRENTS: [DirEntry; 4] = [
     DirEntry { name: b".", dtype: DT_DIR },
     DirEntry { name: b"..", dtype: DT_DIR },
     DirEntry { name: b"dev", dtype: DT_DIR },
+    DirEntry { name: b"init", dtype: DT_REG },
 ];
 
 const DEV_DIRENTS: [DirEntry; 4] = [
@@ -702,7 +707,7 @@ fn sys_read(fd: usize, buf: usize, len: usize) -> Result<usize, Errno> {
         return Err(Errno::Fault);
     }
     let entry = resolve_fd(fd).ok_or(Errno::Badf)?;
-    read_from_entry(entry, root_pa, buf, len)
+    read_from_entry(fd, entry, root_pa, buf, len)
 }
 
 fn sys_write(fd: usize, buf: usize, len: usize) -> Result<usize, Errno> {
@@ -739,7 +744,7 @@ fn sys_readv(fd: usize, iov_ptr: usize, iovcnt: usize) -> Result<usize, Errno> {
         if iov.iov_len == 0 {
             continue;
         }
-        match read_from_entry(entry, root_pa, iov.iov_base, iov.iov_len) {
+        match read_from_entry(fd, entry, root_pa, iov.iov_base, iov.iov_len) {
             Ok(0) => return Ok(total),
             Ok(read) => {
                 total += read;
@@ -869,6 +874,13 @@ fn sys_openat(_dirfd: usize, pathname: usize, flags: usize, _mode: usize) -> Res
             return Err(Errno::IsDir);
         }
         return alloc_fd(FdEntry { kind: FdKind::DirDev, flags: status_flags })
+            .ok_or(Errno::MFile);
+    }
+    if user_path_eq(root_pa, pathname, INIT_PATH)? {
+        if accmode != O_RDONLY {
+            return Err(Errno::Inval);
+        }
+        return alloc_fd(FdEntry { kind: FdKind::InitFile, flags: status_flags })
             .ok_or(Errno::MFile);
     }
     Err(Errno::NoEnt)
@@ -1080,13 +1092,14 @@ fn sys_newfstatat(_dirfd: usize, pathname: usize, stat_ptr: usize, _flags: usize
     if mm::translate_user_ptr(root_pa, stat_ptr, size, UserAccess::Write).is_none() {
         return Err(Errno::Fault);
     }
-    let mode = match classify_path(root_pa, pathname)? {
-        Some(KnownPath::Root | KnownPath::DevDir) => S_IFDIR | 0o755,
-        Some(KnownPath::DevNull | KnownPath::DevZero) => S_IFCHR | 0o666,
+    let (mode, size) = match classify_path(root_pa, pathname)? {
+        Some(KnownPath::Root | KnownPath::DevDir) => (S_IFDIR | 0o755, 0),
+        Some(KnownPath::DevNull | KnownPath::DevZero) => (S_IFCHR | 0o666, 0),
+        Some(KnownPath::Init) => (S_IFREG | 0o444, crate::user::init_exec_elf_image().len()),
         None => return Err(Errno::NoEnt),
     };
     UserPtr::new(stat_ptr)
-        .write(root_pa, build_stat(mode))
+        .write(root_pa, build_stat(mode, size))
         .ok_or(Errno::Fault)?;
     Ok(0)
 }
@@ -1814,12 +1827,13 @@ fn sys_fstat(fd: usize, stat_ptr: usize) -> Result<usize, Errno> {
     if root_pa == 0 {
         return Err(Errno::Fault);
     }
-    let mode = match entry.kind {
-        FdKind::PipeRead(_) | FdKind::PipeWrite(_) => S_IFIFO | 0o600,
-        FdKind::DirRoot | FdKind::DirDev => S_IFDIR | 0o755,
-        _ => S_IFCHR | 0o666,
+    let (mode, size) = match entry.kind {
+        FdKind::PipeRead(_) | FdKind::PipeWrite(_) => (S_IFIFO | 0o600, 0),
+        FdKind::DirRoot | FdKind::DirDev => (S_IFDIR | 0o755, 0),
+        FdKind::InitFile => (S_IFREG | 0o444, crate::user::init_exec_elf_image().len()),
+        _ => (S_IFCHR | 0o666, 0),
     };
-    let stat = build_stat(mode);
+    let stat = build_stat(mode, size);
     UserPtr::new(stat_ptr)
         .write(root_pa, stat)
         .ok_or(Errno::Fault)?;
@@ -2179,10 +2193,11 @@ fn default_rusage() -> Rusage {
     }
 }
 
-fn build_stat(mode: u32) -> Stat {
+fn build_stat(mode: u32, size: usize) -> Stat {
     let now_ns = time::monotonic_ns();
     let sec = (now_ns / 1_000_000_000) as isize;
     let nsec = (now_ns % 1_000_000_000) as usize;
+    let blocks = (size.saturating_add(511) / 512) as isize;
     Stat {
         st_dev: 0,
         st_ino: 0,
@@ -2192,10 +2207,10 @@ fn build_stat(mode: u32) -> Stat {
         st_gid: 0,
         st_rdev: 0,
         __pad1: 0,
-        st_size: 0,
+        st_size: size as isize,
         st_blksize: 4096,
         __pad2: 0,
-        st_blocks: 0,
+        st_blocks: blocks,
         st_atime: sec,
         st_atime_nsec: nsec,
         st_mtime: sec,
@@ -2268,6 +2283,9 @@ fn classify_path(root_pa: usize, path: usize) -> Result<Option<KnownPath>, Errno
     }
     if user_path_eq(root_pa, path, DEV_ZERO_PATH)? {
         return Ok(Some(KnownPath::DevZero));
+    }
+    if user_path_eq(root_pa, path, INIT_PATH)? {
+        return Ok(Some(KnownPath::Init));
     }
     Ok(None)
 }
@@ -2767,6 +2785,21 @@ fn poll_revents_for_fd(fd: i32, events: u16) -> u16 {
             }
             revents
         }
+        FdKind::InitFile => {
+            if (events & POLLIN) == 0 {
+                return 0;
+            }
+            let offset = match fd_offset(fd as usize) {
+                Some(value) => value,
+                None => return POLLNVAL,
+            };
+            let image = crate::user::init_exec_elf_image();
+            if offset < image.len() {
+                POLLIN
+            } else {
+                0
+            }
+        }
         _ => 0,
     }
 }
@@ -2914,7 +2947,7 @@ fn ppoll_single_waiter_queue(fd: i32, events: u16) -> Option<&'static crate::tas
     }
 }
 
-fn read_from_entry(entry: FdEntry, root_pa: usize, buf: usize, len: usize) -> Result<usize, Errno> {
+fn read_from_entry(fd: usize, entry: FdEntry, root_pa: usize, buf: usize, len: usize) -> Result<usize, Errno> {
     match entry.kind {
         FdKind::Stdin => {
             let nonblock = (entry.flags & O_NONBLOCK) != 0;
@@ -2925,6 +2958,7 @@ fn read_from_entry(entry: FdEntry, root_pa: usize, buf: usize, len: usize) -> Re
             zero_user_write(root_pa, buf, len)?;
             Ok(len)
         }
+        FdKind::InitFile => read_init_file(fd, root_pa, buf, len),
         FdKind::PipeRead(pipe_id) => {
             let nonblock = (entry.flags & O_NONBLOCK) != 0;
             pipe_read(pipe_id, root_pa, buf, len, nonblock)
@@ -2935,6 +2969,20 @@ fn read_from_entry(entry: FdEntry, root_pa: usize, buf: usize, len: usize) -> Re
     }
 }
 
+fn read_init_file(fd: usize, root_pa: usize, buf: usize, len: usize) -> Result<usize, Errno> {
+    let offset = fd_offset(fd).ok_or(Errno::Badf)?;
+    let image = crate::user::init_exec_elf_image();
+    if offset >= image.len() {
+        return Ok(0);
+    }
+    let to_read = min(len, image.len() - offset);
+    UserSlice::new(buf, to_read)
+        .copy_from_slice(root_pa, &image[offset..offset + to_read])
+        .ok_or(Errno::Fault)?;
+    set_fd_offset(fd, offset + to_read);
+    Ok(to_read)
+}
+
 fn write_to_entry(entry: FdEntry, root_pa: usize, buf: usize, len: usize) -> Result<usize, Errno> {
     match entry.kind {
         FdKind::Stdout | FdKind::Stderr => write_console_from(root_pa, buf, len),
@@ -2942,6 +2990,7 @@ fn write_to_entry(entry: FdEntry, root_pa: usize, buf: usize, len: usize) -> Res
             validate_user_read(root_pa, buf, len)?;
             Ok(len)
         }
+        FdKind::InitFile => Err(Errno::Badf),
         FdKind::PipeWrite(pipe_id) => {
             let nonblock = (entry.flags & O_NONBLOCK) != 0;
             pipe_write(pipe_id, root_pa, buf, len, nonblock)
