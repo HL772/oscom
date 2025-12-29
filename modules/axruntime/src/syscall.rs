@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use core::mem::size_of;
+
 use crate::mm::{self, UserAccess, UserPtr, UserSlice};
 use crate::{sbi, time};
 use crate::trap::TrapFrame;
@@ -49,6 +51,8 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_EXIT => sys_exit(ctx.args[0]),
         SYS_READ => sys_read(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_WRITE => sys_write(ctx.args[0], ctx.args[1], ctx.args[2]),
+        SYS_READV => sys_readv(ctx.args[0], ctx.args[1], ctx.args[2]),
+        SYS_WRITEV => sys_writev(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_CLOCK_GETTIME => sys_clock_gettime(ctx.args[0], ctx.args[1]),
         SYS_GETTIMEOFDAY => sys_gettimeofday(ctx.args[0], ctx.args[1]),
         SYS_GETPID => sys_getpid(),
@@ -59,12 +63,15 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
 const SYS_EXIT: usize = 93;
 const SYS_READ: usize = 63;
 const SYS_WRITE: usize = 64;
+const SYS_READV: usize = 65;
+const SYS_WRITEV: usize = 66;
 const SYS_CLOCK_GETTIME: usize = 113;
 const SYS_GETTIMEOFDAY: usize = 169;
 const SYS_GETPID: usize = 172;
 
 const CLOCK_REALTIME: usize = 0;
 const CLOCK_MONOTONIC: usize = 1;
+const IOV_MAX: usize = 1024;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -87,6 +94,13 @@ struct TimeZone {
     tz_dsttime: i32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Iovec {
+    iov_base: usize,
+    iov_len: usize,
+}
+
 fn sys_exit(_code: usize) -> Result<usize, Errno> {
     crate::sbi::shutdown();
 }
@@ -103,21 +117,7 @@ fn sys_read(fd: usize, buf: usize, len: usize) -> Result<usize, Errno> {
         return Err(Errno::Fault);
     }
 
-    let mut read = 0usize;
-    while read < len {
-        match sbi::console_getchar() {
-            Some(ch) => {
-                let ptr = UserPtr::<u8>::new(buf.wrapping_add(read));
-                ptr.write(root_pa, ch).ok_or(Errno::Fault)?;
-                read += 1;
-            }
-            None => {
-                // 早期阶段无阻塞控制台输入；无数据则立即返回已读取字节数。
-                break;
-            }
-        }
-    }
-    Ok(read)
+    read_console_into(root_pa, buf, len)
 }
 
 fn sys_write(fd: usize, buf: usize, len: usize) -> Result<usize, Errno> {
@@ -132,22 +132,80 @@ fn sys_write(fd: usize, buf: usize, len: usize) -> Result<usize, Errno> {
         return Err(Errno::Fault);
     }
 
-    let slice = UserSlice::new(buf, len);
-    let mut written = 0usize;
-    slice
-        .for_each_chunk(root_pa, UserAccess::Read, |pa, chunk| {
-            // SAFETY: 翻译结果确保该片段在用户态可读。
-            unsafe {
-                let src = pa as *const u8;
-                for i in 0..chunk {
-                    sbi::console_putchar(*src.add(i));
+    write_console_from(root_pa, buf, len)
+}
+
+fn sys_readv(fd: usize, iov_ptr: usize, iovcnt: usize) -> Result<usize, Errno> {
+    if fd != 0 {
+        return Err(Errno::Badf);
+    }
+    if iovcnt == 0 || iovcnt > IOV_MAX {
+        return Err(Errno::Inval);
+    }
+    if iov_ptr == 0 {
+        return Err(Errno::Fault);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+
+    let mut total = 0usize;
+    for index in 0..iovcnt {
+        let iov = load_iovec(root_pa, iov_ptr, index)?;
+        if iov.iov_len == 0 {
+            continue;
+        }
+        match read_console_into(root_pa, iov.iov_base, iov.iov_len) {
+            Ok(read) => {
+                total += read;
+                if read < iov.iov_len {
+                    break;
                 }
             }
-            written += chunk;
-            Some(())
-        })
-        .ok_or(Errno::Fault)?;
-    Ok(written)
+            Err(err) => {
+                if total > 0 {
+                    return Ok(total);
+                }
+                return Err(err);
+            }
+        }
+    }
+    Ok(total)
+}
+
+fn sys_writev(fd: usize, iov_ptr: usize, iovcnt: usize) -> Result<usize, Errno> {
+    if fd != 1 && fd != 2 {
+        return Err(Errno::Badf);
+    }
+    if iovcnt == 0 || iovcnt > IOV_MAX {
+        return Err(Errno::Inval);
+    }
+    if iov_ptr == 0 {
+        return Err(Errno::Fault);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+
+    let mut total = 0usize;
+    for index in 0..iovcnt {
+        let iov = load_iovec(root_pa, iov_ptr, index)?;
+        if iov.iov_len == 0 {
+            continue;
+        }
+        match write_console_from(root_pa, iov.iov_base, iov.iov_len) {
+            Ok(written) => total += written,
+            Err(err) => {
+                if total > 0 {
+                    return Ok(total);
+                }
+                return Err(err);
+            }
+        }
+    }
+    Ok(total)
 }
 
 fn sys_clock_gettime(clock_id: usize, tp: usize) -> Result<usize, Errno> {
@@ -201,4 +259,67 @@ fn sys_gettimeofday(tv: usize, tz: usize) -> Result<usize, Errno> {
 
 fn sys_getpid() -> Result<usize, Errno> {
     Ok(1)
+}
+
+fn load_iovec(root_pa: usize, iov_ptr: usize, index: usize) -> Result<Iovec, Errno> {
+    let size = size_of::<Iovec>();
+    let offset = index.checked_mul(size).ok_or(Errno::Fault)?;
+    let addr = iov_ptr.checked_add(offset).ok_or(Errno::Fault)?;
+    UserPtr::new(addr).read(root_pa).ok_or(Errno::Fault)
+}
+
+fn read_console_into(root_pa: usize, buf: usize, len: usize) -> Result<usize, Errno> {
+    if len == 0 {
+        return Ok(0);
+    }
+    let mut addr = buf;
+    let mut remaining = len;
+    let mut read = 0usize;
+    while remaining > 0 {
+        let page_off = addr & (mm::PAGE_SIZE - 1);
+        let chunk = core::cmp::min(remaining, mm::PAGE_SIZE - page_off);
+        let pa = mm::translate_user_ptr(root_pa, addr, chunk, UserAccess::Write)
+            .ok_or(Errno::Fault)?;
+        // SAFETY: 翻译结果确保该片段在用户态可写。
+        unsafe {
+            let dst = pa as *mut u8;
+            for i in 0..chunk {
+                match sbi::console_getchar() {
+                    Some(ch) => {
+                        dst.add(i).write(ch);
+                        read += 1;
+                    }
+                    None => {
+                        // 早期阶段无阻塞控制台输入；无数据则立即返回。
+                        return Ok(read);
+                    }
+                }
+            }
+        }
+        addr = addr.wrapping_add(chunk);
+        remaining -= chunk;
+    }
+    Ok(read)
+}
+
+fn write_console_from(root_pa: usize, buf: usize, len: usize) -> Result<usize, Errno> {
+    if len == 0 {
+        return Ok(0);
+    }
+    let slice = UserSlice::new(buf, len);
+    let mut written = 0usize;
+    slice
+        .for_each_chunk(root_pa, UserAccess::Read, |pa, chunk| {
+            // SAFETY: 翻译结果确保该片段在用户态可读。
+            unsafe {
+                let src = pa as *const u8;
+                for i in 0..chunk {
+                    sbi::console_putchar(*src.add(i));
+                }
+            }
+            written += chunk;
+            Some(())
+        })
+        .ok_or(Errno::Fault)?;
+    Ok(written)
 }

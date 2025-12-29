@@ -18,22 +18,23 @@ const USER_STACK_SIZE: usize = USER_STACK_PAGES * PAGE_SIZE;
 const USER_CODE_VA: usize = config::USER_TEST_BASE;
 const USER_DATA_VA: usize = config::USER_TEST_BASE + PAGE_SIZE;
 const USER_STACK_VA: usize = config::USER_TEST_BASE + PAGE_SIZE * 2;
+const USER_IOVEC_VA: usize = USER_DATA_VA;
 
 const USER_MESSAGE_LEN: usize = 12;
 const USER_MESSAGE: &[u8; USER_MESSAGE_LEN] = b"user: hello\n";
 const USER_MESSAGE_VA: usize = USER_DATA_VA + PAGE_SIZE - 4;
 const USER_MESSAGE_OFFSET: usize = USER_MESSAGE_VA - USER_DATA_VA;
 const USER_MESSAGE_SPLIT: usize = PAGE_SIZE - USER_MESSAGE_OFFSET;
+const USER_IOV_COUNT: usize = 2;
 
 // 最小用户态程序：
-//   write(1, USER_MESSAGE_VA, len) -> 控制台输出（跨页验证 UserSlice）
+//   writev(1, USER_IOVEC_VA, 2) -> 控制台输出（跨页验证 UserSlice）
 //   exit(0) -> 关机
-const USER_CODE: [u8; 40] = [
+const USER_CODE: [u8; 36] = [
     0x13, 0x05, 0x10, 0x00, // addi a0, zero, 1
-    0xb7, 0x25, 0x00, 0x40, // lui a1, 0x40002 (USER_MESSAGE_VA upper)
-    0x93, 0x85, 0xc5, 0xff, // addi a1, a1, -4 (USER_MESSAGE_VA)
-    0x13, 0x06, 0xc0, 0x00, // addi a2, zero, 12
-    0x93, 0x08, 0x00, 0x04, // addi a7, zero, 64
+    0xb7, 0x15, 0x00, 0x40, // lui a1, 0x40001 (USER_IOVEC_VA)
+    0x13, 0x06, 0x20, 0x00, // addi a2, zero, 2
+    0x93, 0x08, 0x20, 0x04, // addi a7, zero, 66
     0x73, 0x00, 0x00, 0x00, // ecall
     0x93, 0x08, 0xd0, 0x05, // addi a7, zero, 93
     0x13, 0x05, 0x00, 0x00, // addi a0, zero, 0
@@ -73,6 +74,12 @@ pub fn prepare_user_test() -> Option<UserContext> {
                 rest,
             );
         }
+        // 布局 iovec 数组：第一个条目跨页读取，第二个条目为 0 长度占位。
+        let iov_base = data_pa as *mut usize;
+        iov_base.write(USER_MESSAGE_VA);
+        iov_base.add(1).write(USER_MESSAGE_LEN);
+        iov_base.add(2).write(USER_DATA_VA);
+        iov_base.add(3).write(0);
     }
     mm::flush_icache();
 

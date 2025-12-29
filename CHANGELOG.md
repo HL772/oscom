@@ -44,3 +44,4 @@
 - Add minimal sys_read for fd=0 using SBI getchar (non-blocking placeholder).
 - Make user-mode smoke buffer cross-page to exercise UserSlice chunking.
 - Add clock_gettime/gettimeofday/getpid time stubs based on uptime ticks.
+- Add readv/writev helpers and route the user smoke through writev.
