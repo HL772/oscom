@@ -67,6 +67,7 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_NEWFSTATAT => sys_newfstatat(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_FACCESSAT => sys_faccessat(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_STATX => sys_statx(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3], ctx.args[4]),
+        SYS_READLINKAT => sys_readlinkat(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_CLOCK_GETTIME => sys_clock_gettime(ctx.args[0], ctx.args[1]),
         SYS_CLOCK_GETTIME64 => sys_clock_gettime(ctx.args[0], ctx.args[1]),
         SYS_CLOCK_GETRES => sys_clock_getres(ctx.args[0], ctx.args[1]),
@@ -132,6 +133,7 @@ const SYS_OPEN: usize = 1024;
 const SYS_OPENAT: usize = 56;
 const SYS_GETDENTS64: usize = 61;
 const SYS_NEWFSTATAT: usize = 79;
+const SYS_READLINKAT: usize = 78;
 const SYS_FACCESSAT: usize = 48;
 const SYS_STATX: usize = 291;
 const SYS_GETCWD: usize = 17;
@@ -662,6 +664,24 @@ fn sys_statx(
         const STATX_SIZE: usize = 256;
         zero_user_write(root_pa, statxbuf, STATX_SIZE)?;
         return Ok(0);
+    }
+    Err(Errno::NoEnt)
+}
+
+fn sys_readlinkat(_dirfd: usize, pathname: usize, buf: usize, len: usize) -> Result<usize, Errno> {
+    if pathname == 0 || buf == 0 {
+        return Err(Errno::Fault);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    if len == 0 {
+        return Ok(0);
+    }
+    validate_user_write(root_pa, buf, len)?;
+    if user_path_eq(root_pa, pathname, DEV_NULL_PATH)? || user_path_eq(root_pa, pathname, DEV_ZERO_PATH)? {
+        return Err(Errno::Inval);
     }
     Err(Errno::NoEnt)
 }
