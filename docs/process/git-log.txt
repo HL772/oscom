@@ -1,4 +1,24 @@
-* commit 739777096475366d89195919b8d8b78acd9a922b (HEAD -> bootstrap-riscv64)
+* commit 37d496a412f41dd2eeb51362386f7f4058a89bbc (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:40:42 +0800
+| 
+|     fix(syscall): validate getrandom flags
+| 
+|  CHANGELOG.md                            | 2 +-
+|  docs/process/phase_3_process_syscall.md | 2 +-
+|  modules/axruntime/src/syscall.rs        | 7 ++++++-
+|  3 files changed, 8 insertions(+), 3 deletions(-)
+| 
+* commit d1649b11bb4ddb58c084e9861baf746d4514e7a5
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:39:44 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 22 +++++++++++++++++++++-
+|  1 file changed, 21 insertions(+), 1 deletion(-)
+| 
+* commit 739777096475366d89195919b8d8b78acd9a922b
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 11:39:28 +0800
 | 
