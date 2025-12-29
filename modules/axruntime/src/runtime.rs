@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use core::mem::size_of;
+use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crate::config;
@@ -184,6 +186,32 @@ pub fn spawn_user(ctx: UserContext) -> Option<TaskId> {
     let _ = RUN_QUEUE.push(task_id);
     NEED_RESCHED.store(true, Ordering::Relaxed);
     Some(task_id)
+}
+
+pub fn spawn_forked_user(
+    parent_tf: &crate::trap::TrapFrame,
+    child_root_pa: usize,
+    user_sp: usize,
+) -> Option<usize> {
+    let stack = stack::alloc_task_stack()?;
+    let task_id = task::alloc_task(resume_user_from_trap, stack.top())?;
+    let kernel_sp = stack.top();
+    let trap_frame_ptr = kernel_sp.saturating_sub(size_of::<crate::trap::TrapFrame>());
+    // SAFETY: trapframe lives on the child kernel stack top.
+    unsafe {
+        let child_tf = &mut *(trap_frame_ptr as *mut crate::trap::TrapFrame);
+        ptr::copy_nonoverlapping(parent_tf as *const _, child_tf as *mut _, 1);
+        child_tf.a0 = 0;
+        child_tf.sepc = parent_tf.sepc.wrapping_add(4);
+    }
+    let _ = task::set_trap_frame(task_id, trap_frame_ptr);
+    let _ = task::set_user_context(task_id, child_root_pa, parent_tf.sepc.wrapping_add(4), user_sp);
+    let _ = task::set_user_sp(task_id, user_sp);
+    let parent_pid = crate::process::current_pid().unwrap_or(1);
+    let pid = crate::process::init_process(task_id, parent_pid);
+    let _ = RUN_QUEUE.push(task_id);
+    NEED_RESCHED.store(true, Ordering::Relaxed);
+    Some(pid)
 }
 
 fn user_task_entry() -> ! {

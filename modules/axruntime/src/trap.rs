@@ -60,6 +60,9 @@ const SCAUSE_INTERRUPT_BIT: usize = 1usize << (usize::BITS as usize - 1);
 const SCAUSE_SUPERVISOR_TIMER: usize = 5;
 const SCAUSE_USER_ECALL: usize = 8;
 const SCAUSE_SUPERVISOR_ECALL: usize = 9;
+const SCAUSE_INST_PAGE_FAULT: usize = 12;
+const SCAUSE_LOAD_PAGE_FAULT: usize = 13;
+const SCAUSE_STORE_PAGE_FAULT: usize = 15;
 
 static TIMER_INTERVAL: AtomicU64 = AtomicU64::new(0);
 static mut CURRENT_TRAP_FRAME: *mut TrapFrame = ptr::null_mut();
@@ -201,6 +204,11 @@ extern "C" fn trap_handler(tf: &mut TrapFrame) {
     } else if code == SCAUSE_SUPERVISOR_ECALL {
         tf.sepc = sepc.wrapping_add(4);
         return;
+    } else if code == SCAUSE_STORE_PAGE_FAULT || code == SCAUSE_LOAD_PAGE_FAULT || code == SCAUSE_INST_PAGE_FAULT {
+        let root_pa = crate::mm::current_root_pa();
+        if root_pa != 0 && crate::mm::handle_cow_fault(root_pa, stval) {
+            return;
+        }
     }
 
     crate::println!(

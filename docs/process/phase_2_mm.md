@@ -11,14 +11,17 @@
 - 建立 Sv39 identity 页表并启用 paging（satp + sfence.vma）。
 - 帧分配器使用 ekernel 之后的内存区间，限制在 1GiB identity 映射内。
 - 页表页改为从帧分配器动态分配。
+- 增加用户指针翻译与 UserPtr/UserSlice，支撑 syscall 访问用户内存。
+- 引入 PTE_COW 标记与 clone_user_root，fork 时复制页表并将可写页降级为只读。
+- page fault 处理 CoW 写入，分配新页并复制数据。
 
 ## 问题与定位
-- 尚未接入设备树内存布局，无法真正分配可用物理内存。
-- 页表实际映射与启用流程尚未实现。
+- bump allocator 无回收，CoW 写入后旧页无法释放。
+- 当前仅处理 4KiB 页级别 CoW，未覆盖大页映射场景。
 
 ## 解决与验证
-- 当前为结构性 scaffolding，通过 `make test-qemu-smoke ARCH=riscv64 PLATFORM=qemu` 进行基础验证。
+- 通过 `make test-qemu-smoke ARCH=riscv64 PLATFORM=qemu` 进行基础验证。
 
 ## 下一步
-- 接入 DTB 内存区域解析。
-- 实现内核页表构建与启用。
+- 引入帧回收与页引用计数，完善 CoW 生命周期。
+- 支持 demand paging 与更完整的页错误处理。

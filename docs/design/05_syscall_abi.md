@@ -17,6 +17,7 @@
 - 早期实现 `read`（fd=0）对接 SBI getchar，非阻塞无数据返回 EAGAIN。
 - 早期实现 `execve`：仅识别 `/init` 内置 ELF 镜像，完成最小 ELF 解析与段映射，并构建 argv/envp 栈布局。
 - 早期实现 `wait4/waitpid`：使用最小进程表与父进程等待队列，支持 WNOHANG 与退出码回收。
+- 早期实现 `clone`：使用 fork 语义创建子进程（忽略线程类 flags），返回子 PID 并结合 CoW 页表。
 - 早期实现 `clock_gettime/gettimeofday/getpid`，支持 MONOTONIC/RAW/BOOTTIME/COARSE 并返回 timebase 时间。
 - 早期实现 `clock_gettime64`，与 `clock_gettime` 共用时间源。
 - 早期实现 `clock_getres/clock_getres_time64`，返回 timebase 精度占位。
@@ -78,6 +79,7 @@ trap_entry
 - ABI 细节错配会导致用户态程序崩溃，需严格对齐 Linux 文档。
 - syscall 覆盖面大，维护成本高，需要持续回归测试。
 - 用户态指针检查不完善会引入安全问题或内核崩溃。
+- clone 暂不支持线程类 flags，后续需补齐共享地址空间/文件表语义。
 
 ## 测试点
 - 基础 syscall：`read/write/open/close` 的返回值与 errno 行为。

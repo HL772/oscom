@@ -23,6 +23,7 @@
 - 内核栈在早期由帧分配器分配连续页，任务栈来自固定大小的栈池（上限 `MAX_TASKS`）。
 - TaskControlBlock 支持入口函数指针与栈顶配置，早期用多 dummy task 验证轮转与睡眠唤醒。
 - TaskControlBlock 记录用户态 root/entry/sp 与 trapframe 指针，用于 execve 后切换地址空间与从 trap 返回。
+- fork/clone 通过复制 trapframe + CoW 页表生成子任务，父进程返回子 PID，子进程返回 0。
 - dummy task 与调度日志通过 `sched-demo` feature 控制，默认构建保持安静。
 - 调度触发周期可配置（`SCHED_INTERVAL_TICKS`），避免频繁切换。
 - 引入 `transition_state` 校验任务状态转换，避免过期队列项覆盖运行态。
@@ -77,3 +78,4 @@ waitpid(pid)
 - dummy task 的 wait/notify 组合覆盖通知与超时两种路径。
 - scheduler tick hook 的日志输出与周期调度行为。
 - 后续 busybox/多任务场景回归。
+- fork/clone 后父子进程能分别返回并执行，触发 CoW 写入路径。

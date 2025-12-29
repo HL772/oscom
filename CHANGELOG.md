@@ -56,6 +56,8 @@
 - Add execve loader for `/init` built-in ELF image with argv/envp stack layout.
 - Add minimal process table and wait4/waitpid support with zombie reaping and WNOHANG.
 - Track user task root/entry/sp/trapframe and add a trapframe resume path for user tasks.
+- Add clone syscall with fork-like semantics backed by CoW page table cloning.
+- Add PTE_COW and page-fault handling to copy pages on first write.
 - Track O_NONBLOCK via fcntl and honor it for pipe reads/writes.
 - Add uname syscall stub with minimal utsname fields.
 - Add minimal getppid/getuid/geteuid/getgid/getegid/getresuid/getresgid stubs.

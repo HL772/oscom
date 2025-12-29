@@ -4,6 +4,7 @@ use core::arch::asm;
 use core::cmp::{max, min};
 use core::marker::PhantomData;
 use core::mem::{size_of, MaybeUninit};
+use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 pub const PAGE_SIZE: usize = 4096;
@@ -24,6 +25,7 @@ const PTE_U: usize = 1 << 4;
 const PTE_G: usize = 1 << 5;
 const PTE_A: usize = 1 << 6;
 const PTE_D: usize = 1 << 7;
+const PTE_COW: usize = 1 << 8;
 
 const PPN_SHIFT: usize = 10;
 const PPN_WIDTH: usize = 44;
@@ -435,7 +437,15 @@ pub fn translate_user_ptr(root_pa: usize, va: usize, len: usize, access: UserAcc
     }
     match access {
         UserAccess::Read if (flags & PTE_R) == 0 => return None,
-        UserAccess::Write if (flags & PTE_W) == 0 => return None,
+        UserAccess::Write if (flags & PTE_W) == 0 => {
+            if (flags & PTE_COW) != 0 && page_size == PAGE_SIZE {
+                if !resolve_cow(root_pa, va) {
+                    return None;
+                }
+                return translate_user_ptr(root_pa, va, len, access);
+            }
+            return None;
+        }
         UserAccess::Execute if (flags & PTE_X) == 0 => return None,
         _ => {}
     }
@@ -478,6 +488,86 @@ fn walk_page(root_pa: usize, va: usize) -> Option<(usize, usize, usize)> {
         return None;
     }
     Some((l0e.ppn().addr().as_usize(), PAGE_SIZE, l0e.flags()))
+}
+
+fn cow_flags(flags: usize) -> usize {
+    if (flags & PTE_W) == 0 {
+        return flags;
+    }
+    let mut new_flags = flags & !(PTE_W | PTE_D);
+    new_flags |= PTE_COW;
+    new_flags
+}
+
+fn walk_pte_mut(root_pa: usize, va: usize) -> Option<(*mut PageTableEntry, usize)> {
+    if root_pa == 0 {
+        return None;
+    }
+    // SAFETY: early boot uses identity mapping; root page table is valid.
+    let l2 = unsafe { &mut *(root_pa as *mut PageTable) };
+    let [l2_idx, l1_idx, l0_idx] = VirtAddr::new(va).sv39_indexes();
+    let l2e = &mut l2.entries[l2_idx];
+    if !l2e.is_valid() {
+        return None;
+    }
+    if l2e.is_leaf() {
+        return Some((l2e as *mut _, PAGE_SIZE_1G));
+    }
+
+    // SAFETY: entry points to a valid next-level table page.
+    let l1 = unsafe { &mut *(l2e.ppn().addr().as_usize() as *mut PageTable) };
+    let l1e = &mut l1.entries[l1_idx];
+    if !l1e.is_valid() {
+        return None;
+    }
+    if l1e.is_leaf() {
+        return Some((l1e as *mut _, PAGE_SIZE_2M));
+    }
+
+    // SAFETY: entry points to a valid next-level table page.
+    let l0 = unsafe { &mut *(l1e.ppn().addr().as_usize() as *mut PageTable) };
+    let l0e = &mut l0.entries[l0_idx];
+    if !l0e.is_valid() || !l0e.is_leaf() {
+        return None;
+    }
+    Some((l0e as *mut _, PAGE_SIZE))
+}
+
+fn resolve_cow(root_pa: usize, va: usize) -> bool {
+    let (entry_ptr, page_size) = match walk_pte_mut(root_pa, va) {
+        Some(value) => value,
+        None => return false,
+    };
+    if page_size != PAGE_SIZE {
+        return false;
+    }
+    // SAFETY: entry_ptr points to a valid PTE in the current page table.
+    let entry = unsafe { *entry_ptr };
+    let flags = entry.flags();
+    if (flags & PTE_COW) == 0 || (flags & PTE_U) == 0 {
+        return false;
+    }
+    let old_pa = entry.ppn().addr().as_usize();
+    let frame = match alloc_frame() {
+        Some(frame) => frame,
+        None => return false,
+    };
+    let new_pa = frame.addr().as_usize();
+    // SAFETY: old/new pages are identity-mapped and PAGE_SIZE bytes long.
+    unsafe {
+        ptr::copy_nonoverlapping(old_pa as *const u8, new_pa as *mut u8, PAGE_SIZE);
+    }
+    let new_flags = (flags | PTE_W | PTE_D) & !PTE_COW;
+    // SAFETY: entry_ptr points to a valid writable PTE slot.
+    unsafe {
+        *entry_ptr = PageTableEntry::new(frame, new_flags);
+    }
+    flush_tlb();
+    true
+}
+
+pub fn handle_cow_fault(root_pa: usize, va: usize) -> bool {
+    resolve_cow(root_pa, va)
 }
 
 unsafe fn alloc_page_table() -> Option<&'static mut PageTable> {
@@ -542,6 +632,113 @@ pub fn alloc_user_root() -> Option<usize> {
     let kernel_root = unsafe { &*(kernel_root_pa as *const PageTable) };
     root.entries = kernel_root.entries;
     Some(virt_to_phys(root as *const _ as usize))
+}
+
+fn table_has_user_l0(table: &PageTable) -> bool {
+    for entry in table.entries.iter() {
+        if entry.is_valid() && entry.is_leaf() && (entry.flags() & PTE_U) != 0 {
+            return true;
+        }
+    }
+    false
+}
+
+fn table_has_user_l1(table: &PageTable) -> bool {
+    for entry in table.entries.iter() {
+        if !entry.is_valid() {
+            continue;
+        }
+        if entry.is_leaf() {
+            if (entry.flags() & PTE_U) != 0 {
+                return true;
+            }
+            continue;
+        }
+        // SAFETY: entry points to a valid next-level table page.
+        let l0 = unsafe { &*(entry.ppn().addr().as_usize() as *const PageTable) };
+        if table_has_user_l0(l0) {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
+    if parent_root_pa == 0 {
+        return None;
+    }
+    // SAFETY: parent root page table is valid in early boot.
+    let parent_root = unsafe { &mut *(parent_root_pa as *mut PageTable) };
+    // SAFETY: allocate a fresh root page table for the child.
+    let child_root = unsafe { alloc_page_table()? };
+    child_root.entries = parent_root.entries;
+
+    for l2_idx in 0..SV39_ENTRIES {
+        let parent_l2e = parent_root.entries[l2_idx];
+        if !parent_l2e.is_valid() {
+            continue;
+        }
+        if parent_l2e.is_leaf() {
+            if (parent_l2e.flags() & PTE_U) != 0 {
+                let new_flags = cow_flags(parent_l2e.flags());
+                parent_root.entries[l2_idx] = PageTableEntry::new(parent_l2e.ppn(), new_flags);
+                child_root.entries[l2_idx] = PageTableEntry::new(parent_l2e.ppn(), new_flags);
+            }
+            continue;
+        }
+        // SAFETY: entry points to a valid next-level table page.
+        let parent_l1 = unsafe { &mut *(parent_l2e.ppn().addr().as_usize() as *mut PageTable) };
+        if !table_has_user_l1(parent_l1) {
+            continue;
+        }
+        // SAFETY: allocate a fresh L1 page table for the child.
+        let child_l1 = unsafe { alloc_page_table()? };
+        child_l1.entries = parent_l1.entries;
+        let child_l1_pa = virt_to_phys(child_l1 as *const _ as usize);
+        child_root.entries[l2_idx] =
+            PageTableEntry::new(PhysPageNum::new(child_l1_pa >> PAGE_SHIFT), PTE_V);
+
+        for l1_idx in 0..SV39_ENTRIES {
+            let parent_l1e = parent_l1.entries[l1_idx];
+            if !parent_l1e.is_valid() {
+                continue;
+            }
+            if parent_l1e.is_leaf() {
+                if (parent_l1e.flags() & PTE_U) != 0 {
+                    let new_flags = cow_flags(parent_l1e.flags());
+                    parent_l1.entries[l1_idx] = PageTableEntry::new(parent_l1e.ppn(), new_flags);
+                    child_l1.entries[l1_idx] = PageTableEntry::new(parent_l1e.ppn(), new_flags);
+                }
+                continue;
+            }
+            // SAFETY: entry points to a valid next-level table page.
+            let parent_l0 = unsafe { &mut *(parent_l1e.ppn().addr().as_usize() as *mut PageTable) };
+            if !table_has_user_l0(parent_l0) {
+                continue;
+            }
+            // SAFETY: allocate a fresh L0 page table for the child.
+            let child_l0 = unsafe { alloc_page_table()? };
+            child_l0.entries = parent_l0.entries;
+            let child_l0_pa = virt_to_phys(child_l0 as *const _ as usize);
+            child_l1.entries[l1_idx] =
+                PageTableEntry::new(PhysPageNum::new(child_l0_pa >> PAGE_SHIFT), PTE_V);
+
+            for l0_idx in 0..SV39_ENTRIES {
+                let parent_l0e = parent_l0.entries[l0_idx];
+                if !parent_l0e.is_valid() || !parent_l0e.is_leaf() {
+                    continue;
+                }
+                if (parent_l0e.flags() & PTE_U) == 0 {
+                    continue;
+                }
+                let new_flags = cow_flags(parent_l0e.flags());
+                parent_l0.entries[l0_idx] = PageTableEntry::new(parent_l0e.ppn(), new_flags);
+                child_l0.entries[l0_idx] = PageTableEntry::new(parent_l0e.ppn(), new_flags);
+            }
+        }
+    }
+    flush_tlb();
+    Some(virt_to_phys(child_root as *const _ as usize))
 }
 
 pub fn switch_root(root_pa: usize) {

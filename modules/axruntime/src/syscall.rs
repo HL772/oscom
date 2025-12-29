@@ -23,6 +23,7 @@ pub enum Errno {
     NotDir = 20,
     Range = 34,
     Again = 11,
+    NoMem = 12,
     Child = 10,
 }
 
@@ -61,6 +62,7 @@ fn dispatch(tf: &mut TrapFrame, ctx: SyscallContext) -> Result<usize, Errno> {
     match ctx.nr {
         SYS_EXIT => sys_exit(ctx.args[0]),
         SYS_EXECVE => sys_execve(tf, ctx.args[0], ctx.args[1], ctx.args[2]),
+        SYS_CLONE => sys_clone(tf, ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3], ctx.args[4]),
         SYS_READ => sys_read(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_WRITE => sys_write(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_READV => sys_readv(ctx.args[0], ctx.args[1], ctx.args[2]),
@@ -146,6 +148,7 @@ fn dispatch(tf: &mut TrapFrame, ctx: SyscallContext) -> Result<usize, Errno> {
 
 const SYS_EXIT: usize = 93;
 const SYS_EXIT_GROUP: usize = 94;
+const SYS_CLONE: usize = 220;
 const SYS_EXECVE: usize = 221;
 const SYS_READ: usize = 63;
 const SYS_WRITE: usize = 64;
@@ -589,6 +592,30 @@ fn sys_execve(tf: &mut TrapFrame, pathname: usize, argv: usize, envp: usize) -> 
         let _ = crate::task::set_user_context(task_id, ctx.root_pa, ctx.entry, ctx.user_sp);
     }
     Ok(0)
+}
+
+fn sys_clone(
+    tf: &TrapFrame,
+    _flags: usize,
+    stack: usize,
+    _ptid: usize,
+    _tls: usize,
+    _ctid: usize,
+) -> Result<usize, Errno> {
+    // clone 目前按 fork 语义处理：忽略线程类 flags，仅复制地址空间。
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    let user_sp = if stack != 0 {
+        stack
+    } else {
+        let task_id = crate::runtime::current_task_id().ok_or(Errno::Fault)?;
+        crate::task::user_sp(task_id).ok_or(Errno::Fault)?
+    };
+    let child_root = mm::clone_user_root(root_pa).ok_or(Errno::NoMem)?;
+    let pid = crate::runtime::spawn_forked_user(tf, child_root, user_sp).ok_or(Errno::NoMem)?;
+    Ok(pid)
 }
 
 fn sys_read(fd: usize, buf: usize, len: usize) -> Result<usize, Errno> {

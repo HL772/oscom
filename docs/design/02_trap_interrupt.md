@@ -15,6 +15,7 @@
 - tick 中断设置调度请求标志，并在有运行任务时切回空闲上下文，由 idle_loop 执行调度，避免在 trap 中直接选取下个任务。
 - 使用 TrapFrameGuard 记录当前 trapframe 指针，为后续抢占保存上下文预留入口。
 - trap 入口使用 `sscratch` 交换内核栈指针，确保从 U-mode 进入时切到内核栈。
+- page fault 分支尝试处理 CoW 写入异常，成功时直接返回用户态。
 
 ## 关键数据结构
 - TrapFrame：保存通用寄存器与 CSR 的固定布局结构。
