@@ -1,4 +1,27 @@
-* commit 43cb22e91255b9660c16b1009182d86ffe80a536 (HEAD -> bootstrap-riscv64)
+* commit 3a18eca310b5975345d8ba71719046f0c2010675 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 16:08:23 +0800
+| 
+|     feat(syscall): add execve builtin loader
+| 
+|  CHANGELOG.md                            |  1 +
+|  docs/design/05_syscall_abi.md           |  1 +
+|  docs/process/phase_3_process_syscall.md |  1 +
+|  modules/axruntime/src/syscall.rs        | 42 ++++++++++++++++++++--
+|  modules/axruntime/src/trap.rs           |  7 ++++
+|  modules/axruntime/src/user.rs           | 59 ++++++++++++++++++-------------
+|  6 files changed, 85 insertions(+), 26 deletions(-)
+| 
+* commit 9305dea9e2f11f7d2442bc304bfe17e989e79044
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 15:58:00 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 25 ++++++++++++++++++++++++-
+|  1 file changed, 24 insertions(+), 1 deletion(-)
+| 
+* commit 43cb22e91255b9660c16b1009182d86ffe80a536
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 15:57:49 +0800
 | 
