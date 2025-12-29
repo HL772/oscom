@@ -1,4 +1,25 @@
-* commit c40d5c5e1742a4f24fb4388bef988345cb4d59aa (HEAD -> bootstrap-riscv64)
+* commit 1afa6067fed3a6c68975a057f56f9a9cbd4d821e (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:28:41 +0800
+| 
+|     feat(syscall): add getcpu stub
+| 
+|  CHANGELOG.md                            |  1 +
+|  docs/design/05_syscall_abi.md           |  1 +
+|  docs/process/phase_3_process_syscall.md |  1 +
+|  modules/axruntime/src/syscall.rs        | 16 ++++++++++++++++
+|  4 files changed, 19 insertions(+)
+| 
+* commit 9bec4a48974e23262bcdf22b8f18a6d42471dcc4
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:27:44 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit c40d5c5e1742a4f24fb4388bef988345cb4d59aa
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 11:27:30 +0800
 | 
