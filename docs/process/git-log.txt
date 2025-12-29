@@ -1,4 +1,25 @@
-* commit 50c49d0a4d4ff2d27570ffafde075e19412475ae (HEAD -> bootstrap-riscv64)
+* commit bcb2d707830ce4c1ce163a1a139a9eaacf3dff8a (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 20:02:04 +0800
+| 
+|     feat(syscall): wake all futex waiters
+| 
+|  CHANGELOG.md                            |  1 +
+|  docs/design/05_syscall_abi.md           |  1 +
+|  docs/process/phase_3_process_syscall.md |  1 +
+|  modules/axruntime/src/futex.rs          | 19 ++++++++++++-------
+|  4 files changed, 15 insertions(+), 7 deletions(-)
+| 
+* commit 1bf767af2b47bbe33a0458d9121ca7e33b4d50d9
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 19:58:39 +0800
+| 
+|     chore(process): refresh git log
+| 
+|  docs/process/git-log.txt | 24 +++++++++++++++++++++++-
+|  1 file changed, 23 insertions(+), 1 deletion(-)
+| 
+* commit 50c49d0a4d4ff2d27570ffafde075e19412475ae
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 19:58:26 +0800
 | 
