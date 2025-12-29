@@ -1,4 +1,27 @@
-* commit 754c10f19fa8c51ceb9d18090fe9e0bc884bbec2 (HEAD -> bootstrap-riscv64)
+* commit a8057fdb7e69f91100585572db186dbbee6b7639 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 22:01:26 +0800
+| 
+|     feat(fs): add memfs init read path
+| 
+|  CHANGELOG.md                     |  1 +
+|  docs/design/06_fs_vfs.md         |  1 +
+|  docs/process/phase_4_fs.md       |  1 +
+|  modules/axfs/src/lib.rs          |  2 +-
+|  modules/axfs/src/memfs.rs        | 55 +++++++++++++++++++++++++++++-----
+|  modules/axruntime/src/syscall.rs | 61 ++++++++++++++++++--------------------
+|  6 files changed, 81 insertions(+), 40 deletions(-)
+| 
+* commit b5960e9239fe752758f637b81796ff4008873fc2
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 21:55:24 +0800
+| 
+|     chore(process): refresh git log
+| 
+|  docs/process/git-log.txt | 22 +++++++++++++++++++++-
+|  1 file changed, 21 insertions(+), 1 deletion(-)
+| 
+* commit 754c10f19fa8c51ceb9d18090fe9e0bc884bbec2
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 21:55:10 +0800
 | 
