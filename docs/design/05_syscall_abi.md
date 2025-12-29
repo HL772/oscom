@@ -40,6 +40,7 @@
 - 早期实现 `umask`，返回并更新进程掩码占位。
 - 早期实现 `prctl(PR_SET_NAME/PR_GET_NAME)`，占位保存并返回进程名。
 - 早期实现 `sched_getaffinity/sched_setaffinity`，占位返回单核亲和性。
+- 早期实现 `getcpu`，占位返回 CPU=0/NUMA=0。
 - 早期实现 `getrusage`，占位返回零资源统计。
 - 早期实现 `setpgid/getpgid/getsid/setsid/getpgrp/setpgrp`，任务上下文可用时返回 TaskId+1。
 

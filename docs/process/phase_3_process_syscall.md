@@ -58,6 +58,7 @@
 - 增加 umask，占位记录进程掩码。
 - 增加 prctl(PR_SET_NAME/PR_GET_NAME)，占位保存并返回进程名。
 - 增加 sched_getaffinity/sched_setaffinity，占位返回单核亲和性。
+- 增加 getcpu，占位返回 CPU=0/NUMA=0。
 - 增加 getrusage，占位返回零资源统计。
 - 增加 setpgid/getpgid/getsid/setsid/getpgrp/setpgrp，占位返回 TaskId+1 作为进程组信息。
 
