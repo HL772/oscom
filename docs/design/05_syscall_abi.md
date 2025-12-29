@@ -20,7 +20,7 @@
 - 早期实现 `clock_getres/clock_getres_time64`，返回 timebase 精度占位。
 - 早期实现 `nanosleep`，优先走调度器睡眠；无任务上下文时用 timebase 忙等。
 - 早期实现 `readv/writev`，复用用户指针校验并支持分段缓冲区。
-- 早期实现 `open/openat/newfstatat/getdents64/faccessat`，占位返回 ENOENT/ENOTDIR，并识别 `/dev/null` 与 `/dev/zero`。
+- 早期实现 `open/openat/newfstatat/getdents64/faccessat/statx`，占位返回 ENOENT/ENOTDIR，并识别 `/dev/null` 与 `/dev/zero`。
 - 早期实现 `uname`，返回最小可用的系统信息占位。
 - 早期实现 `getpid/getppid/getuid/geteuid/getgid/getegid/getresuid/getresgid` 等身份信息占位。
 - 早期实现 `gettid` 与 `sched_yield`，任务上下文可用时返回 TaskId+1。
