@@ -36,6 +36,7 @@
 - 早期实现 `set_robust_list/get_robust_list`，占位返回空链表。
 - 早期实现 `rt_sigaction/rt_sigprocmask`，占位接受信号配置请求。
 - 早期实现 `fcntl`，占位支持标准输入输出标志查询/设置。
+- 早期实现 `umask`，返回并更新进程掩码占位。
 
 ## 关键数据结构
 - `SyscallAbi`：抽象获取 syscall 号与参数、设置返回值与 `sepc` 前进。

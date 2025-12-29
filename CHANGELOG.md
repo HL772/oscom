@@ -64,3 +64,4 @@
 - Add rt_sigaction/rt_sigprocmask stubs.
 - Add fcntl stub for stdio flags.
 - Add clock_getres stubs using tick resolution.
+- Add umask stub with stored mask.

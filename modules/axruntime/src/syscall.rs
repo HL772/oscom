@@ -88,6 +88,7 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_RT_SIGACTION => sys_rt_sigaction(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_RT_SIGPROCMASK => sys_rt_sigprocmask(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_FCNTL => sys_fcntl(ctx.args[0], ctx.args[1], ctx.args[2]),
+        SYS_UMASK => sys_umask(ctx.args[0]),
         _ => Err(Errno::NoSys),
     }
 }
@@ -112,6 +113,7 @@ const SYS_GET_ROBUST_LIST: usize = 100;
 const SYS_RT_SIGACTION: usize = 134;
 const SYS_RT_SIGPROCMASK: usize = 135;
 const SYS_FCNTL: usize = 25;
+const SYS_UMASK: usize = 166;
 
 const TIOCGWINSZ: usize = 0x5413;
 const SYS_CLOCK_GETTIME: usize = 113;
@@ -146,6 +148,7 @@ const F_GETFL: usize = 3;
 const F_SETFL: usize = 4;
 
 static RNG_STATE: AtomicU64 = AtomicU64::new(0);
+static UMASK: AtomicU64 = AtomicU64::new(0);
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -848,6 +851,11 @@ fn sys_fcntl(fd: usize, cmd: usize, _arg: usize) -> Result<usize, Errno> {
         F_SETFL => Ok(0),
         _ => Err(Errno::Inval),
     }
+}
+
+fn sys_umask(mask: usize) -> Result<usize, Errno> {
+    let old = UMASK.swap((mask & 0o777) as u64, Ordering::Relaxed);
+    Ok(old as usize)
 }
 
 fn load_iovec(root_pa: usize, iov_ptr: usize, index: usize) -> Result<Iovec, Errno> {
