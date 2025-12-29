@@ -61,6 +61,7 @@
 - Add getrandom stub with xorshift output.
 - Add fstat stub for stdio character device metadata.
 - Add dup/dup3 stubs for stdio redirection.
+- Add lseek stub returning ESPIPE for stdio.
 - Add robust list stubs returning empty state.
 - Add rt_sigaction/rt_sigprocmask stubs.
 - Add fcntl stub for stdio flags.

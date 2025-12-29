@@ -15,6 +15,7 @@ pub enum Errno {
     Fault = 14,
     Inval = 22,
     Badf = 9,
+    Pipe = 29,
     Range = 34,
 }
 
@@ -83,6 +84,7 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_FSTAT => sys_fstat(ctx.args[0], ctx.args[1]),
         SYS_DUP => sys_dup(ctx.args[0]),
         SYS_DUP3 => sys_dup3(ctx.args[0], ctx.args[1], ctx.args[2]),
+        SYS_LSEEK => sys_lseek(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_SET_ROBUST_LIST => sys_set_robust_list(ctx.args[0], ctx.args[1]),
         SYS_GET_ROBUST_LIST => sys_get_robust_list(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_RT_SIGACTION => sys_rt_sigaction(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
@@ -122,6 +124,7 @@ const SYS_RT_SIGPROCMASK: usize = 135;
 const SYS_FCNTL: usize = 25;
 const SYS_UMASK: usize = 166;
 const SYS_PRCTL: usize = 167;
+const SYS_LSEEK: usize = 62;
 const SYS_SCHED_SETAFFINITY: usize = 122;
 const SYS_SCHED_GETAFFINITY: usize = 123;
 const SYS_GETRUSAGE: usize = 165;
@@ -863,6 +866,13 @@ fn sys_dup3(oldfd: usize, newfd: usize, flags: usize) -> Result<usize, Errno> {
     }
     if newfd <= 2 {
         return Ok(newfd);
+    }
+    Err(Errno::Badf)
+}
+
+fn sys_lseek(fd: usize, _offset: usize, _whence: usize) -> Result<usize, Errno> {
+    if fd <= 2 {
+        return Err(Errno::Pipe);
     }
     Err(Errno::Badf)
 }
