@@ -73,3 +73,4 @@
 - Add getcpu stub returning CPU=0/NUMA=0.
 - Add getrusage stub returning zero stats.
 - Add setpgid/getpgid/getsid/setsid/getpgrp/setpgrp stubs (TaskId+1 when available).
+- Add getgroups/setgroups stubs returning empty groups.

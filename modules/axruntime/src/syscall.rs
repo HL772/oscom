@@ -104,6 +104,8 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_GETSID => sys_getsid(ctx.args[0]),
         SYS_GETPGRP => sys_getpgrp(),
         SYS_SETPGRP => sys_setpgrp(),
+        SYS_GETGROUPS => sys_getgroups(ctx.args[0], ctx.args[1]),
+        SYS_SETGROUPS => sys_setgroups(ctx.args[0], ctx.args[1]),
         SYS_GETCPU => sys_getcpu(ctx.args[0], ctx.args[1]),
         _ => Err(Errno::NoSys),
     }
@@ -141,6 +143,8 @@ const SYS_SETSID: usize = 157;
 const SYS_GETSID: usize = 156;
 const SYS_GETPGRP: usize = 111;
 const SYS_SETPGRP: usize = 112;
+const SYS_GETGROUPS: usize = 158;
+const SYS_SETGROUPS: usize = 159;
 const SYS_GETCPU: usize = 309;
 
 const TIOCGWINSZ: usize = 0x5413;
@@ -1225,6 +1229,40 @@ fn sys_getpgrp() -> Result<usize, Errno> {
 }
 
 fn sys_setpgrp() -> Result<usize, Errno> {
+    Ok(0)
+}
+
+fn sys_getgroups(size: usize, list: usize) -> Result<usize, Errno> {
+    if size == 0 {
+        return Ok(0);
+    }
+    if list == 0 {
+        return Err(Errno::Fault);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    if mm::translate_user_ptr(root_pa, list, 1, UserAccess::Write).is_none() {
+        return Err(Errno::Fault);
+    }
+    Ok(0)
+}
+
+fn sys_setgroups(size: usize, list: usize) -> Result<usize, Errno> {
+    if size == 0 {
+        return Ok(0);
+    }
+    if list == 0 {
+        return Err(Errno::Fault);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    if mm::translate_user_ptr(root_pa, list, 1, UserAccess::Read).is_none() {
+        return Err(Errno::Fault);
+    }
     Ok(0)
 }
 

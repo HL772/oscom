@@ -43,6 +43,7 @@
 - 早期实现 `getcpu`，占位返回 CPU=0/NUMA=0。
 - 早期实现 `getrusage`，占位返回零资源统计。
 - 早期实现 `setpgid/getpgid/getsid/setsid/getpgrp/setpgrp`，任务上下文可用时返回 TaskId+1。
+- 早期实现 `getgroups/setgroups`，占位返回空组列表。
 
 ## 关键数据结构
 - `SyscallAbi`：抽象获取 syscall 号与参数、设置返回值与 `sepc` 前进。
