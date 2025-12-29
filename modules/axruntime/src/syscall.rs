@@ -81,6 +81,8 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_FSTAT => sys_fstat(ctx.args[0], ctx.args[1]),
         SYS_DUP => sys_dup(ctx.args[0]),
         SYS_DUP3 => sys_dup3(ctx.args[0], ctx.args[1], ctx.args[2]),
+        SYS_SET_ROBUST_LIST => sys_set_robust_list(ctx.args[0], ctx.args[1]),
+        SYS_GET_ROBUST_LIST => sys_get_robust_list(ctx.args[0], ctx.args[1], ctx.args[2]),
         _ => Err(Errno::NoSys),
     }
 }
@@ -100,6 +102,8 @@ const SYS_GETRANDOM: usize = 278;
 const SYS_FSTAT: usize = 80;
 const SYS_DUP: usize = 23;
 const SYS_DUP3: usize = 24;
+const SYS_SET_ROBUST_LIST: usize = 99;
+const SYS_GET_ROBUST_LIST: usize = 100;
 
 const TIOCGWINSZ: usize = 0x5413;
 const SYS_CLOCK_GETTIME: usize = 113;
@@ -703,6 +707,28 @@ fn sys_dup3(oldfd: usize, newfd: usize, flags: usize) -> Result<usize, Errno> {
         return Ok(newfd);
     }
     Err(Errno::Badf)
+}
+
+fn sys_set_robust_list(_head: usize, _len: usize) -> Result<usize, Errno> {
+    Ok(0)
+}
+
+fn sys_get_robust_list(_pid: usize, head_ptr: usize, len_ptr: usize) -> Result<usize, Errno> {
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    if head_ptr != 0 {
+        UserPtr::<usize>::new(head_ptr)
+            .write(root_pa, 0)
+            .ok_or(Errno::Fault)?;
+    }
+    if len_ptr != 0 {
+        UserPtr::<usize>::new(len_ptr)
+            .write(root_pa, 0)
+            .ok_or(Errno::Fault)?;
+    }
+    Ok(0)
 }
 
 fn load_iovec(root_pa: usize, iov_ptr: usize, index: usize) -> Result<Iovec, Errno> {

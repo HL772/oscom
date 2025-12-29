@@ -32,6 +32,7 @@
 - 早期实现 `getrandom`，使用轻量伪随机填充。
 - 早期实现 `fstat`，为标准输入输出返回字符设备元数据。
 - 早期实现 `dup/dup3`，占位支持标准输入输出重定向。
+- 早期实现 `set_robust_list/get_robust_list`，占位返回空链表。
 
 ## 关键数据结构
 - `SyscallAbi`：抽象获取 syscall 号与参数、设置返回值与 `sepc` 前进。

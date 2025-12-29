@@ -60,3 +60,4 @@
 - Add getrandom stub with xorshift output.
 - Add fstat stub for stdio character device metadata.
 - Add dup/dup3 stubs for stdio redirection.
+- Add robust list stubs returning empty state.
