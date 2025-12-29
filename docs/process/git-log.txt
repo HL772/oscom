@@ -1,4 +1,29 @@
-* commit 20332bbc3fd5fbf633b8258ebd970b0813081131 (HEAD -> bootstrap-riscv64)
+* commit ebf6bae962273b79fcf8aa0d46eed879492db657 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 19:34:07 +0800
+| 
+|     feat(proc): handle child tid clear
+| 
+|  CHANGELOG.md                            |  1 +
+|  docs/design/04_task_process.md          |  1 +
+|  docs/design/05_syscall_abi.md           |  4 +--
+|  docs/design/10_testing_benchmark.md     |  2 +-
+|  docs/process/phase_3_process_syscall.md |  7 +++---
+|  modules/axruntime/src/process.rs        | 41 +++++++++++++++++++++++++++++++
+|  modules/axruntime/src/syscall.rs        | 10 ++++++--
+|  modules/axruntime/src/user.rs           |  2 +-
+|  8 files changed, 59 insertions(+), 9 deletions(-)
+| 
+* commit 4c7c5c945dc2dfdded312ee13e5579f70aea47b7
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 19:27:16 +0800
+| 
+|     chore(process): refresh git log
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit 20332bbc3fd5fbf633b8258ebd970b0813081131
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 19:27:03 +0800
 | 
