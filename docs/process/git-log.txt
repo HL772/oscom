@@ -1,4 +1,25 @@
-* commit 1afa6067fed3a6c68975a057f56f9a9cbd4d821e (HEAD -> bootstrap-riscv64)
+* commit c6043ceab1429432fa84348b8b0dde8fb97e2db2 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:29:51 +0800
+| 
+|     feat(syscall): accept raw and boottime clocks
+| 
+|  CHANGELOG.md                            | 2 +-
+|  docs/design/05_syscall_abi.md           | 2 +-
+|  docs/process/phase_3_process_syscall.md | 2 +-
+|  modules/axruntime/src/syscall.rs        | 6 ++++--
+|  4 files changed, 7 insertions(+), 5 deletions(-)
+| 
+* commit 8f1cd5a279854fcb5d09d9235c120dacc45a97f6
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:28:53 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit 1afa6067fed3a6c68975a057f56f9a9cbd4d821e
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 11:28:41 +0800
 | 
