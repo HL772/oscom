@@ -17,7 +17,7 @@ const EMPTY_KEY: FutexKey = FutexKey {
     uaddr: 0,
 };
 
-// root_pa=0 表示共享 futex（不区分地址空间）；私有 futex 使用当前页表作为 key。
+// root_pa=0 表示共享 futex（使用物理地址作为 key）；私有 futex 使用当前页表与虚拟地址作为 key。
 static mut FUTEX_KEYS: [FutexKey; MAX_FUTEXES] = [EMPTY_KEY; MAX_FUTEXES];
 // 与 MAX_TASKS 保持一致，方便在早期固定容量下复用等待队列。
 static FUTEX_WAITERS: [TaskWaitQueue; MAX_FUTEXES] = [
@@ -50,10 +50,10 @@ fn validate_uaddr(uaddr: usize) -> Result<(), FutexError> {
     Ok(())
 }
 
-fn make_key(root_pa: usize, uaddr: usize, private: bool) -> FutexKey {
+fn make_key(root_pa: usize, addr: usize, private: bool) -> FutexKey {
     FutexKey {
         root_pa: if private { root_pa } else { 0 },
-        uaddr,
+        uaddr: addr,
     }
 }
 
@@ -114,7 +114,8 @@ pub fn wait(
     if runtime::current_task_id().is_none() {
         return Err(FutexError::Again);
     }
-    let key = make_key(root_pa, uaddr, private);
+    let key_addr = if private { uaddr } else { pa };
+    let key = make_key(root_pa, key_addr, private);
     let slot = slot_for_wait(key)?;
     match timeout_ms {
         Some(0) => Err(FutexError::TimedOut),
@@ -141,7 +142,9 @@ pub fn wake(root_pa: usize, uaddr: usize, count: usize, private: bool) -> Result
     if count == 0 {
         return Ok(0);
     }
-    let key = make_key(root_pa, uaddr, private);
+    let pa = mm::translate_user_ptr(root_pa, uaddr, 4, UserAccess::Read).ok_or(FutexError::Fault)?;
+    let key_addr = if private { uaddr } else { pa };
+    let key = make_key(root_pa, key_addr, private);
     let Some(slot) = slot_for_wake(key) else {
         return Ok(0);
     };

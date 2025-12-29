@@ -37,7 +37,7 @@
 - 早期实现 `getcwd`，占位返回根路径。
 - 早期实现 `set_tid_address`，校验指针可写并记录 clear_tid，返回 TaskId+1。
 - 早期实现 `futex`：仅支持 FUTEX_WAIT/FUTEX_WAKE，timeout 返回 ETIMEDOUT，value 不匹配返回 EAGAIN，用于 cleartid 唤醒路径。
-- futex 支持 FUTEX_PRIVATE_FLAG：私有等待队列以当前地址空间为 key，避免不同进程同地址别名唤醒。
+- futex 支持 FUTEX_PRIVATE_FLAG：私有等待队列以当前地址空间为 key；共享 futex 以物理地址为 key，避免不同进程同地址别名唤醒。
 - FUTEX_WAKE 以 count 为上限唤醒，count 足够大时唤醒全部等待者。
 - futex 等待队列使用固定槽位表，等待队列清空后释放地址占用，允许后续地址重用。
 - 早期实现 `chdir/fchdir`，仅允许切换到根目录占位。

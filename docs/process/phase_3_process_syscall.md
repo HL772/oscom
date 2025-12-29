@@ -56,7 +56,7 @@
 - clone 支持 CLONE_PARENT_SETTID/CLONE_CHILD_SETTID/CLONE_CHILD_CLEARTID 写回/清零，其他 flags 早期返回 EINVAL。
 - set_tid_address 记录 clear_tid，进程退出时清零 child_tid 并唤醒 futex 等待者。
 - 增加 futex 最小实现：支持 FUTEX_WAIT/FUTEX_WAKE，timeout 返回 ETIMEDOUT，value 不匹配返回 EAGAIN。
-- FUTEX_PRIVATE_FLAG 以地址空间作为 key，避免跨进程同虚拟地址的误唤醒。
+- FUTEX_PRIVATE_FLAG 以地址空间作为 key；共享 futex 以物理地址作为 key，避免跨进程别名误唤醒。
 - FUTEX_WAKE 支持 count 足够大时唤醒全部等待者。
 - futex 等待队列空闲后回收槽位地址，避免长期占用。
 - clone_user_root 从内核根表构建子页表，只克隆用户映射，避免共享父页表页。
