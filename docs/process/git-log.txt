@@ -1,4 +1,25 @@
-* commit 0947f3d5002c25f9f979c195798f47a33c4e5cdd (HEAD -> bootstrap-riscv64)
+* commit 91765d545b4a28969ca35efb629508d110b4afd3 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:24:11 +0800
+| 
+|     feat(syscall): add getsid stub
+| 
+|  CHANGELOG.md                            | 2 +-
+|  docs/design/05_syscall_abi.md           | 2 +-
+|  docs/process/phase_3_process_syscall.md | 2 +-
+|  modules/axruntime/src/syscall.rs        | 6 ++++++
+|  4 files changed, 9 insertions(+), 3 deletions(-)
+| 
+* commit 6ca7a023590bfa629b0b2887f575c0cd32a6e90e
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:23:18 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit 0947f3d5002c25f9f979c195798f47a33c4e5cdd
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 11:23:07 +0800
 | 
