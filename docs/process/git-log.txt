@@ -1,4 +1,24 @@
-* commit 8caa0a13215a33de60c7ff50f7456690335f8224 (HEAD -> bootstrap-riscv64)
+* commit 3f8757bea93644bb1e254741c963d9ab498fe061 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 21:07:57 +0800
+| 
+|     refactor(syscall): reuse classify_path in openat
+| 
+|  CHANGELOG.md                            |  1 +
+|  docs/process/phase_3_process_syscall.md |  1 +
+|  modules/axruntime/src/syscall.rs        | 52 +++++++++++++++----------------
+|  3 files changed, 28 insertions(+), 26 deletions(-)
+| 
+* commit 32029688db5205c785b3727b663959788cd23ae6
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 21:00:32 +0800
+| 
+|     chore(process): refresh git log
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit 8caa0a13215a33de60c7ff50f7456690335f8224
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 21:00:16 +0800
 | 
