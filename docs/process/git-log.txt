@@ -1,4 +1,25 @@
-* commit d7c69a85d36690295303d8d25001ab1e74e2e214 (HEAD -> bootstrap-riscv64)
+* commit 94393cdc1bf64959de05046fa48c35fcfbb77849 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:21:29 +0800
+| 
+|     fix(syscall): return tid from set_tid_address
+| 
+|  CHANGELOG.md                            | 2 +-
+|  docs/design/05_syscall_abi.md           | 2 +-
+|  docs/process/phase_3_process_syscall.md | 2 +-
+|  modules/axruntime/src/syscall.rs        | 2 +-
+|  4 files changed, 4 insertions(+), 4 deletions(-)
+| 
+* commit a6fcab3f8c823226fa94fe8b8c661500ed09c6ce
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:20:34 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit d7c69a85d36690295303d8d25001ab1e74e2e214
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 11:20:23 +0800
 | 
