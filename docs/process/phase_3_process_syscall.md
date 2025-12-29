@@ -53,6 +53,7 @@
 - sys_exit 退出时标记 Zombie 并唤醒父进程等待队列。
 - 用户任务保存 user root/entry/sp 与 trapframe 指针，支持调度后从 __trap_return 恢复回用户态。
 - 增加 clone：复制 trapframe 并创建子任务，结合 CoW 页表返回子 PID。
+- clone 支持 CLONE_PARENT_SETTID/CLONE_CHILD_SETTID 写回，其他 flags 早期返回 EINVAL。
 - clone_user_root 从内核根表构建子页表，只克隆用户映射，避免共享父页表页。
 - waitpid 回收 Zombie 时释放子进程的用户页表与物理页。
 - 增加 uname，占位返回内核与平台信息。

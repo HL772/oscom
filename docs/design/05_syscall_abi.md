@@ -19,7 +19,7 @@
 - execve 失败路径释放新地址空间，避免页表页与用户页泄漏。
 - 早期实现 `wait4/waitpid`：使用最小进程表与父进程等待队列，支持 WNOHANG 与退出码回收。
 - waitpid 采用循环阻塞重试，避免递归等待带来的栈增长。
-- 早期实现 `clone`：使用 fork 语义创建子进程（忽略线程类 flags），返回子 PID 并结合 CoW 页表。
+- 早期实现 `clone`：使用 fork 语义创建子进程，支持 CLONE_PARENT_SETTID/CLONE_CHILD_SETTID 写回，其余 flags 返回 EINVAL；返回子 PID 并结合 CoW 页表。
 - 早期实现 `clock_gettime/gettimeofday/getpid`，支持 MONOTONIC/RAW/BOOTTIME/COARSE 并返回 timebase 时间。
 - 早期实现 `clock_gettime64`，与 `clock_gettime` 共用时间源。
 - 早期实现 `clock_getres/clock_getres_time64`，返回 timebase 精度占位。

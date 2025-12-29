@@ -600,16 +600,38 @@ fn sys_execve(tf: &mut TrapFrame, pathname: usize, argv: usize, envp: usize) -> 
 
 fn sys_clone(
     tf: &TrapFrame,
-    _flags: usize,
+    flags: usize,
     stack: usize,
-    _ptid: usize,
+    ptid: usize,
     _tls: usize,
-    _ctid: usize,
+    ctid: usize,
 ) -> Result<usize, Errno> {
-    // clone 目前按 fork 语义处理：忽略线程类 flags，仅复制地址空间。
+    const CLONE_SIGNAL_MASK: usize = 0xff;
+    const CLONE_PARENT_SETTID: usize = 0x0010_0000;
+    const CLONE_CHILD_SETTID: usize = 0x0100_0000;
+    const CLONE_SUPPORTED: usize = CLONE_SIGNAL_MASK | CLONE_PARENT_SETTID | CLONE_CHILD_SETTID;
+
+    // clone 目前按 fork 语义处理：仅支持最小 tid 写回标志位。
+    if (flags & !CLONE_SUPPORTED) != 0 {
+        return Err(Errno::Inval);
+    }
     let root_pa = mm::current_root_pa();
     if root_pa == 0 {
         return Err(Errno::Fault);
+    }
+    if (flags & CLONE_PARENT_SETTID) != 0 {
+        if ptid == 0
+            || mm::translate_user_ptr(root_pa, ptid, size_of::<usize>(), mm::UserAccess::Write).is_none()
+        {
+            return Err(Errno::Fault);
+        }
+    }
+    if (flags & CLONE_CHILD_SETTID) != 0 {
+        if ctid == 0
+            || mm::translate_user_ptr(root_pa, ctid, size_of::<usize>(), mm::UserAccess::Write).is_none()
+        {
+            return Err(Errno::Fault);
+        }
     }
     let user_sp = if stack != 0 {
         stack
@@ -619,6 +641,16 @@ fn sys_clone(
     };
     let child_root = mm::clone_user_root(root_pa).ok_or(Errno::NoMem)?;
     let pid = crate::runtime::spawn_forked_user(tf, child_root, user_sp).ok_or(Errno::NoMem)?;
+    if (flags & CLONE_PARENT_SETTID) != 0 {
+        mm::UserPtr::new(ptid)
+            .write(root_pa, pid)
+            .ok_or(Errno::Fault)?;
+    }
+    if (flags & CLONE_CHILD_SETTID) != 0 {
+        mm::UserPtr::new(ctid)
+            .write(child_root, pid)
+            .ok_or(Errno::Fault)?;
+    }
     Ok(pid)
 }
 
