@@ -1,4 +1,24 @@
-* commit 382673d1cb40f861ca5858d848332eb96992068f (HEAD -> bootstrap-riscv64)
+* commit a17b2b38610be3193d029fff504a4c9a13da4419 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:19:18 +0800
+| 
+|     fix(syscall): allow empty iovec
+| 
+|  CHANGELOG.md                            |  2 +-
+|  docs/process/phase_3_process_syscall.md |  2 +-
+|  modules/axruntime/src/syscall.rs        | 10 ++++++++--
+|  3 files changed, 10 insertions(+), 4 deletions(-)
+| 
+* commit 4fcb1126fcd3118961c3a1593ee85f1bc4480218
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:16:07 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit 382673d1cb40f861ca5858d848332eb96992068f
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 11:15:54 +0800
 | 
