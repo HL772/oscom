@@ -7,6 +7,7 @@
 
 ## 设计
 - 遵循目标架构的 Linux syscall ABI 约定：寄存器传参、返回值与错误码格式保持一致。
+- RISC-V64 ABI：`a7` 为 syscall 号，`a0-a5` 为参数，返回值写回 `a0`，错误返回 `-errno`。
 - 将 ABI 细节下沉到架构层（如 `arch/*/syscall.rs`），内核核心只依赖 `SyscallAbi` 抽象。
 - syscall 分发采用静态表（数组/切片）索引，避免早期动态分配。
 - 统一 errno 处理：内核内部使用 `Result<usize, Errno>`，出口转换为 `-errno` 返回给用户态。

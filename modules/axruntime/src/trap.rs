@@ -51,10 +51,13 @@ extern "C" {
 }
 
 const SSTATUS_SIE: usize = 1 << 1;
+const SSTATUS_SPIE: usize = 1 << 5;
+const SSTATUS_SPP: usize = 1 << 8;
 const SIE_STIE: usize = 1 << 5;
 
 const SCAUSE_INTERRUPT_BIT: usize = 1usize << (usize::BITS as usize - 1);
 const SCAUSE_SUPERVISOR_TIMER: usize = 5;
+const SCAUSE_USER_ECALL: usize = 8;
 const SCAUSE_SUPERVISOR_ECALL: usize = 9;
 
 static TIMER_INTERVAL: AtomicU64 = AtomicU64::new(0);
@@ -106,6 +109,28 @@ pub fn enable_timer_interrupt(interval_ticks: u64) {
     }
 }
 
+pub unsafe fn enter_user(entry: usize, user_sp: usize, satp: usize) -> ! {
+    // SAFETY: caller must provide a valid user page table and user stack.
+    unsafe {
+        asm!(
+            "csrw satp, {satp}",
+            "sfence.vma",
+            "csrw sepc, {entry}",
+            "mv sp, {sp}",
+            "csrc sstatus, {spp_mask}",
+            "csrs sstatus, {spie_mask}",
+            "sret",
+            satp = in(reg) satp,
+            entry = in(reg) entry,
+            sp = in(reg) user_sp,
+            spp_mask = in(reg) SSTATUS_SPP,
+            spie_mask = in(reg) SSTATUS_SPIE,
+            clobber_abi("C"),
+            options(noreturn)
+        );
+    }
+}
+
 #[no_mangle]
 extern "C" fn trap_handler(tf: &mut TrapFrame) {
     let _guard = enter_trap(tf);
@@ -128,6 +153,9 @@ extern "C" fn trap_handler(tf: &mut TrapFrame) {
             runtime::maybe_schedule(ticks, crate::config::SCHED_INTERVAL_TICKS);
             return;
         }
+    } else if code == SCAUSE_USER_ECALL {
+        crate::syscall::handle_syscall(tf);
+        return;
     } else if code == SCAUSE_SUPERVISOR_ECALL {
         tf.sepc = sepc.wrapping_add(4);
         return;

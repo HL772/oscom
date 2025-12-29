@@ -36,3 +36,4 @@
 - Track wait completion reasons and validate task state transitions.
 - Exercise wait queues with notify/timeout dummy tasks.
 - Clear stale sleep queue entries after wait completion.
+- Add a minimal syscall dispatcher and U-mode ecall handling.

@@ -12,6 +12,7 @@ mod sleep;
 mod sleep_queue;
 mod wait;
 mod wait_queue;
+mod syscall;
 mod task_wait_queue;
 mod task;
 mod scheduler;
