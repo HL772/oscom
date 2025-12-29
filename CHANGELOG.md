@@ -42,7 +42,7 @@
 - Add minimal user pointer translation and sys_write console output.
 - Add a user-test feature flag and USER_TEST=1 smoke validation for U-mode ecall.
 - Add UserPtr/UserSlice helpers to validate and copy user buffers.
-- Add minimal sys_read for fd=0 using SBI getchar (non-blocking placeholder).
+- Add minimal sys_read for fd=0 using SBI getchar (EAGAIN when no input).
 - Make user-mode smoke buffer cross-page to exercise UserSlice chunking.
 - Add clock_gettime/gettimeofday/getpid time stubs based on timebase uptime.
 - Add readv/writev helpers (iovcnt=0 returns 0) and route the user smoke through writev.

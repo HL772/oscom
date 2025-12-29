@@ -14,7 +14,7 @@
 - 用户态内存访问通过 `UserPtr`/`UserSlice` 封装校验范围与页表映射，sys_write 先行接入验证路径。
 - 兼容层为关键 syscall 提供 Linux 语义对齐（如 `getdents64`/`ioctl`/`pipe2`/`dup3`）。
 - 早期实现 `write` 的用户指针翻译与控制台输出，用于验证 U-mode ecall 链路。
-- 早期实现 `read`（fd=0）对接 SBI getchar，暂为非阻塞读取占位。
+- 早期实现 `read`（fd=0）对接 SBI getchar，非阻塞无数据返回 EAGAIN。
 - 早期实现 `clock_gettime/gettimeofday/getpid`，返回基于 timebase/rdtime 的时间与占位 PID。
 - 早期实现 `clock_gettime64`，与 `clock_gettime` 共用时间源。
 - 早期实现 `clock_getres/clock_getres_time64`，返回 timebase 精度占位。

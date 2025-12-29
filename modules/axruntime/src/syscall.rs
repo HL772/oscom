@@ -17,6 +17,7 @@ pub enum Errno {
     Badf = 9,
     Pipe = 29,
     Range = 34,
+    Again = 11,
 }
 
 impl Errno {
@@ -1232,7 +1233,7 @@ fn read_console_into(root_pa: usize, buf: usize, len: usize) -> Result<usize, Er
                     }
                     None => {
                         // 早期阶段无阻塞控制台输入；无数据则立即返回。
-                        return Ok(read);
+                        return if read == 0 { Err(Errno::Again) } else { Ok(read) };
                     }
                 }
             }
