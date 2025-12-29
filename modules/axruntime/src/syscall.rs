@@ -1148,15 +1148,11 @@ fn sys_statfs(pathname: usize, buf: usize) -> Result<usize, Errno> {
     }
     // 占位实现：仅支持根目录与 /dev 伪节点。
     validate_user_path(root_pa, pathname)?;
-    match classify_path(root_pa, pathname)? {
-        Some(_) => {
-            UserPtr::new(buf)
-                .write(root_pa, default_statfs())
-                .ok_or(Errno::Fault)?;
-            Ok(0)
-        }
-        None => Err(Errno::NoEnt),
-    }
+    let _ = memfs_lookup_inode(root_pa, pathname)?;
+    UserPtr::new(buf)
+        .write(root_pa, default_statfs())
+        .ok_or(Errno::Fault)?;
+    Ok(0)
 }
 
 fn sys_fstatfs(fd: usize, buf: usize) -> Result<usize, Errno> {
