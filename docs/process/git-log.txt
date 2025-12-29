@@ -1,4 +1,24 @@
-* commit c3418c7642c40fd308671cd1c65af5f0d11454fc (HEAD -> bootstrap-riscv64)
+* commit 739777096475366d89195919b8d8b78acd9a922b (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:39:28 +0800
+| 
+|     fix(syscall): clear affinity mask
+| 
+|  CHANGELOG.md                            | 2 +-
+|  docs/process/phase_3_process_syscall.md | 2 +-
+|  modules/axruntime/src/syscall.rs        | 9 +++++++++
+|  3 files changed, 11 insertions(+), 2 deletions(-)
+| 
+* commit a87630577eff08d950c2b874490dcf1a94985771
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:35:43 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit c3418c7642c40fd308671cd1c65af5f0d11454fc
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 11:35:27 +0800
 | 
