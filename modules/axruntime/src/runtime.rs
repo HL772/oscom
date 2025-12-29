@@ -553,6 +553,7 @@ pub fn wake_all(queue: &TaskWaitQueue) -> usize {
 pub fn idle_loop() -> ! {
     loop {
         yield_if_needed();
+        crate::trap::enable_interrupts();
         crate::cpu::wait_for_interrupt();
     }
 }

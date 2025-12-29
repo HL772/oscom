@@ -116,6 +116,13 @@ pub fn enable_timer_interrupt(interval_ticks: u64) {
     }
 }
 
+pub fn enable_interrupts() {
+    // SAFETY: enabling S-mode interrupts is required for idle sleep to receive timer IRQs.
+    unsafe {
+        write_sstatus(read_sstatus() | SSTATUS_SIE);
+    }
+}
+
 /// # Safety
 /// Caller must provide a valid user page table and user stack pointer.
 pub unsafe fn enter_user(entry: usize, user_sp: usize, satp: usize) -> ! {

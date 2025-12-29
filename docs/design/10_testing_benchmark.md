@@ -29,5 +29,5 @@ make test-* -> scripts/test_*.sh
 ## 测试点
 - make test-host
 - make test-qemu-smoke
-- USER_TEST=1 make test-qemu-smoke (验证最小用户态 ecall 路径，覆盖 ppoll 多 fd 扫描、poll/pipe 就绪、clone/wait4 与 execve ELF 加载)
+- USER_TEST=1 make test-qemu-smoke (验证最小用户态 ecall 路径，覆盖 ppoll 多 fd sleep-retry 超时、poll/pipe 就绪、clone/wait4 与 execve ELF 加载)
 - make test-oscomp
