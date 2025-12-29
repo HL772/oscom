@@ -615,10 +615,8 @@ fn sys_execve(tf: &mut TrapFrame, pathname: usize, argv: usize, envp: usize) -> 
     validate_user_path(root_pa, pathname)?;
     validate_user_ptr_list(root_pa, argv)?;
     validate_user_ptr_list(root_pa, envp)?;
-    if !user_path_eq(root_pa, pathname, INIT_PATH)? {
-        return Err(Errno::NoEnt);
-    }
-    let image = crate::user::init_exec_elf_image();
+    // 统一走 /init memfile 的路径识别与镜像获取。
+    let image = execve_memfile_image(root_pa, pathname)?;
     let ctx = crate::user::load_exec_elf(root_pa, image, argv, envp)?;
     // execve 成功后不返回，更新入口与用户栈并清理参数寄存器。
     tf.sepc = ctx.entry.wrapping_sub(4);
@@ -635,6 +633,13 @@ fn sys_execve(tf: &mut TrapFrame, pathname: usize, argv: usize, envp: usize) -> 
         crate::mm::release_user_root(root_pa);
     }
     Ok(0)
+}
+
+fn execve_memfile_image(root_pa: usize, pathname: usize) -> Result<&'static [u8], Errno> {
+    match classify_path(root_pa, pathname)? {
+        Some(KnownPath::Init) => Ok(init_memfile_image()),
+        _ => Err(Errno::NoEnt),
+    }
 }
 
 fn sys_clone(
@@ -1095,7 +1100,7 @@ fn sys_newfstatat(_dirfd: usize, pathname: usize, stat_ptr: usize, _flags: usize
     let (mode, size) = match classify_path(root_pa, pathname)? {
         Some(KnownPath::Root | KnownPath::DevDir) => (S_IFDIR | 0o755, 0),
         Some(KnownPath::DevNull | KnownPath::DevZero) => (S_IFCHR | 0o666, 0),
-        Some(KnownPath::Init) => (S_IFREG | 0o444, crate::user::init_exec_elf_image().len()),
+        Some(KnownPath::Init) => (S_IFREG | 0o444, init_memfile_image().len()),
         None => return Err(Errno::NoEnt),
     };
     UserPtr::new(stat_ptr)
@@ -1830,7 +1835,7 @@ fn sys_fstat(fd: usize, stat_ptr: usize) -> Result<usize, Errno> {
     let (mode, size) = match entry.kind {
         FdKind::PipeRead(_) | FdKind::PipeWrite(_) => (S_IFIFO | 0o600, 0),
         FdKind::DirRoot | FdKind::DirDev => (S_IFDIR | 0o755, 0),
-        FdKind::InitFile => (S_IFREG | 0o444, crate::user::init_exec_elf_image().len()),
+        FdKind::InitFile => (S_IFREG | 0o444, init_memfile_image().len()),
         _ => (S_IFCHR | 0o666, 0),
     };
     let stat = build_stat(mode, size);
@@ -2793,7 +2798,7 @@ fn poll_revents_for_fd(fd: i32, events: u16) -> u16 {
                 Some(value) => value,
                 None => return POLLNVAL,
             };
-            let image = crate::user::init_exec_elf_image();
+            let image = init_memfile_image();
             if offset < image.len() {
                 POLLIN
             } else {
@@ -2969,9 +2974,13 @@ fn read_from_entry(fd: usize, entry: FdEntry, root_pa: usize, buf: usize, len: u
     }
 }
 
+fn init_memfile_image() -> &'static [u8] {
+    crate::user::init_exec_elf_image()
+}
+
 fn read_init_file(fd: usize, root_pa: usize, buf: usize, len: usize) -> Result<usize, Errno> {
     let offset = fd_offset(fd).ok_or(Errno::Badf)?;
-    let image = crate::user::init_exec_elf_image();
+    let image = init_memfile_image();
     if offset >= image.len() {
         return Ok(0);
     }

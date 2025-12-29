@@ -15,7 +15,7 @@
 - 兼容层为关键 syscall 提供 Linux 语义对齐（如 `getdents64`/`ioctl`/`pipe2`/`dup3`）。
 - 早期实现 `write` 的用户指针翻译与控制台输出，用于验证 U-mode ecall 链路。
 - 早期实现 `read`（fd=0）对接 SBI getchar，非阻塞无数据返回 EAGAIN。
-- 早期实现 `execve`：仅识别 `/init` 内置 ELF 镜像，完成最小 ELF 解析与段映射，并构建 argv/envp 栈布局。
+- 早期实现 `execve`：仅识别 `/init` memfile，复用路径识别并从 memfile 读取 ELF 镜像，完成最小 ELF 解析与段映射，并构建 argv/envp 栈布局。
 - execve 失败路径释放新地址空间，避免页表页与用户页泄漏。
 - 早期实现 `wait4/waitpid`：使用最小进程表与父进程等待队列，支持 WNOHANG 与退出码回收。
 - waitpid 采用循环阻塞重试，避免递归等待带来的栈增长。
