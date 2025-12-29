@@ -1,4 +1,24 @@
-* commit dc22d1755e5a5ec9741d1a26c12d26dffd17589d (HEAD -> bootstrap-riscv64)
+* commit 754c10f19fa8c51ceb9d18090fe9e0bc884bbec2 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 21:55:10 +0800
+| 
+|     feat(fs): route remaining stubs via memfs
+| 
+|  CHANGELOG.md                     |   1 +
+|  docs/process/phase_4_fs.md       |   1 +
+|  modules/axruntime/src/syscall.rs | 111 +++++++++++++------------------------
+|  3 files changed, 42 insertions(+), 71 deletions(-)
+| 
+* commit 30efc959efa95f95ccedb5766e1e8de0cddfe5b9
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 21:49:14 +0800
+| 
+|     chore(process): refresh git log
+| 
+|  docs/process/git-log.txt | 22 +++++++++++++++++++++-
+|  1 file changed, 21 insertions(+), 1 deletion(-)
+| 
+* commit dc22d1755e5a5ec9741d1a26c12d26dffd17589d
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 21:49:03 +0800
 | 
