@@ -1,4 +1,25 @@
-* commit fb75e52cc255c73f1c3a935ff514033707fb5de6 (HEAD -> bootstrap-riscv64)
+* commit c3418c7642c40fd308671cd1c65af5f0d11454fc (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:35:27 +0800
+| 
+|     feat(syscall): add getgroups/setgroups stubs
+| 
+|  CHANGELOG.md                            |  1 +
+|  docs/design/05_syscall_abi.md           |  1 +
+|  docs/process/phase_3_process_syscall.md |  1 +
+|  modules/axruntime/src/syscall.rs        | 38 +++++++++++++++++++++++++++++++
+|  4 files changed, 41 insertions(+)
+| 
+* commit 12af49c97c90adc2e4d5ce69bafd8dfbd7b1d034
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:34:11 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit fb75e52cc255c73f1c3a935ff514033707fb5de6
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 11:33:57 +0800
 | 
