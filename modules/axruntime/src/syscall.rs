@@ -4,8 +4,8 @@ use core::cmp::min;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use axfs::memfs;
-use axfs::{FileType, InodeId, VfsError, VfsOps};
+use axfs::{devfs, memfs, procfs, FileType, InodeId, VfsError, VfsOps};
+use axfs::mount::{MountId, MountPoint, MountTable};
 use crate::futex;
 use crate::mm::{self, UserAccess, UserPtr, UserSlice};
 use crate::{sbi, time};
@@ -272,6 +272,7 @@ const FD_TABLE_SLOTS: usize = 16;
 const PIPE_SLOTS: usize = 8;
 const PIPE_BUFFER_SIZE: usize = 512;
 const MAX_PATH_LEN: usize = 128;
+const VFS_MOUNT_COUNT: usize = 3;
 const SIG_BLOCK: usize = 0;
 const SIG_UNBLOCK: usize = 1;
 const SIG_SETMASK: usize = 2;
@@ -603,8 +604,8 @@ fn sys_execve(tf: &mut TrapFrame, pathname: usize, argv: usize, envp: usize) -> 
 }
 
 fn execve_memfile_image(root_pa: usize, pathname: usize) -> Result<&'static [u8], Errno> {
-    let inode = memfs_lookup_inode(root_pa, pathname)?;
-    if inode == memfs::INIT_ID {
+    let (mount, inode) = vfs_lookup_inode(root_pa, pathname)?;
+    if mount == MountId::Root && inode == memfs::INIT_ID {
         Ok(init_memfile_image())
     } else {
         Err(Errno::NoEnt)
@@ -828,13 +829,13 @@ fn sys_openat(_dirfd: usize, pathname: usize, flags: usize, _mode: usize) -> Res
     }
     let status_flags = if (flags & O_NONBLOCK) != 0 { O_NONBLOCK } else { 0 };
     let accmode = flags & O_ACCMODE;
-    let inode = memfs_lookup_inode(root_pa, pathname)?;
-    let kind = match inode {
-        memfs::ROOT_ID => FdKind::DirRoot,
-        memfs::DEV_ID => FdKind::DirDev,
-        memfs::DEV_NULL_ID => FdKind::DevNull,
-        memfs::DEV_ZERO_ID => FdKind::DevZero,
-        memfs::INIT_ID => FdKind::InitFile,
+    let (mount, inode) = vfs_lookup_inode(root_pa, pathname)?;
+    let kind = match (mount, inode) {
+        (MountId::Root, memfs::ROOT_ID) => FdKind::DirRoot,
+        (MountId::Dev, devfs::ROOT_ID) => FdKind::DirDev,
+        (MountId::Dev, devfs::DEV_NULL_ID) => FdKind::DevNull,
+        (MountId::Dev, devfs::DEV_ZERO_ID) => FdKind::DevZero,
+        (MountId::Root, memfs::INIT_ID) => FdKind::InitFile,
         _ => return Err(Errno::NoEnt),
     };
     match kind {
@@ -861,8 +862,8 @@ fn sys_mknodat(dirfd: usize, pathname: usize, _mode: usize, _dev: usize) -> Resu
     }
     validate_at_dirfd(dirfd)?;
     validate_user_path(root_pa, pathname)?;
-    memfs_check_parent(root_pa, pathname)?;
-    match memfs_lookup_inode(root_pa, pathname) {
+    vfs_check_parent(root_pa, pathname)?;
+    match vfs_lookup_inode(root_pa, pathname) {
         Ok(_) => Err(Errno::Exist),
         Err(err) => Err(err),
     }
@@ -876,8 +877,8 @@ fn sys_mkdirat(_dirfd: usize, pathname: usize, _mode: usize) -> Result<usize, Er
     if root_pa == 0 {
         return Err(Errno::Fault);
     }
-    memfs_check_parent(root_pa, pathname)?;
-    match memfs_lookup_inode(root_pa, pathname) {
+    vfs_check_parent(root_pa, pathname)?;
+    match vfs_lookup_inode(root_pa, pathname) {
         Ok(_) => Err(Errno::Exist),
         Err(err) => Err(err),
     }
@@ -891,8 +892,8 @@ fn sys_unlinkat(_dirfd: usize, pathname: usize, _flags: usize) -> Result<usize, 
     if root_pa == 0 {
         return Err(Errno::Fault);
     }
-    memfs_check_parent(root_pa, pathname)?;
-    match memfs_lookup_inode(root_pa, pathname) {
+    vfs_check_parent(root_pa, pathname)?;
+    match vfs_lookup_inode(root_pa, pathname) {
         Ok(_) => Err(Errno::Inval),
         Err(err) => Err(err),
     }
@@ -907,8 +908,8 @@ fn sys_symlinkat(oldpath: usize, newdirfd: usize, newpath: usize) -> Result<usiz
     validate_at_dirfd(newdirfd)?;
     validate_user_path(root_pa, oldpath)?;
     validate_user_path(root_pa, newpath)?;
-    memfs_check_parent(root_pa, newpath)?;
-    match memfs_lookup_inode(root_pa, newpath) {
+    vfs_check_parent(root_pa, newpath)?;
+    match vfs_lookup_inode(root_pa, newpath) {
         Ok(_) => Err(Errno::Exist),
         Err(err) => Err(err),
     }
@@ -933,11 +934,11 @@ fn sys_linkat(
     validate_at_dirfd(newdirfd)?;
     validate_user_path(root_pa, oldpath)?;
     validate_user_path(root_pa, newpath)?;
-    memfs_check_parent(root_pa, newpath)?;
-    if let Err(err) = memfs_lookup_inode(root_pa, oldpath) {
+    vfs_check_parent(root_pa, newpath)?;
+    if let Err(err) = vfs_lookup_inode(root_pa, oldpath) {
         return Err(err);
     }
-    if memfs_lookup_inode(root_pa, newpath).is_ok() {
+    if vfs_lookup_inode(root_pa, newpath).is_ok() {
         return Err(Errno::Exist);
     }
     Err(Errno::NoEnt)
@@ -966,14 +967,14 @@ fn sys_renameat2(
     validate_at_dirfd(newdirfd)?;
     validate_user_path(root_pa, oldpath)?;
     validate_user_path(root_pa, newpath)?;
-    memfs_check_parent(root_pa, newpath)?;
-    let old_inode = match memfs_lookup_inode(root_pa, oldpath) {
-        Ok(inode) => inode,
+    vfs_check_parent(root_pa, newpath)?;
+    let (old_mount, old_inode) = match vfs_lookup_inode(root_pa, oldpath) {
+        Ok(value) => value,
         Err(err) => return Err(err),
     };
-    match memfs_lookup_inode(root_pa, newpath) {
-        Ok(new_inode) => {
-            if new_inode == old_inode {
+    match vfs_lookup_inode(root_pa, newpath) {
+        Ok((new_mount, new_inode)) => {
+            if new_mount == old_mount && new_inode == old_inode {
                 Ok(0)
             } else {
                 Err(Errno::Exist)
@@ -996,10 +997,11 @@ fn sys_getdents64(fd: usize, buf: usize, len: usize) -> Result<usize, Errno> {
     }
     validate_user_write(root_pa, buf, len)?;
     let entry = resolve_fd(fd).ok_or(Errno::Badf)?;
-    let fs = memfs::MemFs::new();
+    let rootfs = memfs::MemFs::new();
+    let devfs = devfs::DevFs::new();
     let entries = match entry.kind {
-        FdKind::DirRoot => fs.dir_entries(memfs::ROOT_ID),
-        FdKind::DirDev => fs.dir_entries(memfs::DEV_ID),
+        FdKind::DirRoot => rootfs.dir_entries(memfs::ROOT_ID),
+        FdKind::DirDev => devfs.dir_entries(devfs::ROOT_ID),
         _ => None,
     }
     .ok_or(Errno::NotDir)?;
@@ -1073,15 +1075,19 @@ fn sys_newfstatat(_dirfd: usize, pathname: usize, stat_ptr: usize, _flags: usize
     if mm::translate_user_ptr(root_pa, stat_ptr, size, UserAccess::Write).is_none() {
         return Err(Errno::Fault);
     }
-    let fs = memfs::MemFs::with_init_image(init_memfile_image());
-    let inode = memfs_lookup_inode(root_pa, pathname)?;
-    let meta = fs.metadata_for(inode).ok_or(Errno::NoEnt)?;
-    let size = meta.size as usize;
-    let mode = file_type_mode(meta.file_type) | meta.mode as u32;
-    UserPtr::new(stat_ptr)
-        .write(root_pa, build_stat(mode, size))
-        .ok_or(Errno::Fault)?;
-    Ok(0)
+    let mut path_buf = [0u8; MAX_PATH_LEN];
+    let path = read_user_path_str(root_pa, pathname, &mut path_buf)?;
+    with_mounts(|mounts| {
+        let (mount_id, inode) = mounts.resolve_path(path).map_err(map_vfs_err)?;
+        let fs = mounts.fs_for(mount_id).ok_or(Errno::NoEnt)?;
+        let meta = fs.metadata(inode).map_err(map_vfs_err)?;
+        let size = meta.size as usize;
+        let mode = file_type_mode(meta.file_type) | meta.mode as u32;
+        UserPtr::new(stat_ptr)
+            .write(root_pa, build_stat(mode, size))
+            .ok_or(Errno::Fault)?;
+        Ok(0)
+    })
 }
 
 fn sys_faccessat(_dirfd: usize, pathname: usize, _mode: usize, _flags: usize) -> Result<usize, Errno> {
@@ -1092,7 +1098,7 @@ fn sys_faccessat(_dirfd: usize, pathname: usize, _mode: usize, _flags: usize) ->
     if root_pa == 0 {
         return Err(Errno::Fault);
     }
-    let _ = memfs_lookup_inode(root_pa, pathname)?;
+    let _ = vfs_lookup_inode(root_pa, pathname)?;
     Ok(0)
 }
 
@@ -1110,7 +1116,7 @@ fn sys_statx(
     if root_pa == 0 {
         return Err(Errno::Fault);
     }
-    let _ = memfs_lookup_inode(root_pa, pathname)?;
+    let _ = vfs_lookup_inode(root_pa, pathname)?;
     const STATX_SIZE: usize = 256;
     zero_user_write(root_pa, statxbuf, STATX_SIZE)?;
     Ok(0)
@@ -1128,8 +1134,11 @@ fn sys_readlinkat(_dirfd: usize, pathname: usize, buf: usize, len: usize) -> Res
         return Ok(0);
     }
     validate_user_write(root_pa, buf, len)?;
+    let (mount, inode) = vfs_lookup_inode(root_pa, pathname)?;
+    if mount != MountId::Root {
+        return Err(Errno::Inval);
+    }
     let fs = memfs::MemFs::with_init_image(init_memfile_image());
-    let inode = memfs_lookup_inode(root_pa, pathname)?;
     match fs.readlink(inode) {
         Ok(target) => {
             let to_copy = min(len, target.len());
@@ -1153,7 +1162,7 @@ fn sys_statfs(pathname: usize, buf: usize) -> Result<usize, Errno> {
     }
     // 占位实现：仅支持根目录与 /dev 伪节点。
     validate_user_path(root_pa, pathname)?;
-    let _ = memfs_lookup_inode(root_pa, pathname)?;
+    let _ = vfs_lookup_inode(root_pa, pathname)?;
     UserPtr::new(buf)
         .write(root_pa, default_statfs())
         .ok_or(Errno::Fault)?;
@@ -1189,7 +1198,7 @@ fn sys_fchmodat(dirfd: usize, pathname: usize, _mode: usize, flags: usize) -> Re
     }
     validate_at_dirfd(dirfd)?;
     validate_user_path(root_pa, pathname)?;
-    let _ = memfs_lookup_inode(root_pa, pathname)?;
+    let _ = vfs_lookup_inode(root_pa, pathname)?;
     Ok(0)
 }
 
@@ -1210,7 +1219,7 @@ fn sys_fchownat(
     }
     validate_at_dirfd(dirfd)?;
     validate_user_path(root_pa, pathname)?;
-    let _ = memfs_lookup_inode(root_pa, pathname)?;
+    let _ = vfs_lookup_inode(root_pa, pathname)?;
     Ok(0)
 }
 
@@ -1229,7 +1238,7 @@ fn sys_utimensat(dirfd: usize, pathname: usize, times: usize, flags: usize) -> R
         let size = size_of::<Timespec>() * 2;
         validate_user_read(root_pa, times, size)?;
     }
-    let _ = memfs_lookup_inode(root_pa, pathname)?;
+    let _ = vfs_lookup_inode(root_pa, pathname)?;
     Ok(0)
 }
 
@@ -1570,8 +1579,8 @@ fn sys_chdir(pathname: usize) -> Result<usize, Errno> {
     if root_pa == 0 {
         return Err(Errno::Fault);
     }
-    let inode = memfs_lookup_inode(root_pa, pathname)?;
-    if inode == memfs::ROOT_ID {
+    let (mount, inode) = vfs_lookup_inode(root_pa, pathname)?;
+    if mount == MountId::Root && inode == memfs::ROOT_ID {
         Ok(0)
     } else {
         Err(Errno::NoEnt)
@@ -1804,14 +1813,15 @@ fn sys_fstat(fd: usize, stat_ptr: usize) -> Result<usize, Errno> {
     if root_pa == 0 {
         return Err(Errno::Fault);
     }
-    let fs = memfs::MemFs::with_init_image(init_memfile_image());
+    let rootfs = memfs::MemFs::with_init_image(init_memfile_image());
+    let devfs = devfs::DevFs::new();
     let (mode, size) = match entry.kind {
         FdKind::PipeRead(_) | FdKind::PipeWrite(_) => (S_IFIFO | 0o600, 0),
-        FdKind::DirRoot => memfs_meta_for(&fs, memfs::ROOT_ID)?,
-        FdKind::DirDev => memfs_meta_for(&fs, memfs::DEV_ID)?,
-        FdKind::DevNull => memfs_meta_for(&fs, memfs::DEV_NULL_ID)?,
-        FdKind::DevZero => memfs_meta_for(&fs, memfs::DEV_ZERO_ID)?,
-        FdKind::InitFile => memfs_meta_for(&fs, memfs::INIT_ID)?,
+        FdKind::DirRoot => vfs_meta_for(&rootfs, memfs::ROOT_ID)?,
+        FdKind::DirDev => vfs_meta_for(&devfs, devfs::ROOT_ID)?,
+        FdKind::DevNull => vfs_meta_for(&devfs, devfs::DEV_NULL_ID)?,
+        FdKind::DevZero => vfs_meta_for(&devfs, devfs::DEV_ZERO_ID)?,
+        FdKind::InitFile => vfs_meta_for(&rootfs, memfs::INIT_ID)?,
         _ => (S_IFCHR | 0o666, 0),
     };
     let stat = build_stat(mode, size);
@@ -2215,8 +2225,8 @@ fn file_type_mode(file_type: FileType) -> u32 {
     }
 }
 
-fn memfs_meta_for(fs: &memfs::MemFs<'_>, inode: InodeId) -> Result<(u32, usize), Errno> {
-    let meta = fs.metadata_for(inode).ok_or(Errno::Fault)?;
+fn vfs_meta_for(fs: &dyn VfsOps, inode: InodeId) -> Result<(u32, usize), Errno> {
+    let meta = fs.metadata(inode).map_err(map_vfs_err)?;
     let mode = file_type_mode(meta.file_type) | meta.mode as u32;
     Ok((mode, meta.size as usize))
 }
@@ -2259,26 +2269,40 @@ fn read_user_path_str<'a>(root_pa: usize, path: usize, buf: &'a mut [u8]) -> Res
     Err(Errno::Range)
 }
 
-fn memfs_lookup_inode(root_pa: usize, pathname: usize) -> Result<InodeId, Errno> {
-    let mut buf = [0u8; MAX_PATH_LEN];
-    let path = read_user_path_str(root_pa, pathname, &mut buf)?;
-    let fs = memfs::MemFs::new();
-    fs.resolve_path(path).map_err(map_memfs_err)
+fn with_mounts<R>(f: impl FnOnce(&MountTable<'_, VFS_MOUNT_COUNT>) -> R) -> R {
+    let rootfs = memfs::MemFs::with_init_image(init_memfile_image());
+    let devfs = devfs::DevFs::new();
+    let procfs = procfs::ProcFs::new();
+    let mounts = MountTable::new([
+        MountPoint::new(MountId::Root, "/", &rootfs),
+        MountPoint::new(MountId::Dev, "/dev", &devfs),
+        MountPoint::new(MountId::Proc, "/proc", &procfs),
+    ]);
+    f(&mounts)
 }
 
-fn memfs_check_parent(root_pa: usize, pathname: usize) -> Result<(), Errno> {
+fn vfs_lookup_inode(root_pa: usize, pathname: usize) -> Result<(MountId, InodeId), Errno> {
     let mut buf = [0u8; MAX_PATH_LEN];
     let path = read_user_path_str(root_pa, pathname, &mut buf)?;
-    let fs = memfs::MemFs::new();
-    let _ = fs.resolve_parent(path).map_err(map_memfs_err)?;
-    Ok(())
+    with_mounts(|mounts| mounts.resolve_path(path).map_err(map_vfs_err))
 }
 
-fn map_memfs_err(err: memfs::ResolveError) -> Errno {
+fn vfs_check_parent(root_pa: usize, pathname: usize) -> Result<(), Errno> {
+    let mut buf = [0u8; MAX_PATH_LEN];
+    let path = read_user_path_str(root_pa, pathname, &mut buf)?;
+    with_mounts(|mounts| mounts.resolve_parent(path).map(|_| ()).map_err(map_vfs_err))
+}
+
+fn map_vfs_err(err: VfsError) -> Errno {
     match err {
-        memfs::ResolveError::NotFound => Errno::NoEnt,
-        memfs::ResolveError::NotDir => Errno::NotDir,
-        memfs::ResolveError::Invalid => Errno::NoEnt,
+        VfsError::NotFound => Errno::NoEnt,
+        VfsError::NotDir => Errno::NotDir,
+        VfsError::AlreadyExists => Errno::Exist,
+        VfsError::Invalid => Errno::NoEnt,
+        VfsError::NoMem => Errno::NoMem,
+        VfsError::Permission => Errno::Inval,
+        VfsError::Busy => Errno::Again,
+        VfsError::NotSupported | VfsError::Io | VfsError::Unknown => Errno::Inval,
     }
 }
 
@@ -2965,9 +2989,18 @@ fn read_from_entry(fd: usize, entry: FdEntry, root_pa: usize, buf: usize, len: u
             let nonblock = (entry.flags & O_NONBLOCK) != 0;
             read_console_into(root_pa, buf, len, nonblock)
         }
-        FdKind::DevNull => read_memfs_fd(fd, root_pa, memfs::DEV_NULL_ID, buf, len),
-        FdKind::DevZero => read_memfs_fd(fd, root_pa, memfs::DEV_ZERO_ID, buf, len),
-        FdKind::InitFile => read_memfs_fd(fd, root_pa, memfs::INIT_ID, buf, len),
+        FdKind::DevNull => {
+            let fs = devfs::DevFs::new();
+            read_vfs_fd(fd, root_pa, &fs, devfs::DEV_NULL_ID, buf, len)
+        }
+        FdKind::DevZero => {
+            let fs = devfs::DevFs::new();
+            read_vfs_fd(fd, root_pa, &fs, devfs::DEV_ZERO_ID, buf, len)
+        }
+        FdKind::InitFile => {
+            let fs = memfs::MemFs::with_init_image(init_memfile_image());
+            read_vfs_fd(fd, root_pa, &fs, memfs::INIT_ID, buf, len)
+        }
         FdKind::PipeRead(pipe_id) => {
             let nonblock = (entry.flags & O_NONBLOCK) != 0;
             pipe_read(pipe_id, root_pa, buf, len, nonblock)
@@ -2982,21 +3015,28 @@ fn init_memfile_image() -> &'static [u8] {
     crate::user::init_exec_elf_image()
 }
 
-fn read_memfs_fd(fd: usize, root_pa: usize, inode: InodeId, buf: usize, len: usize) -> Result<usize, Errno> {
+fn read_vfs_fd(
+    fd: usize,
+    root_pa: usize,
+    fs: &dyn VfsOps,
+    inode: InodeId,
+    buf: usize,
+    len: usize,
+) -> Result<usize, Errno> {
     let offset = fd_offset(fd).ok_or(Errno::Badf)?;
-    let read = read_memfs_at(root_pa, inode, offset, buf, len)?;
+    let read = read_vfs_at(root_pa, fs, inode, offset, buf, len)?;
     set_fd_offset(fd, offset + read);
     Ok(read)
 }
 
-fn read_memfs_at(
+fn read_vfs_at(
     root_pa: usize,
+    fs: &dyn VfsOps,
     inode: InodeId,
     offset: usize,
     buf: usize,
     len: usize,
 ) -> Result<usize, Errno> {
-    let fs = memfs::MemFs::with_init_image(init_memfile_image());
     let mut total = 0usize;
     let mut remaining = len;
     let mut scratch = [0u8; 256];
@@ -3019,15 +3059,23 @@ fn read_memfs_at(
     Ok(total)
 }
 
-fn write_memfs_fd(fd: usize, root_pa: usize, inode: InodeId, buf: usize, len: usize) -> Result<usize, Errno> {
+fn write_vfs_fd(
+    fd: usize,
+    root_pa: usize,
+    fs: &dyn VfsOps,
+    inode: InodeId,
+    buf: usize,
+    len: usize,
+) -> Result<usize, Errno> {
     let offset = fd_offset(fd).ok_or(Errno::Badf)?;
-    let written = write_memfs_at(root_pa, inode, offset, buf, len)?;
+    let written = write_vfs_at(root_pa, fs, inode, offset, buf, len)?;
     set_fd_offset(fd, offset + written);
     Ok(written)
 }
 
-fn write_memfs_at(
+fn write_vfs_at(
     root_pa: usize,
+    fs: &dyn VfsOps,
     inode: InodeId,
     offset: usize,
     buf: usize,
@@ -3036,7 +3084,6 @@ fn write_memfs_at(
     if len == 0 {
         return Ok(0);
     }
-    let fs = memfs::MemFs::with_init_image(init_memfile_image());
     let mut total = 0usize;
     let mut remaining = len;
     let mut scratch = [0u8; 256];
@@ -3062,8 +3109,14 @@ fn write_memfs_at(
 fn write_to_entry(fd: usize, entry: FdEntry, root_pa: usize, buf: usize, len: usize) -> Result<usize, Errno> {
     match entry.kind {
         FdKind::Stdout | FdKind::Stderr => write_console_from(root_pa, buf, len),
-        FdKind::DevNull => write_memfs_fd(fd, root_pa, memfs::DEV_NULL_ID, buf, len),
-        FdKind::DevZero => write_memfs_fd(fd, root_pa, memfs::DEV_ZERO_ID, buf, len),
+        FdKind::DevNull => {
+            let fs = devfs::DevFs::new();
+            write_vfs_fd(fd, root_pa, &fs, devfs::DEV_NULL_ID, buf, len)
+        }
+        FdKind::DevZero => {
+            let fs = devfs::DevFs::new();
+            write_vfs_fd(fd, root_pa, &fs, devfs::DEV_ZERO_ID, buf, len)
+        }
         FdKind::InitFile => Err(Errno::Badf),
         FdKind::PipeWrite(pipe_id) => {
             let nonblock = (entry.flags & O_NONBLOCK) != 0;

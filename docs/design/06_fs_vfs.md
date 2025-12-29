@@ -13,6 +13,7 @@
 - memfs 支持携带 `/init` ELF 镜像以提供 read_at 路径，作为后续 VFS 读写接口的占位实现。
 - memfs 对 `/dev/null`/`/dev/zero` 提供最小 read/write 行为，作为 VFS 设备节点接入示例。
 - 挂载点采用 `MountTable` 管理，根文件系统可切换 FAT32/ext4。
+- `MountTable` 预留 `/`、`/dev`、`/proc` 挂载点：/dev 使用 devfs 占位，/proc 使用 procfs 占位，路径解析按最长前缀匹配并剥离挂载前缀。
 - 路径解析走 dentry 缓存，减少重复 lookup。
 - 页缓存以页为单位缓存文件数据，写入采用 write-back + 定期刷盘。
 - 块设备通过 `BlockDevice` 抽象接入 virtio-block。

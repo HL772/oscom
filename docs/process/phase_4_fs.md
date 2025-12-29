@@ -18,6 +18,8 @@
 - memfs 读路径扩展到 `/dev/null` 与 `/dev/zero`。
 - memfs 读取统一走 read_at，并通过 fd offset 维护文件读位置。
 - memfs 写路径支持 `/dev/null` 与 `/dev/zero`，readlinkat 走 memfs 入口占位。
+- 引入 MountTable 挂载表，预留 `/`、`/dev`、`/proc` 挂载点，路径解析改为最长前缀匹配。
+- 新增 devfs/procfs 占位实现，/dev 路径解析与元数据读取走 devfs。
 
 ## 问题与定位
 - 尚未进入实现阶段，暂无问题记录。

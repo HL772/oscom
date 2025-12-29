@@ -87,6 +87,7 @@
 - Add memfs read support for /dev/null and /dev/zero.
 - Add fd offset tracking for memfs-backed reads.
 - Add memfs write support for /dev/null and /dev/zero, and route readlinkat through memfs.
+- Add VFS mount table with /, /dev, /proc reserved mounts plus devfs/procfs stubs.
 - Extend USER_TEST to cover getdents64 on / and /dev.
 - Extend USER_TEST to cover clone tid writeback validation.
 - Build clone_user_root from kernel mappings to avoid sharing parent page tables.

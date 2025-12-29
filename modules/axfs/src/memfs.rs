@@ -11,6 +11,7 @@ pub const DEV_ID: InodeId = 2;
 pub const DEV_NULL_ID: InodeId = 3;
 pub const DEV_ZERO_ID: InodeId = 4;
 pub const INIT_ID: InodeId = 5;
+pub const PROC_ID: InodeId = 6;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResolveError {
@@ -28,7 +29,7 @@ struct Node {
     mode: u16,
 }
 
-const NODES: [Node; 5] = [
+const NODES: [Node; 6] = [
     Node {
         id: ROOT_ID,
         parent: ROOT_ID,
@@ -64,6 +65,13 @@ const NODES: [Node; 5] = [
         file_type: FileType::File,
         mode: 0o444,
     },
+    Node {
+        id: PROC_ID,
+        parent: ROOT_ID,
+        name: "proc",
+        file_type: FileType::Dir,
+        mode: 0o755,
+    },
 ];
 
 #[derive(Clone, Copy)]
@@ -73,7 +81,7 @@ pub struct DirEntry {
     pub dtype: u8,
 }
 
-const ROOT_ENTRIES: [DirEntry; 4] = [
+const ROOT_ENTRIES: [DirEntry; 5] = [
     DirEntry {
         ino: ROOT_ID,
         name: b".",
@@ -93,6 +101,11 @@ const ROOT_ENTRIES: [DirEntry; 4] = [
         ino: INIT_ID,
         name: b"init",
         dtype: DT_REG,
+    },
+    DirEntry {
+        ino: PROC_ID,
+        name: b"proc",
+        dtype: DT_DIR,
     },
 ];
 
@@ -119,6 +132,19 @@ const DEV_ENTRIES: [DirEntry; 4] = [
     },
 ];
 
+const PROC_ENTRIES: [DirEntry; 2] = [
+    DirEntry {
+        ino: PROC_ID,
+        name: b".",
+        dtype: DT_DIR,
+    },
+    DirEntry {
+        ino: ROOT_ID,
+        name: b"..",
+        dtype: DT_DIR,
+    },
+];
+
 pub struct MemFs<'a> {
     init_image: Option<&'a [u8]>,
 }
@@ -142,6 +168,7 @@ impl<'a> MemFs<'a> {
         match inode {
             ROOT_ID => Some(&ROOT_ENTRIES),
             DEV_ID => Some(&DEV_ENTRIES),
+            PROC_ID => Some(&PROC_ENTRIES),
             _ => None,
         }
     }
@@ -311,6 +338,7 @@ mod tests {
         assert_eq!(fs.resolve_path("/dev/null").unwrap(), DEV_NULL_ID);
         assert_eq!(fs.resolve_path("/dev/zero").unwrap(), DEV_ZERO_ID);
         assert_eq!(fs.resolve_path("/init").unwrap(), INIT_ID);
+        assert_eq!(fs.resolve_path("/proc").unwrap(), PROC_ID);
         assert_eq!(fs.resolve_path("dev").unwrap_err(), ResolveError::Invalid);
         assert_eq!(fs.resolve_path("/init/child").unwrap_err(), ResolveError::NotDir);
     }
@@ -324,6 +352,8 @@ mod tests {
         let init_meta = fs.metadata_for(INIT_ID).unwrap();
         assert_eq!(init_meta.file_type, FileType::File);
         assert_eq!(init_meta.size, 0);
+        let proc_meta = fs.metadata_for(PROC_ID).unwrap();
+        assert_eq!(proc_meta.file_type, FileType::Dir);
     }
 
     #[test]
