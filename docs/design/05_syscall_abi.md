@@ -39,7 +39,7 @@
 - 早期实现 `getrandom`，使用轻量伪随机填充。
 - 早期实现 `fstat`，为标准输入输出返回字符设备元数据。
 - 早期实现 `dup/dup3`，占位支持标准输入输出重定向（dup2 由 dup3 flags=0 兼容）。
-- 早期实现 `pipe2`，提供固定大小内存管道并在满/空时返回 EAGAIN。
+- 早期实现 `pipe2`，提供固定大小内存管道，空/满时阻塞或返回 EAGAIN，并在无读端时返回 EPIPE、无写端时读返回 EOF。
 - 早期实现 `lseek`，对标准输入输出返回 ESPIPE 占位。
 - 早期实现 `set_robust_list/get_robust_list`，占位返回空链表。
 - 早期实现 `rt_sigaction/rt_sigprocmask`，占位接受信号配置请求。

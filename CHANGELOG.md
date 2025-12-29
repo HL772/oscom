@@ -68,7 +68,7 @@
 - Add fstat stub for stdio character device metadata.
 - Align fstat timestamps with timebase monotonic clock.
 - Add dup/dup3 stubs for stdio redirection.
-- Add pipe2 stub with in-memory pipe buffer and EAGAIN on full/empty.
+- Add pipe2 stub with in-memory pipe buffer, blocking wakeups, and EPIPE/EOF/EAGAIN semantics.
 - Add lseek stub returning ESPIPE for stdio.
 - Add robust list stubs returning empty state.
 - Add rt_sigaction/rt_sigprocmask stubs.

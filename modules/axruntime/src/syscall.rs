@@ -19,6 +19,7 @@ pub enum Errno {
     Inval = 22,
     Badf = 9,
     Pipe = 29,
+    PipeBroken = 32,
     NotDir = 20,
     Range = 34,
     Again = 11,
@@ -463,6 +464,27 @@ static mut FD_TABLE: [FdKind; FD_TABLE_SLOTS] = [FdKind::Empty; FD_TABLE_SLOTS];
 static mut STDIO_REDIRECT: [Option<FdKind>; 3] = [None, None, None];
 // SAFETY: pipe 表在早期阶段串行访问。
 static mut PIPES: [Pipe; PIPE_SLOTS] = [EMPTY_PIPE; PIPE_SLOTS];
+// SAFETY: pipe 等待队列只在单核早期阶段访问。
+static PIPE_READ_WAITERS: [crate::task_wait_queue::TaskWaitQueue; PIPE_SLOTS] = [
+    crate::task_wait_queue::TaskWaitQueue::new(),
+    crate::task_wait_queue::TaskWaitQueue::new(),
+    crate::task_wait_queue::TaskWaitQueue::new(),
+    crate::task_wait_queue::TaskWaitQueue::new(),
+    crate::task_wait_queue::TaskWaitQueue::new(),
+    crate::task_wait_queue::TaskWaitQueue::new(),
+    crate::task_wait_queue::TaskWaitQueue::new(),
+    crate::task_wait_queue::TaskWaitQueue::new(),
+];
+static PIPE_WRITE_WAITERS: [crate::task_wait_queue::TaskWaitQueue; PIPE_SLOTS] = [
+    crate::task_wait_queue::TaskWaitQueue::new(),
+    crate::task_wait_queue::TaskWaitQueue::new(),
+    crate::task_wait_queue::TaskWaitQueue::new(),
+    crate::task_wait_queue::TaskWaitQueue::new(),
+    crate::task_wait_queue::TaskWaitQueue::new(),
+    crate::task_wait_queue::TaskWaitQueue::new(),
+    crate::task_wait_queue::TaskWaitQueue::new(),
+    crate::task_wait_queue::TaskWaitQueue::new(),
+];
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -622,7 +644,7 @@ fn sys_pipe2(pipefd: usize, flags: usize) -> Result<usize, Errno> {
     if root_pa == 0 {
         return Err(Errno::Fault);
     }
-    // 占位 pipe：固定缓冲区，满/空时返回 EAGAIN。
+    // 占位 pipe：固定缓冲区，空/满时阻塞或返回 EAGAIN。
     let pipe_id = alloc_pipe().ok_or(Errno::MFile)?;
     let read_fd = match alloc_fd(FdKind::PipeRead(pipe_id)) {
         Some(fd) => fd,
@@ -1888,6 +1910,18 @@ fn classify_path(root_pa: usize, path: usize) -> Result<Option<KnownPath>, Errno
     Ok(None)
 }
 
+fn can_block_current() -> bool {
+    crate::runtime::current_task_id().is_some()
+}
+
+fn pipe_read_queue(pipe_id: usize) -> &'static crate::task_wait_queue::TaskWaitQueue {
+    &PIPE_READ_WAITERS[pipe_id]
+}
+
+fn pipe_write_queue(pipe_id: usize) -> &'static crate::task_wait_queue::TaskWaitQueue {
+    &PIPE_WRITE_WAITERS[pipe_id]
+}
+
 fn default_statfs() -> Statfs {
     // 使用内存容量填充占位 statfs，保证用户态工具有可读值。
     const TMPFS_MAGIC: u64 = 0x0102_1994;
@@ -2112,7 +2146,15 @@ fn pipe_release(kind: FdKind) {
         } else if PIPES[pipe_id].writers > 0 {
             PIPES[pipe_id].writers -= 1;
         }
-        if PIPES[pipe_id].readers == 0 && PIPES[pipe_id].writers == 0 {
+    }
+    if unsafe { PIPES[pipe_id].writers == 0 } {
+        let _ = crate::runtime::wake_all(pipe_read_queue(pipe_id));
+    }
+    if unsafe { PIPES[pipe_id].readers == 0 } {
+        let _ = crate::runtime::wake_all(pipe_write_queue(pipe_id));
+    }
+    if unsafe { PIPES[pipe_id].readers == 0 && PIPES[pipe_id].writers == 0 } {
+        unsafe {
             PIPES[pipe_id] = EMPTY_PIPE;
         }
     }
@@ -2125,17 +2167,28 @@ fn pipe_read(pipe_id: usize, root_pa: usize, buf: usize, len: usize) -> Result<u
     if len == 0 {
         return Ok(0);
     }
+    loop {
+        let (used, available, writers) = unsafe {
+            let pipe = &PIPES[pipe_id];
+            (pipe.used, pipe.len, pipe.writers)
+        };
+        if !used {
+            return Err(Errno::Badf);
+        }
+        if available == 0 {
+            if writers == 0 {
+                return Ok(0);
+            }
+            if !can_block_current() {
+                return Err(Errno::Again);
+            }
+            crate::runtime::block_current(pipe_read_queue(pipe_id));
+            continue;
+        }
+        break;
+    }
     // SAFETY: 单核早期阶段串行访问 pipe。
     let pipe = unsafe { &mut PIPES[pipe_id] };
-    if !pipe.used {
-        return Err(Errno::Badf);
-    }
-    if pipe.len == 0 {
-        if pipe.writers == 0 {
-            return Ok(0);
-        }
-        return Err(Errno::Again);
-    }
     let to_read = min(len, pipe.len);
     let mut remaining = to_read;
     let mut offset = 0usize;
@@ -2151,6 +2204,7 @@ fn pipe_read(pipe_id: usize, root_pa: usize, buf: usize, len: usize) -> Result<u
         remaining -= chunk;
         offset += chunk;
     }
+    let _ = crate::runtime::wake_one(pipe_write_queue(pipe_id));
     Ok(to_read)
 }
 
@@ -2161,20 +2215,30 @@ fn pipe_write(pipe_id: usize, root_pa: usize, buf: usize, len: usize) -> Result<
     if len == 0 {
         return Ok(0);
     }
+    loop {
+        let (used, readers, used_len) = unsafe {
+            let pipe = &PIPES[pipe_id];
+            (pipe.used, pipe.readers, pipe.len)
+        };
+        if !used {
+            return Err(Errno::Badf);
+        }
+        if readers == 0 {
+            return Err(Errno::PipeBroken);
+        }
+        let avail = PIPE_BUFFER_SIZE.saturating_sub(used_len);
+        if avail == 0 {
+            if !can_block_current() {
+                return Err(Errno::Again);
+            }
+            crate::runtime::block_current(pipe_write_queue(pipe_id));
+            continue;
+        }
+        break;
+    }
     // SAFETY: 单核早期阶段串行访问 pipe。
     let pipe = unsafe { &mut PIPES[pipe_id] };
-    if !pipe.used {
-        return Err(Errno::Badf);
-    }
-    if pipe.readers == 0 {
-        // 无读端时丢弃数据，避免早期管道阻塞。
-        validate_user_read(root_pa, buf, len)?;
-        return Ok(len);
-    }
     let avail = PIPE_BUFFER_SIZE.saturating_sub(pipe.len);
-    if avail == 0 {
-        return Err(Errno::Again);
-    }
     let to_write = min(len, avail);
     let mut remaining = to_write;
     let mut offset = 0usize;
@@ -2190,6 +2254,7 @@ fn pipe_write(pipe_id: usize, root_pa: usize, buf: usize, len: usize) -> Result<
         remaining -= chunk;
         offset += chunk;
     }
+    let _ = crate::runtime::wake_one(pipe_read_queue(pipe_id));
     Ok(to_write)
 }
 
