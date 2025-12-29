@@ -1,4 +1,24 @@
-* commit b8e1439c248f995c1d1bc02817f8046d4803c1a2 (HEAD -> bootstrap-riscv64)
+* commit dc22d1755e5a5ec9741d1a26c12d26dffd17589d (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 21:49:03 +0800
+| 
+|     feat(fs): route statfs via memfs
+| 
+|  CHANGELOG.md                     |  1 +
+|  docs/process/phase_4_fs.md       |  1 +
+|  modules/axruntime/src/syscall.rs | 14 +++++---------
+|  3 files changed, 7 insertions(+), 9 deletions(-)
+| 
+* commit 4be38673184d88a339832262c359556743970427
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 21:47:58 +0800
+| 
+|     chore(process): refresh git log
+| 
+|  docs/process/git-log.txt | 22 +++++++++++++++++++++-
+|  1 file changed, 21 insertions(+), 1 deletion(-)
+| 
+* commit b8e1439c248f995c1d1bc02817f8046d4803c1a2
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 21:47:46 +0800
 | 
