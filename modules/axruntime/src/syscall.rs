@@ -54,6 +54,7 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_READV => sys_readv(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_WRITEV => sys_writev(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_CLOCK_GETTIME => sys_clock_gettime(ctx.args[0], ctx.args[1]),
+        SYS_CLOCK_GETTIME64 => sys_clock_gettime(ctx.args[0], ctx.args[1]),
         SYS_GETTIMEOFDAY => sys_gettimeofday(ctx.args[0], ctx.args[1]),
         SYS_GETPID => sys_getpid(),
         SYS_GETPPID => sys_getppid(),
@@ -76,6 +77,7 @@ const SYS_WRITE: usize = 64;
 const SYS_READV: usize = 65;
 const SYS_WRITEV: usize = 66;
 const SYS_CLOCK_GETTIME: usize = 113;
+const SYS_CLOCK_GETTIME64: usize = 403;
 const SYS_GETTIMEOFDAY: usize = 169;
 const SYS_GETPID: usize = 172;
 const SYS_GETPPID: usize = 173;

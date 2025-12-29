@@ -16,6 +16,7 @@
 - 早期实现 `write` 的用户指针翻译与控制台输出，用于验证 U-mode ecall 链路。
 - 早期实现 `read`（fd=0）对接 SBI getchar，暂为非阻塞读取占位。
 - 早期实现 `clock_gettime/gettimeofday/getpid`，返回基于 tick 的时间与占位 PID。
+- 早期实现 `clock_gettime64`，与 `clock_gettime` 共用时间源。
 - 早期实现 `readv/writev`，复用用户指针校验并支持分段缓冲区。
 - 早期实现 `uname`，返回最小可用的系统信息占位。
 - 早期实现 `getpid/getppid/getuid/geteuid/getgid/getegid` 等身份信息占位。

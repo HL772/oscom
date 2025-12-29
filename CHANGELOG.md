@@ -49,3 +49,4 @@
 - Add minimal getppid/getuid/geteuid/getgid/getegid stubs.
 - Add gettid and sched_yield stubs.
 - Add exit_group stub aligned with exit shutdown.
+- Add clock_gettime64 alias to clock_gettime stub.
