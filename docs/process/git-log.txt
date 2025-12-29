@@ -1,4 +1,25 @@
-* commit 053729564a3b45824c1cacda294ac6c9cc0b9728 (HEAD -> bootstrap-riscv64)
+* commit 27d15c648ef3a78bc99df7857b2c3c036faff9c2 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 14:40:40 +0800
+| 
+|     feat(syscall): report pipe readiness in ppoll
+| 
+|  CHANGELOG.md                            |   2 +-
+|  docs/design/05_syscall_abi.md           |   2 +-
+|  docs/process/phase_3_process_syscall.md |   2 +-
+|  modules/axruntime/src/syscall.rs        | 165 ++++++++++++++++++++++++++++--
+|  4 files changed, 160 insertions(+), 11 deletions(-)
+| 
+* commit 637325867cc3dba7a7df4181cfc510964eb5cbf2
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 14:27:18 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit 053729564a3b45824c1cacda294ac6c9cc0b9728
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 14:27:02 +0800
 | 
