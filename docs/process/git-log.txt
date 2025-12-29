@@ -1,4 +1,25 @@
-* commit 70570b79157e0da57417164e11b2db33fba51b79 (HEAD -> bootstrap-riscv64)
+* commit 8157ba763cf974e26d8ddf48b2756e8fa9e81779 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 20:46:39 +0800
+| 
+|     test(user): cover getdents64 paths
+| 
+|  CHANGELOG.md                            |   1 +
+|  docs/design/10_testing_benchmark.md     |   2 +-
+|  docs/process/phase_3_process_syscall.md |   4 +-
+|  modules/axruntime/src/user.rs           | 103 +++++++++++++++++-------------
+|  4 files changed, 63 insertions(+), 47 deletions(-)
+| 
+* commit f787e316e33a34f2b39acdcdf82ebee847484ef9
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 20:32:40 +0800
+| 
+|     chore(process): refresh git log
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit 70570b79157e0da57417164e11b2db33fba51b79
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 20:32:27 +0800
 | 
