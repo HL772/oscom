@@ -1,4 +1,25 @@
-* commit 2b87620afb71fbbecba146b91e06f1996c5de635 (HEAD -> bootstrap-riscv64)
+* commit 3fc89b84d621c71dd53978abf024d8579ce637ef (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 12:43:23 +0800
+| 
+|     feat(syscall): add chdir stubs
+| 
+|  CHANGELOG.md                            |  1 +
+|  docs/design/05_syscall_abi.md           |  1 +
+|  docs/process/phase_3_process_syscall.md |  1 +
+|  modules/axruntime/src/syscall.rs        | 26 ++++++++++++++++++++++++++
+|  4 files changed, 29 insertions(+)
+| 
+* commit 3952fabed328173cb4571d635ada41cf16fbbea9
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 12:41:51 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit 2b87620afb71fbbecba146b91e06f1996c5de635
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 12:41:34 +0800
 | 
