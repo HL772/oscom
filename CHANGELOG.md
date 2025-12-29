@@ -53,3 +53,4 @@
 - Add getcwd stub returning root path.
 - Add set_tid_address stub with pointer validation.
 - Add close stub for stdio fds.
+- Add getrlimit/prlimit64 stubs with default limits.

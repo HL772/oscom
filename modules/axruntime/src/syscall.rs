@@ -70,6 +70,8 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_EXIT_GROUP => sys_exit_group(ctx.args[0]),
         SYS_GETCWD => sys_getcwd(ctx.args[0], ctx.args[1]),
         SYS_CLOSE => sys_close(ctx.args[0]),
+        SYS_GETRLIMIT => sys_getrlimit(ctx.args[0], ctx.args[1]),
+        SYS_PRLIMIT64 => sys_prlimit64(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         _ => Err(Errno::NoSys),
     }
 }
@@ -82,6 +84,8 @@ const SYS_READV: usize = 65;
 const SYS_WRITEV: usize = 66;
 const SYS_GETCWD: usize = 17;
 const SYS_CLOSE: usize = 57;
+const SYS_GETRLIMIT: usize = 163;
+const SYS_PRLIMIT64: usize = 261;
 const SYS_CLOCK_GETTIME: usize = 113;
 const SYS_CLOCK_GETTIME64: usize = 403;
 const SYS_GETTIMEOFDAY: usize = 169;
@@ -137,6 +141,13 @@ struct Utsname {
     version: [u8; 65],
     machine: [u8; 65],
     domainname: [u8; 65],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Rlimit {
+    rlim_cur: u64,
+    rlim_max: u64,
 }
 
 fn sys_exit(_code: usize) -> Result<usize, Errno> {
@@ -399,6 +410,39 @@ fn sys_close(fd: usize) -> Result<usize, Errno> {
     Err(Errno::Badf)
 }
 
+fn sys_getrlimit(_resource: usize, rlim: usize) -> Result<usize, Errno> {
+    if rlim == 0 {
+        return Err(Errno::Fault);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    UserPtr::new(rlim)
+        .write(root_pa, default_rlimit())
+        .ok_or(Errno::Fault)?;
+    Ok(0)
+}
+
+fn sys_prlimit64(_pid: usize, _resource: usize, new_rlim: usize, old_rlim: usize) -> Result<usize, Errno> {
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    if new_rlim != 0 {
+        let size = size_of::<Rlimit>();
+        if mm::translate_user_ptr(root_pa, new_rlim, size, UserAccess::Read).is_none() {
+            return Err(Errno::Fault);
+        }
+    }
+    if old_rlim != 0 {
+        UserPtr::new(old_rlim)
+            .write(root_pa, default_rlimit())
+            .ok_or(Errno::Fault)?;
+    }
+    Ok(0)
+}
+
 fn load_iovec(root_pa: usize, iov_ptr: usize, index: usize) -> Result<Iovec, Errno> {
     let size = size_of::<Iovec>();
     let offset = index.checked_mul(size).ok_or(Errno::Fault)?;
@@ -411,6 +455,13 @@ fn fill_uts_field(dst: &mut [u8; 65], src: &str) {
     let len = core::cmp::min(bytes.len(), dst.len() - 1);
     dst[..len].copy_from_slice(&bytes[..len]);
     dst[len] = 0;
+}
+
+fn default_rlimit() -> Rlimit {
+    Rlimit {
+        rlim_cur: u64::MAX,
+        rlim_max: u64::MAX,
+    }
 }
 
 fn read_console_into(root_pa: usize, buf: usize, len: usize) -> Result<usize, Errno> {
