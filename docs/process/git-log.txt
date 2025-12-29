@@ -1,4 +1,25 @@
-* commit 3016248dd2795b25f2742211b27ff552ac508cc5 (HEAD -> bootstrap-riscv64)
+* commit ae7fabe6f402975fc43d9b3556ecc6dac2c5ccde (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 22:08:06 +0800
+| 
+|     feat(fs): validate memfs parents for create stubs
+| 
+|  CHANGELOG.md                     |  1 +
+|  docs/process/phase_4_fs.md       |  1 +
+|  modules/axfs/src/memfs.rs        | 61 ++++++++++++++++++++++++++++++++++++++
+|  modules/axruntime/src/syscall.rs | 14 +++++++++
+|  4 files changed, 77 insertions(+)
+| 
+* commit c569b6467e2f6f1ec795798b3901806daa5ebc14
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 22:04:06 +0800
+| 
+|     chore(process): refresh git log
+| 
+|  docs/process/git-log.txt | 22 +++++++++++++++++++++-
+|  1 file changed, 21 insertions(+), 1 deletion(-)
+| 
+* commit 3016248dd2795b25f2742211b27ff552ac508cc5
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 22:03:54 +0800
 | 
