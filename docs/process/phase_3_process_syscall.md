@@ -42,7 +42,7 @@
 - 增加 gettid 与 sched_yield，占位支持线程 ID；任务上下文可用时返回 TaskId+1。
 - 增加 exit_group，占位同步关机。
 - 增加 getcwd，占位返回根路径。
-- 增加 set_tid_address，占位返回 TID 并校验用户指针。
+- 增加 set_tid_address，占位返回 TaskId+1 并校验用户指针。
 - 增加 close，占位支持标准输入输出关闭。
 - 增加 getrlimit/prlimit64，占位返回默认资源限制。
 - 增加 ioctl(TIOCGWINSZ/TCGETS/TCSETS*)，占位返回窗口大小与最小 termios。

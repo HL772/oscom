@@ -52,7 +52,7 @@
 - Add exit_group stub aligned with exit shutdown.
 - Add clock_gettime64 alias to clock_gettime stub.
 - Add getcwd stub returning root path.
-- Add set_tid_address stub with pointer validation.
+- Add set_tid_address stub returning TaskId+1.
 - Add close stub for stdio fds.
 - Add getrlimit/prlimit64 stubs with default limits.
 - Add ioctl stubs for TIOCGWINSZ/TCGETS/TCSETS with default terminal data.

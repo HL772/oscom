@@ -607,7 +607,7 @@ fn sys_set_tid_address(tidptr: usize) -> Result<usize, Errno> {
     if mm::translate_user_ptr(root_pa, tidptr, size, UserAccess::Write).is_none() {
         return Err(Errno::Fault);
     }
-    Ok(1)
+    Ok(current_pid())
 }
 
 fn sys_uname(buf: usize) -> Result<usize, Errno> {
