@@ -22,6 +22,7 @@
 - 早期实现 `getpid/getppid/getuid/geteuid/getgid/getegid` 等身份信息占位。
 - 早期实现 `gettid` 与 `sched_yield`，提供最小线程 ID 与让出路径。
 - 早期实现 `exit_group`，与 `exit` 同步关机占位。
+- 早期实现 `getcwd`，占位返回根路径。
 
 ## 关键数据结构
 - `SyscallAbi`：抽象获取 syscall 号与参数、设置返回值与 `sepc` 前进。

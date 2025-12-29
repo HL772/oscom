@@ -13,6 +13,7 @@ pub enum Errno {
     Fault = 14,
     Inval = 22,
     Badf = 9,
+    Range = 34,
 }
 
 impl Errno {
@@ -66,6 +67,7 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_SCHED_YIELD => sys_sched_yield(),
         SYS_UNAME => sys_uname(ctx.args[0]),
         SYS_EXIT_GROUP => sys_exit_group(ctx.args[0]),
+        SYS_GETCWD => sys_getcwd(ctx.args[0], ctx.args[1]),
         _ => Err(Errno::NoSys),
     }
 }
@@ -76,6 +78,7 @@ const SYS_READ: usize = 63;
 const SYS_WRITE: usize = 64;
 const SYS_READV: usize = 65;
 const SYS_WRITEV: usize = 66;
+const SYS_GETCWD: usize = 17;
 const SYS_CLOCK_GETTIME: usize = 113;
 const SYS_CLOCK_GETTIME64: usize = 403;
 const SYS_GETTIMEOFDAY: usize = 169;
@@ -349,6 +352,25 @@ fn sys_uname(buf: usize) -> Result<usize, Errno> {
     fill_uts_field(&mut uts.domainname, "localdomain");
     UserPtr::new(buf).write(root_pa, uts).ok_or(Errno::Fault)?;
     Ok(0)
+}
+
+fn sys_getcwd(buf: usize, size: usize) -> Result<usize, Errno> {
+    const PATH: &[u8] = b"/\0";
+    if buf == 0 {
+        return Err(Errno::Fault);
+    }
+    if size < PATH.len() {
+        return Err(Errno::Range);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    let slice = UserSlice::new(buf, PATH.len());
+    slice
+        .copy_from_slice(root_pa, PATH)
+        .ok_or(Errno::Fault)?;
+    Ok(PATH.len())
 }
 
 fn load_iovec(root_pa: usize, iov_ptr: usize, index: usize) -> Result<Iovec, Errno> {

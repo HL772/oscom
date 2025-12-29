@@ -38,6 +38,7 @@
 - 增加 getppid/getuid/geteuid/getgid/getegid 等身份信息占位。
 - 增加 gettid 与 sched_yield，占位支持线程 ID 与让出调度。
 - 增加 exit_group，占位同步关机。
+- 增加 getcwd，占位返回根路径。
 
 ## 问题与定位
 - 调度仍处于占位阶段，尚未引入用户态/系统调用上下文保存。
