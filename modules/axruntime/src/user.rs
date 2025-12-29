@@ -157,17 +157,32 @@ pub fn load_exec_elf(
     envp: usize,
 ) -> Result<UserContext, Errno> {
     let header = ElfHeader::parse(image)?;
-    let root_pa = mm::alloc_user_root().ok_or(Errno::NoEnt)?;
-    load_elf_segments(root_pa, image, &header)?;
+    let root_pa = mm::alloc_user_root().ok_or(Errno::NoMem)?;
+    if let Err(err) = load_elf_segments(root_pa, image, &header) {
+        // execve 失败时释放新地址空间，避免泄漏页表页与用户页。
+        mm::release_user_root(root_pa);
+        return Err(err);
+    }
 
-    let stack_pa = ensure_user_page(root_pa, USER_STACK_VA, mm::UserAccess::Write, mm::map_user_stack)
-        .ok_or(Errno::Fault)?;
+    let stack_pa = match ensure_user_page(root_pa, USER_STACK_VA, mm::UserAccess::Write, mm::map_user_stack) {
+        Some(pa) => pa,
+        None => {
+            mm::release_user_root(root_pa);
+            return Err(Errno::Fault);
+        }
+    };
     // SAFETY: identity-mapped frame; zero stack page before writing.
     unsafe {
         ptr::write_bytes(stack_pa as *mut u8, 0, USER_STACK_SIZE);
     }
 
-    let (user_sp, argc, argv_ptr, envp_ptr) = build_user_stack(old_root_pa, root_pa, argv, envp)?;
+    let (user_sp, argc, argv_ptr, envp_ptr) = match build_user_stack(old_root_pa, root_pa, argv, envp) {
+        Ok(value) => value,
+        Err(err) => {
+            mm::release_user_root(root_pa);
+            return Err(err);
+        }
+    };
 
     mm::flush_icache();
     mm::flush_tlb();

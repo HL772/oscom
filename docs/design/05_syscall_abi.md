@@ -16,7 +16,9 @@
 - 早期实现 `write` 的用户指针翻译与控制台输出，用于验证 U-mode ecall 链路。
 - 早期实现 `read`（fd=0）对接 SBI getchar，非阻塞无数据返回 EAGAIN。
 - 早期实现 `execve`：仅识别 `/init` 内置 ELF 镜像，完成最小 ELF 解析与段映射，并构建 argv/envp 栈布局。
+- execve 失败路径释放新地址空间，避免页表页与用户页泄漏。
 - 早期实现 `wait4/waitpid`：使用最小进程表与父进程等待队列，支持 WNOHANG 与退出码回收。
+- waitpid 采用循环阻塞重试，避免递归等待带来的栈增长。
 - 早期实现 `clone`：使用 fork 语义创建子进程（忽略线程类 flags），返回子 PID 并结合 CoW 页表。
 - 早期实现 `clock_gettime/gettimeofday/getpid`，支持 MONOTONIC/RAW/BOOTTIME/COARSE 并返回 timebase 时间。
 - 早期实现 `clock_gettime64`，与 `clock_gettime` 共用时间源。

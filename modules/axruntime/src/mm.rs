@@ -782,21 +782,23 @@ pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
     if parent_root_pa == 0 {
         return None;
     }
-    // SAFETY: parent root page table is valid in early boot.
+    // 基于内核映射创建子根页表，避免直接复用父进程页表页。
+    let child_root_pa = alloc_user_root()?;
+    // SAFETY: parent/child root page tables are valid in early boot.
     let parent_root = unsafe { &mut *(parent_root_pa as *mut PageTable) };
-    // SAFETY: allocate a fresh root page table for the child.
-    let child_root = unsafe { alloc_page_table()? };
-    child_root.entries = parent_root.entries;
+    let child_root = unsafe { &mut *(child_root_pa as *mut PageTable) };
+    let mut ok = true;
 
-    for l2_idx in 0..SV39_ENTRIES {
+    'l2: for l2_idx in 0..SV39_ENTRIES {
         let parent_l2e = parent_root.entries[l2_idx];
         if !parent_l2e.is_valid() {
             continue;
         }
-            if parent_l2e.is_leaf() {
+        if parent_l2e.is_leaf() {
             if (parent_l2e.flags() & PTE_U) != 0 {
                 if (parent_l2e.flags() & PTE_W) != 0 {
-                    return None;
+                    ok = false;
+                    break 'l2;
                 }
                 let _ = retain_frame(parent_l2e.ppn().addr().as_usize());
                 child_root.entries[l2_idx] = parent_l2e;
@@ -809,8 +811,10 @@ pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
             continue;
         }
         // SAFETY: allocate a fresh L1 page table for the child.
-        let child_l1 = unsafe { alloc_page_table()? };
-        child_l1.entries = parent_l1.entries;
+        let Some(child_l1) = (unsafe { alloc_page_table() }) else {
+            ok = false;
+            break 'l2;
+        };
         let child_l1_pa = virt_to_phys(child_l1 as *const _ as usize);
         child_root.entries[l2_idx] =
             PageTableEntry::new(PhysPageNum::new(child_l1_pa >> PAGE_SHIFT), PTE_V);
@@ -823,7 +827,8 @@ pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
             if parent_l1e.is_leaf() {
                 if (parent_l1e.flags() & PTE_U) != 0 {
                     if (parent_l1e.flags() & PTE_W) != 0 {
-                        return None;
+                        ok = false;
+                        break 'l2;
                     }
                     let _ = retain_frame(parent_l1e.ppn().addr().as_usize());
                     child_l1.entries[l1_idx] = parent_l1e;
@@ -836,8 +841,10 @@ pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
                 continue;
             }
             // SAFETY: allocate a fresh L0 page table for the child.
-            let child_l0 = unsafe { alloc_page_table()? };
-            child_l0.entries = parent_l0.entries;
+            let Some(child_l0) = (unsafe { alloc_page_table() }) else {
+                ok = false;
+                break 'l2;
+            };
             let child_l0_pa = virt_to_phys(child_l0 as *const _ as usize);
             child_l1.entries[l1_idx] =
                 PageTableEntry::new(PhysPageNum::new(child_l0_pa >> PAGE_SHIFT), PTE_V);
@@ -857,8 +864,12 @@ pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
             }
         }
     }
+    if !ok {
+        release_user_root(child_root_pa);
+        return None;
+    }
     flush_tlb();
-    Some(virt_to_phys(child_root as *const _ as usize))
+    Some(child_root_pa)
 }
 
 pub fn release_user_root(root_pa: usize) {

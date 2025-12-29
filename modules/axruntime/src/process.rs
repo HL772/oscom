@@ -108,61 +108,63 @@ pub fn waitpid(target: isize, status: usize, options: usize) -> Result<usize, Er
     if status != 0 && root_pa == 0 {
         return Err(Errno::Fault);
     }
-
-    let mut found_child = false;
-    let mut zombie_pid = 0usize;
-    let mut zombie_code = 0i32;
-
-    // SAFETY: early boot single-hart; process table reads are serialized.
-    unsafe {
-        for idx in 0..MAX_PROCS {
-            if PROC_STATE[idx] == ProcState::Empty {
-                continue;
-            }
-            if PROC_PPID[idx] != parent_pid {
-                continue;
-            }
-            let pid = idx + 1;
-            if target > 0 && pid != target as usize {
-                continue;
-            }
-            found_child = true;
-            if PROC_STATE[idx] == ProcState::Zombie {
-                zombie_pid = pid;
-                zombie_code = PROC_EXIT[idx];
-                let root = PROC_ROOT[idx];
-                PROC_STATE[idx] = ProcState::Empty;
-                PROC_PPID[idx] = 0;
-                PROC_EXIT[idx] = 0;
-                PROC_ROOT[idx] = 0;
-                if root != 0 {
-                    crate::mm::release_user_root(root);
-                }
-                break;
-            }
-        }
-    }
-
-    if zombie_pid != 0 {
-        if status != 0 {
-            let code = ((zombie_code as usize) & 0xff) << 8;
-            mm::UserPtr::new(status)
-                .write(root_pa, code)
-                .ok_or(Errno::Fault)?;
-        }
-        return Ok(zombie_pid);
-    }
-
-    if !found_child {
-        return Err(Errno::Child);
-    }
-    if (options & WNOHANG) != 0 || !crate::syscall::can_block_current() {
-        return Ok(0);
-    }
     let parent_idx = parent_pid.saturating_sub(1);
     if parent_idx >= MAX_PROCS {
         return Err(Errno::Child);
     }
-    crate::runtime::block_current(&PROC_WAITERS[parent_idx]);
-    waitpid(target, status, options)
+
+    // 循环等待，避免递归阻塞导致栈增长。
+    loop {
+        let mut found_child = false;
+        let mut zombie_pid = 0usize;
+        let mut zombie_code = 0i32;
+
+        // SAFETY: early boot single-hart; process table reads are serialized.
+        unsafe {
+            for idx in 0..MAX_PROCS {
+                if PROC_STATE[idx] == ProcState::Empty {
+                    continue;
+                }
+                if PROC_PPID[idx] != parent_pid {
+                    continue;
+                }
+                let pid = idx + 1;
+                if target > 0 && pid != target as usize {
+                    continue;
+                }
+                found_child = true;
+                if PROC_STATE[idx] == ProcState::Zombie {
+                    zombie_pid = pid;
+                    zombie_code = PROC_EXIT[idx];
+                    let root = PROC_ROOT[idx];
+                    PROC_STATE[idx] = ProcState::Empty;
+                    PROC_PPID[idx] = 0;
+                    PROC_EXIT[idx] = 0;
+                    PROC_ROOT[idx] = 0;
+                    if root != 0 {
+                        crate::mm::release_user_root(root);
+                    }
+                    break;
+                }
+            }
+        }
+
+        if zombie_pid != 0 {
+            if status != 0 {
+                let code = ((zombie_code as usize) & 0xff) << 8;
+                mm::UserPtr::new(status)
+                    .write(root_pa, code)
+                    .ok_or(Errno::Fault)?;
+            }
+            return Ok(zombie_pid);
+        }
+
+        if !found_child {
+            return Err(Errno::Child);
+        }
+        if (options & WNOHANG) != 0 || !crate::syscall::can_block_current() {
+            return Ok(0);
+        }
+        crate::runtime::block_current(&PROC_WAITERS[parent_idx]);
+    }
 }

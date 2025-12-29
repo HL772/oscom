@@ -55,9 +55,12 @@
 - Enable timer-driven preemption by returning running tasks to the run queue and scheduling from idle.
 - Allow user tasks to be preempted by timer ticks and resume via trapframe-backed paths.
 - Add execve loader for `/init` built-in ELF image with argv/envp stack layout.
+- Release newly created address space on execve failure paths.
 - Add minimal process table and wait4/waitpid support with zombie reaping and WNOHANG.
+- Switch waitpid to looped blocking wait to avoid recursive stack growth.
 - Track user task root/entry/sp/trapframe and add a trapframe resume path for user tasks.
 - Add clone syscall with fork-like semantics backed by CoW page table cloning.
+- Build clone_user_root from kernel mappings to avoid sharing parent page tables.
 - Add PTE_COW and page-fault handling to copy pages on first write.
 - Add frame refcounting and release of user address spaces on waitpid/execve.
 - Extend user-mode smoke to cover clone/wait4 and CoW write path validation.
