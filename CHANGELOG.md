@@ -91,6 +91,11 @@
 - Add BlockDevice trait and a pass-through BlockCache scaffold for future FS work.
 - Add a FAT32 BPB parser and root-cluster scaffold for read-path bring-up.
 - Add an ext4 superblock parser and root-inode scaffold for read-path bring-up.
+- Add a VFS read_dir interface and directory entry structure for getdents64.
+- Implement FAT32 directory traversal and cluster-chain reads plus a minimal FAT32 rootfs ramdisk.
+- Implement ext4 group descriptor/inode table parsing with read-only directory lookup and extent depth-0 reads.
+- Switch fd entries to carry VFS handles so open/read/write/stat/getdents64 route through VFS.
+- Load execve images from VFS-backed /init instead of the memfile path.
 - Allow opening /proc as a directory and return minimal entries via getdents64.
 - Extend USER_TEST to cover getdents64 on / and /dev.
 - Extend USER_TEST to cover clone tid writeback validation.

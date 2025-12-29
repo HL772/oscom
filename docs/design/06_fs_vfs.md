@@ -7,6 +7,7 @@
 
 ## 设计
 - VFS 以 `Inode`/`File` trait 为核心，提供统一的 `lookup/read/write/stat` 接口。
+- VFS 增加 `read_dir` 目录枚举接口，支持 `getdents64` 直接走文件系统目录遍历。
 - 早期阶段先以 `InodeId` 句柄定义 VFS trait，避免引入全局分配器；后续再切换到 `Arc<dyn Inode>` 形式。
 - `modules/axfs` 提供 memfs 作为最小只读实现，先覆盖 `/` 与 `/dev` 等伪目录，逐步替换 syscall 中的硬编码路径。
 - 早期 syscalls 通过 memfs 的路径解析与元数据查询返回 openat/newfstatat 结果，作为接入 VFS 的第一步。
@@ -14,11 +15,12 @@
 - memfs 对 `/dev/null`/`/dev/zero` 提供最小 read/write 行为，作为 VFS 设备节点接入示例。
 - 挂载点采用 `MountTable` 管理，根文件系统可切换 FAT32/ext4。
 - `MountTable` 预留 `/`、`/dev`、`/proc` 挂载点：/dev 使用 devfs 占位，/proc 使用 procfs 占位，路径解析按最长前缀匹配并剥离挂载前缀。
+- rootfs 使用内存块设备构建 FAT32 镜像挂载，`/init` 由 VFS 读取。
 - 路径解析走 dentry 缓存，减少重复 lookup。
 - 页缓存以页为单位缓存文件数据，写入采用 write-back + 定期刷盘。
 - 块设备通过 `BlockDevice` 抽象接入 virtio-block，早期以 BlockCache 直通占位。
-- FAT32 先从 BPB 解析与根簇定位开始，逐步扩展目录遍历与文件读取。
-- ext4 先实现 superblock 解析与根 inode 占位，为后续目录遍历铺路。
+- FAT32 完成 BPB 解析、簇链遍历与目录项解析，实现只读文件读取与根目录枚举。
+- ext4 完成 superblock + 组描述符 + inode 表读取，支持目录查找与只读文件读取（含 extents 直读）。
 - 权限与时间戳语义对齐 Linux，错误码通过 errno 映射返回。
 
 ## 关键数据结构

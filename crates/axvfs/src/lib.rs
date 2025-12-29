@@ -31,6 +31,41 @@ pub enum FileType {
     Symlink,
 }
 
+pub const MAX_NAME_LEN: usize = 255;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DirEntry {
+    pub ino: InodeId,
+    pub file_type: FileType,
+    pub name_len: u8,
+    pub name: [u8; MAX_NAME_LEN],
+}
+
+impl DirEntry {
+    pub const fn empty() -> Self {
+        Self {
+            ino: 0,
+            file_type: FileType::File,
+            name_len: 0,
+            name: [0; MAX_NAME_LEN],
+        }
+    }
+
+    pub fn set_name(&mut self, name: &[u8]) -> VfsResult<()> {
+        if name.len() > MAX_NAME_LEN {
+            return Err(VfsError::Invalid);
+        }
+        let len = name.len();
+        self.name[..len].copy_from_slice(name);
+        self.name_len = len as u8;
+        Ok(())
+    }
+
+    pub fn name(&self) -> &[u8] {
+        &self.name[..self.name_len as usize]
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Metadata {
     pub file_type: FileType,
@@ -59,6 +94,7 @@ pub trait VfsOps {
     fn metadata(&self, inode: InodeId) -> VfsResult<Metadata>;
     fn read_at(&self, inode: InodeId, offset: u64, buf: &mut [u8]) -> VfsResult<usize>;
     fn write_at(&self, inode: InodeId, offset: u64, buf: &[u8]) -> VfsResult<usize>;
+    fn read_dir(&self, inode: InodeId, offset: usize, entries: &mut [DirEntry]) -> VfsResult<usize>;
 }
 
 pub trait FileOps {

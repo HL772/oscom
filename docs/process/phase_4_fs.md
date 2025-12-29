@@ -24,12 +24,18 @@
 - 增加 FAT32 BPB 解析与根簇定位骨架，预留目录与数据读取实现入口。
 - 增加 ext4 superblock 解析与根 inode 占位，补齐最小元数据读取入口。
 - 增加 /proc 挂载点的目录句柄占位，getdents64 返回最小 `.`/`..` 项。
+- VFS trait 增加 `read_dir` 目录枚举接口，`getdents64` 走统一目录遍历返回。
+- FAT32 完成目录项解析 + 簇链读取，支持 `/init` 文件读取与根目录枚举。
+- 使用内存块设备构建 FAT32 ramdisk 挂载为 rootfs，`/init` 通过 VFS 读取。
+- ext4 增加组描述符 + inode 表读取，目录查找与只读读路径打通。
+- fd 表改为记录通用 VFS 句柄，open/read/write/stat/getdents64 统一走 VFS。
 
 ## 问题与定位
-- 尚未进入实现阶段，暂无问题记录。
+- ext4 仅覆盖 extents 深度为 0 的直读路径，复杂目录需要后续补齐。
 
 ## 解决与验证
-- 待实现后补充 git/vim/gcc 等应用场景验证。
+- `cargo test -p axfs`
+- `USER_TEST=1 make test-qemu-smoke ARCH=riscv64 PLATFORM=qemu`
 
 ## 下一步
 - 完成 VFS/FAT32/ext4 最小读写后进入网络阶段。

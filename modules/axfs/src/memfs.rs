@@ -1,10 +1,6 @@
 use core::cmp::min;
 
-use axvfs::{FileType, InodeId, Metadata, VfsError, VfsOps, VfsResult};
-
-pub const DT_CHR: u8 = 2;
-pub const DT_DIR: u8 = 4;
-pub const DT_REG: u8 = 8;
+use axvfs::{DirEntry, FileType, InodeId, Metadata, VfsError, VfsOps, VfsResult};
 
 pub const ROOT_ID: InodeId = 1;
 pub const DEV_ID: InodeId = 2;
@@ -75,73 +71,73 @@ const NODES: [Node; 6] = [
 ];
 
 #[derive(Clone, Copy)]
-pub struct DirEntry {
-    pub ino: InodeId,
-    pub name: &'static [u8],
-    pub dtype: u8,
+struct DirEntrySpec {
+    ino: InodeId,
+    name: &'static [u8],
+    file_type: FileType,
 }
 
-const ROOT_ENTRIES: [DirEntry; 5] = [
-    DirEntry {
+const ROOT_ENTRIES: [DirEntrySpec; 5] = [
+    DirEntrySpec {
         ino: ROOT_ID,
         name: b".",
-        dtype: DT_DIR,
+        file_type: FileType::Dir,
     },
-    DirEntry {
+    DirEntrySpec {
         ino: ROOT_ID,
         name: b"..",
-        dtype: DT_DIR,
+        file_type: FileType::Dir,
     },
-    DirEntry {
+    DirEntrySpec {
         ino: DEV_ID,
         name: b"dev",
-        dtype: DT_DIR,
+        file_type: FileType::Dir,
     },
-    DirEntry {
+    DirEntrySpec {
         ino: INIT_ID,
         name: b"init",
-        dtype: DT_REG,
+        file_type: FileType::File,
     },
-    DirEntry {
+    DirEntrySpec {
         ino: PROC_ID,
         name: b"proc",
-        dtype: DT_DIR,
+        file_type: FileType::Dir,
     },
 ];
 
-const DEV_ENTRIES: [DirEntry; 4] = [
-    DirEntry {
+const DEV_ENTRIES: [DirEntrySpec; 4] = [
+    DirEntrySpec {
         ino: DEV_ID,
         name: b".",
-        dtype: DT_DIR,
+        file_type: FileType::Dir,
     },
-    DirEntry {
+    DirEntrySpec {
         ino: ROOT_ID,
         name: b"..",
-        dtype: DT_DIR,
+        file_type: FileType::Dir,
     },
-    DirEntry {
+    DirEntrySpec {
         ino: DEV_NULL_ID,
         name: b"null",
-        dtype: DT_CHR,
+        file_type: FileType::Char,
     },
-    DirEntry {
+    DirEntrySpec {
         ino: DEV_ZERO_ID,
         name: b"zero",
-        dtype: DT_CHR,
+        file_type: FileType::Char,
     },
 ];
 
-const PROC_ENTRIES: [DirEntry; 2] = [
-    DirEntry {
+const PROC_ENTRIES: [DirEntrySpec; 2] = [
+    DirEntrySpec {
         ino: PROC_ID,
         name: b".",
-        dtype: DT_DIR,
+        file_type: FileType::Dir,
     },
-    DirEntry {
+    DirEntrySpec {
         ino: ROOT_ID,
         name: b"..",
-        dtype: DT_DIR,
+        file_type: FileType::Dir,
     },
 ];
 
@@ -162,15 +158,6 @@ impl<'a> MemFs<'a> {
 
     fn node(&self, inode: InodeId) -> Option<&'static Node> {
         NODES.iter().find(|node| node.id == inode)
-    }
-
-    pub fn dir_entries(&self, inode: InodeId) -> Option<&'static [DirEntry]> {
-        match inode {
-            ROOT_ID => Some(&ROOT_ENTRIES),
-            DEV_ID => Some(&DEV_ENTRIES),
-            PROC_ID => Some(&PROC_ENTRIES),
-            _ => None,
-        }
     }
 
     pub fn resolve_path(&self, path: &str) -> Result<InodeId, ResolveError> {
@@ -325,6 +312,32 @@ impl<'a> VfsOps for MemFs<'a> {
             _ => Err(VfsError::NotSupported),
         }
     }
+
+    fn read_dir(&self, inode: InodeId, offset: usize, entries: &mut [DirEntry]) -> VfsResult<usize> {
+        let list = match inode {
+            ROOT_ID => &ROOT_ENTRIES[..],
+            DEV_ID => &DEV_ENTRIES[..],
+            PROC_ID => &PROC_ENTRIES[..],
+            _ => return Err(VfsError::NotDir),
+        };
+        fill_dir_entries(list, offset, entries)
+    }
+}
+
+fn fill_dir_entries(list: &[DirEntrySpec], offset: usize, entries: &mut [DirEntry]) -> VfsResult<usize> {
+    if offset >= list.len() {
+        return Ok(0);
+    }
+    let mut written = 0usize;
+    for spec in list.iter().skip(offset).take(entries.len()) {
+        let mut entry = DirEntry::empty();
+        entry.ino = spec.ino;
+        entry.file_type = spec.file_type;
+        entry.set_name(spec.name)?;
+        entries[written] = entry;
+        written += 1;
+    }
+    Ok(written)
 }
 
 #[cfg(test)]

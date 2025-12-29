@@ -39,15 +39,15 @@
 - 增加 nanosleep，占位优先走调度器睡眠，否则使用 timebase 忙等。
 - 增加 clock_getres/clock_getres_time64，占位返回 timebase 精度。
 - 增加 readv/writev，占位支持分段缓冲区访问并允许 iovcnt=0。
-- 增加 open/openat/mkdirat/unlinkat/newfstatat/getdents64/faccessat/statx/readlinkat，占位返回 ENOENT/ENOTDIR 并识别 `/`、`/dev`、`/init`、`/dev/null`、`/dev/zero`，同时校验 getdents64 缓冲区。
-- openat 路径识别统一走 classify_path，保持 `/init` memfile 与其他伪节点一致。
+- 增加 open/openat/mkdirat/unlinkat/newfstatat/getdents64/faccessat/statx/readlinkat，占位走 VFS 解析 `/`、`/dev`、`/init`、`/dev/null`、`/dev/zero`，同时校验 getdents64 缓冲区。
+- openat 路径识别统一走 VFS 挂载解析，保持伪节点一致。
 - 增加 mknodat/symlinkat/linkat/renameat/renameat2，占位校验 AT_FDCWD 与路径指针。
 - 增加 statfs/fstatfs，占位填充基本文件系统信息。
 - 增加 fchmodat/fchownat/utimensat，占位支持根目录与 `/dev` 伪节点。
 - 增加 poll/ppoll，支持 pipe 可读/可写事件、单 fd 阻塞等待；多 fd 使用 sleep-retry 轮询重扫，pipe 读写/关闭唤醒等待者，同时保留 `nfds=0` 睡眠路径。
 - ppoll 的 sleep-retry 在调度器睡眠不可用时回退到 timebase 忙等，避免超时过早返回。
 - stdin 读取加入控制台缓存与睡眠重试，poll 增加 stdin 就绪判断；USER_TEST 覆盖 getdents64(/,/dev)、pipe poll 就绪、ppoll 多 fd sleep-retry 超时与 futex cleartid 唤醒/timeout/EAGAIN 路径。
-- 增加 execve `/init` memfile 链路：复用路径识别并从 memfile 读取 ELF，解析 PT_LOAD 段并映射，构建 argv/envp 栈布局后切换入口。
+- 增加 execve `/init` VFS 链路：从 VFS 读取 ELF，解析 PT_LOAD 段并映射，构建 argv/envp 栈布局后切换入口。
 - execve 失败路径补充地址空间释放，避免页表与用户页泄漏。
 - 增加最小进程表（state/ppid/exit_code），以 TaskId+1 作为早期 PID 占位。
 - 增加 wait4/waitpid：父进程阻塞等待队列、WNOHANG 支持、Zombie 回收与 exit_code 回写。
@@ -62,7 +62,7 @@
 - FUTEX_WAKE 支持 count 足够大时唤醒全部等待者。
 - futex 等待队列空闲后回收槽位地址，避免长期占用。
 - wait4 在返回子进程状态时可选写入占位 rusage，保持接口兼容。
-- getdents64 支持根目录与 /dev 的静态目录项枚举，覆盖 . / .. / dev / null / zero。
+- getdents64 走 VFS `read_dir` 枚举，覆盖根目录与 /dev。
 - clone_user_root 从内核根表构建子页表，只克隆用户映射，避免共享父页表页。
 - waitpid 回收 Zombie 时释放子进程的用户页表与物理页。
 - 增加 uname，占位返回内核与平台信息。
@@ -71,13 +71,13 @@
 - 增加 exit_group，占位同步关机。
 - 增加 getcwd，占位返回根路径。
 - 增加 set_tid_address，占位返回 TaskId+1 并校验用户指针。
-- 增加 chdir/fchdir，占位仅允许根目录。
+- 增加 chdir/fchdir，占位仅允许目录。
 - 增加 close，占位支持标准输入输出关闭。
 - 增加 getrlimit/prlimit64，占位返回默认资源限制。
 - 增加 ioctl(TIOCGWINSZ/TIOCSWINSZ/TIOCGPGRP/TIOCSPGRP/TIOCSCTTY/TCGETS/TCSETS*)，占位返回窗口大小与最小 termios。
 - 增加 sysinfo，占位返回内存与运行时间信息。
 - 增加 getrandom，占位返回伪随机数据并校验 flags。
-- 增加 fstat，占位返回标准输入输出元数据。
+- 增加 fstat，占位返回标准输入输出与 VFS 句柄元数据。
 - fstat 时间戳改为基于 timebase 的单调时间，避免 tick 精度影响。
 - 增加 dup/dup3，占位支持标准输入输出重定向。
 - 增加 pipe2，占位内存管道缓冲区，支持阻塞唤醒与 EPIPE/EOF/EAGAIN。

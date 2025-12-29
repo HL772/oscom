@@ -1,6 +1,4 @@
-use axvfs::{FileType, InodeId, Metadata, VfsError, VfsOps, VfsResult};
-
-use crate::memfs::{DirEntry, DT_CHR, DT_DIR};
+use axvfs::{DirEntry, FileType, InodeId, Metadata, VfsError, VfsOps, VfsResult};
 
 pub const ROOT_ID: InodeId = 1;
 pub const DEV_NULL_ID: InodeId = 2;
@@ -39,26 +37,33 @@ const NODES: [Node; 3] = [
     },
 ];
 
-const DEV_ENTRIES: [DirEntry; 4] = [
-    DirEntry {
+#[derive(Clone, Copy)]
+struct DirEntrySpec {
+    ino: InodeId,
+    name: &'static [u8],
+    file_type: FileType,
+}
+
+const DEV_ENTRIES: [DirEntrySpec; 4] = [
+    DirEntrySpec {
         ino: ROOT_ID,
         name: b".",
-        dtype: DT_DIR,
+        file_type: FileType::Dir,
     },
-    DirEntry {
+    DirEntrySpec {
         ino: ROOT_ID,
         name: b"..",
-        dtype: DT_DIR,
+        file_type: FileType::Dir,
     },
-    DirEntry {
+    DirEntrySpec {
         ino: DEV_NULL_ID,
         name: b"null",
-        dtype: DT_CHR,
+        file_type: FileType::Char,
     },
-    DirEntry {
+    DirEntrySpec {
         ino: DEV_ZERO_ID,
         name: b"zero",
-        dtype: DT_CHR,
+        file_type: FileType::Char,
     },
 ];
 
@@ -73,12 +78,6 @@ impl DevFs {
         NODES.iter().find(|node| node.id == inode)
     }
 
-    pub fn dir_entries(&self, inode: InodeId) -> Option<&'static [DirEntry]> {
-        match inode {
-            ROOT_ID => Some(&DEV_ENTRIES),
-            _ => None,
-        }
-    }
 }
 
 impl VfsOps for DevFs {
@@ -124,4 +123,27 @@ impl VfsOps for DevFs {
             _ => Err(VfsError::NotSupported),
         }
     }
+
+    fn read_dir(&self, inode: InodeId, offset: usize, entries: &mut [DirEntry]) -> VfsResult<usize> {
+        if inode != ROOT_ID {
+            return Err(VfsError::NotDir);
+        }
+        fill_dir_entries(&DEV_ENTRIES, offset, entries)
+    }
+}
+
+fn fill_dir_entries(list: &[DirEntrySpec], offset: usize, entries: &mut [DirEntry]) -> VfsResult<usize> {
+    if offset >= list.len() {
+        return Ok(0);
+    }
+    let mut written = 0usize;
+    for spec in list.iter().skip(offset).take(entries.len()) {
+        let mut entry = DirEntry::empty();
+        entry.ino = spec.ino;
+        entry.file_type = spec.file_type;
+        entry.set_name(spec.name)?;
+        entries[written] = entry;
+        written += 1;
+    }
+    Ok(written)
 }

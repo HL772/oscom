@@ -15,6 +15,7 @@ mod wait_queue;
 mod futex;
 mod syscall;
 mod user;
+mod fs;
 mod task_wait_queue;
 mod task;
 mod scheduler;

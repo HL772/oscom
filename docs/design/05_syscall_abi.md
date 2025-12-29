@@ -15,7 +15,7 @@
 - 兼容层为关键 syscall 提供 Linux 语义对齐（如 `getdents64`/`ioctl`/`pipe2`/`dup3`）。
 - 早期实现 `write` 的用户指针翻译与控制台输出，用于验证 U-mode ecall 链路。
 - 早期实现 `read`（fd=0）对接 SBI getchar，非阻塞无数据返回 EAGAIN。
-- 早期实现 `execve`：仅识别 `/init` memfile，复用路径识别并从 memfile 读取 ELF 镜像，完成最小 ELF 解析与段映射，并构建 argv/envp 栈布局。
+- 早期实现 `execve`：通过 VFS 读取 `/init` ELF 镜像，完成最小 ELF 解析与段映射，并构建 argv/envp 栈布局。
 - execve 失败路径释放新地址空间，避免页表页与用户页泄漏。
 - 早期实现 `wait4/waitpid`：使用最小进程表与父进程等待队列，支持 WNOHANG 与退出码回收。
 - waitpid 采用循环阻塞重试，避免递归等待带来的栈增长。
@@ -25,7 +25,7 @@
 - 早期实现 `clock_getres/clock_getres_time64`，返回 timebase 精度占位。
 - 早期实现 `nanosleep`，优先走调度器睡眠；无任务上下文时用 timebase 忙等。
 - 早期实现 `readv/writev`，复用用户指针校验并支持分段缓冲区。
-- 早期实现 `open/openat/mkdirat/unlinkat/newfstatat/getdents64/faccessat/statx/readlinkat`，占位返回 ENOENT/ENOTDIR，并识别 `/`、`/dev`、`/init`、`/dev/null` 与 `/dev/zero`。
+- 早期实现 `open/openat/mkdirat/unlinkat/newfstatat/getdents64/faccessat/statx/readlinkat`，路径解析统一走 VFS，读路径覆盖 `/`、`/dev`、`/init`、`/dev/null` 与 `/dev/zero`。
 - 早期实现 `mknodat/symlinkat/linkat/renameat/renameat2`，占位仅校验指针与 AT_FDCWD，未提供真实重命名/链接能力。
 - 早期实现 `statfs/fstatfs`，占位填充基本文件系统信息。
 - 早期实现 `fchmodat/fchownat/utimensat`，占位校验参数与路径，允许根目录与 `/dev` 伪节点。
@@ -33,7 +33,7 @@
 - 早期实现 `uname`，返回最小可用的系统信息占位。
 - 早期实现 `getpid/getppid/getuid/geteuid/getgid/getegid/getresuid/getresgid` 等身份信息占位。
 - 早期实现 `gettid` 与 `sched_yield`，任务上下文可用时返回 TaskId+1。
-- 早期实现 `getdents64`，仅列出 `/` 与 `/dev` 目录的静态条目。
+- 早期实现 `getdents64`，走 VFS `read_dir` 目录枚举接口。
 - 早期实现 `exit_group`，与 `exit` 同步关机占位。
 - 早期实现 `getcwd`，占位返回根路径。
 - 早期实现 `set_tid_address`，校验指针可写并记录 clear_tid，返回 TaskId+1。
@@ -41,13 +41,13 @@
 - futex 支持 FUTEX_PRIVATE_FLAG：私有等待队列以当前地址空间为 key；共享 futex 以物理地址为 key，避免不同进程同地址别名唤醒。
 - FUTEX_WAKE 以 count 为上限唤醒，count 足够大时唤醒全部等待者。
 - futex 等待队列使用固定槽位表，等待队列清空后释放地址占用，允许后续地址重用。
-- 早期实现 `chdir/fchdir`，仅允许切换到根目录占位。
+- 早期实现 `chdir/fchdir`，仅允许切换到目录占位。
 - 早期实现 `close`，允许关闭标准输入输出。
 - 早期实现 `getrlimit/prlimit64`，返回默认无限资源限制占位。
 - 早期实现 `ioctl(TIOCGWINSZ/TIOCSWINSZ/TIOCGPGRP/TIOCSPGRP/TIOCSCTTY/TCGETS/TCSETS*)`，为终端提供窗口大小与最小 termios 占位。
 - 早期实现 `sysinfo`，提供最小内存与运行时间信息占位。
 - 早期实现 `getrandom`，使用轻量伪随机填充。
-- 早期实现 `fstat`，为标准输入输出返回字符设备元数据。
+- 早期实现 `fstat`，为标准输入输出与 VFS 句柄返回最小元数据。
 - 早期实现 `dup/dup3`，占位支持标准输入输出重定向（dup2 由 dup3 flags=0 兼容）。
 - 早期实现 `pipe2`，提供固定大小内存管道，空/满时阻塞或返回 EAGAIN，并在无读端时返回 EPIPE、无写端时读返回 EOF。
 - 早期实现 `lseek`，对标准输入输出返回 ESPIPE 占位。

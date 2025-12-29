@@ -4,7 +4,7 @@ use core::cmp::min;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use axfs::{devfs, memfs, procfs, FileType, InodeId, VfsError, VfsOps};
+use axfs::{devfs, fat32, memfs, procfs, DirEntry, FileType, InodeId, VfsError, VfsOps};
 use axfs::mount::{MountId, MountPoint, MountTable};
 use crate::futex;
 use crate::mm::{self, UserAccess, UserPtr, UserSlice};
@@ -445,17 +445,19 @@ struct Rusage {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+struct VfsHandle {
+    mount: MountId,
+    inode: InodeId,
+    file_type: FileType,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum FdKind {
     Empty,
     Stdin,
     Stdout,
     Stderr,
-    DevNull,
-    DevZero,
-    DirRoot,
-    DirDev,
-    DirProc,
-    InitFile,
+    Vfs(VfsHandle),
     PipeRead(usize),
     PipeWrite(usize),
 }
@@ -584,8 +586,8 @@ fn sys_execve(tf: &mut TrapFrame, pathname: usize, argv: usize, envp: usize) -> 
     validate_user_path(root_pa, pathname)?;
     validate_user_ptr_list(root_pa, argv)?;
     validate_user_ptr_list(root_pa, envp)?;
-    // 统一走 /init memfile 的路径识别与镜像获取。
-    let image = execve_memfile_image(root_pa, pathname)?;
+    // 通过 VFS 读取目标 ELF 镜像，统一路径与加载链路。
+    let image = execve_vfs_image(root_pa, pathname)?;
     let ctx = crate::user::load_exec_elf(root_pa, image, argv, envp)?;
     // execve 成功后不返回，更新入口与用户栈并清理参数寄存器。
     tf.sepc = ctx.entry.wrapping_sub(4);
@@ -604,13 +606,41 @@ fn sys_execve(tf: &mut TrapFrame, pathname: usize, argv: usize, envp: usize) -> 
     Ok(0)
 }
 
-fn execve_memfile_image(root_pa: usize, pathname: usize) -> Result<&'static [u8], Errno> {
+const EXECVE_IMAGE_MAX: usize = 0x2000;
+// SAFETY: 单核 execve 过程复用该缓冲区读取 ELF 镜像。
+static mut EXECVE_IMAGE: [u8; EXECVE_IMAGE_MAX] = [0; EXECVE_IMAGE_MAX];
+
+fn execve_vfs_image(root_pa: usize, pathname: usize) -> Result<&'static [u8], Errno> {
     let (mount, inode) = vfs_lookup_inode(root_pa, pathname)?;
-    if mount == MountId::Root && inode == memfs::INIT_ID {
-        Ok(init_memfile_image())
-    } else {
-        Err(Errno::NoEnt)
-    }
+    with_mounts(|mounts| {
+        let fs = mounts.fs_for(mount).ok_or(Errno::NoEnt)?;
+        let meta = fs.metadata(inode).map_err(map_vfs_err)?;
+        if meta.file_type != FileType::File {
+            return Err(Errno::NoEnt);
+        }
+        let size = meta.size as usize;
+        if size == 0 || size > EXECVE_IMAGE_MAX {
+            return Err(Errno::NoMem);
+        }
+        // SAFETY: 单核 execve 路径，缓冲区只在此处写入。
+        unsafe {
+            let buf = &mut EXECVE_IMAGE[..size];
+            let mut offset = 0usize;
+            while offset < size {
+                let read = fs
+                    .read_at(inode, offset as u64, &mut buf[offset..])
+                    .map_err(map_vfs_err)?;
+                if read == 0 {
+                    break;
+                }
+                offset += read;
+            }
+            if offset != size {
+                return Err(Errno::Inval);
+            }
+            Ok(&EXECVE_IMAGE[..size])
+        }
+    })
 }
 
 fn sys_clone(
@@ -828,32 +858,38 @@ fn sys_openat(_dirfd: usize, pathname: usize, flags: usize, _mode: usize) -> Res
     if root_pa == 0 {
         return Err(Errno::Fault);
     }
-    let status_flags = if (flags & O_NONBLOCK) != 0 { O_NONBLOCK } else { 0 };
+    let status_flags = (flags & O_ACCMODE) | (flags & O_NONBLOCK);
     let accmode = flags & O_ACCMODE;
-    let (mount, inode) = vfs_lookup_inode(root_pa, pathname)?;
-    let kind = match (mount, inode) {
-        (MountId::Root, memfs::ROOT_ID) => FdKind::DirRoot,
-        (MountId::Dev, devfs::ROOT_ID) => FdKind::DirDev,
-        (MountId::Proc, procfs::ROOT_ID) => FdKind::DirProc,
-        (MountId::Dev, devfs::DEV_NULL_ID) => FdKind::DevNull,
-        (MountId::Dev, devfs::DEV_ZERO_ID) => FdKind::DevZero,
-        (MountId::Root, memfs::INIT_ID) => FdKind::InitFile,
-        _ => return Err(Errno::NoEnt),
-    };
-    match kind {
-        FdKind::DirRoot | FdKind::DirDev | FdKind::DirProc => {
-            if accmode != O_RDONLY {
-                return Err(Errno::IsDir);
+    with_mounts(|mounts| {
+        let mut path_buf = [0u8; MAX_PATH_LEN];
+        let path = read_user_path_str(root_pa, pathname, &mut path_buf)?;
+        let (mount, inode) = mounts.resolve_path(path).map_err(map_vfs_err)?;
+        let fs = mounts.fs_for(mount).ok_or(Errno::NoEnt)?;
+        let meta = fs.metadata(inode).map_err(map_vfs_err)?;
+        match meta.file_type {
+            FileType::Dir => {
+                if accmode != O_RDONLY {
+                    return Err(Errno::IsDir);
+                }
+            }
+            FileType::Char | FileType::Block => {}
+            _ => {
+                if accmode == O_WRONLY || accmode == O_RDWR {
+                    return Err(Errno::Inval);
+                }
             }
         }
-        FdKind::InitFile => {
-            if accmode != O_RDONLY {
-                return Err(Errno::Inval);
-            }
-        }
-        _ => {}
-    }
-    alloc_fd(FdEntry { kind, flags: status_flags }).ok_or(Errno::MFile)
+        let handle = VfsHandle {
+            mount,
+            inode,
+            file_type: meta.file_type,
+        };
+        alloc_fd(FdEntry {
+            kind: FdKind::Vfs(handle),
+            flags: status_flags,
+        })
+        .ok_or(Errno::MFile)
+    })
 }
 
 fn sys_mknodat(dirfd: usize, pathname: usize, _mode: usize, _dev: usize) -> Result<usize, Errno> {
@@ -999,38 +1035,51 @@ fn sys_getdents64(fd: usize, buf: usize, len: usize) -> Result<usize, Errno> {
     }
     validate_user_write(root_pa, buf, len)?;
     let entry = resolve_fd(fd).ok_or(Errno::Badf)?;
-    let rootfs = memfs::MemFs::new();
-    let devfs = devfs::DevFs::new();
-    let proc_fs = procfs::ProcFs::new();
-    let entries = match entry.kind {
-        FdKind::DirRoot => rootfs.dir_entries(memfs::ROOT_ID),
-        FdKind::DirDev => devfs.dir_entries(devfs::ROOT_ID),
-        FdKind::DirProc => proc_fs.dir_entries(procfs::ROOT_ID),
-        _ => None,
-    }
-    .ok_or(Errno::NotDir)?;
     let index = fd_offset(fd).ok_or(Errno::Badf)?;
-    if index >= entries.len() {
-        return Ok(0);
-    }
-    let (written, next) = write_dirents(root_pa, buf, len, entries, index)?;
-    set_fd_offset(fd, next);
-    Ok(written)
+    with_mounts(|mounts| {
+        let handle = match entry.kind {
+            FdKind::Vfs(handle) if handle.file_type == FileType::Dir => handle,
+            _ => return Err(Errno::NotDir),
+        };
+        let mount_id = handle.mount;
+        let inode = handle.inode;
+        let fs = mounts.fs_for(mount_id).ok_or(Errno::NoEnt)?;
+        let mut offset = index;
+        let mut total_written = 0usize;
+        let mut tmp_entries = [DirEntry::empty(); 8];
+        loop {
+            let count = fs.read_dir(inode, offset, &mut tmp_entries).map_err(map_vfs_err)?;
+            if count == 0 {
+                break;
+            }
+            let (written, consumed) =
+                write_dirents(root_pa, buf + total_written, len - total_written, &tmp_entries[..count], offset)?;
+            total_written += written;
+            offset += consumed;
+            if consumed < count || total_written >= len {
+                break;
+            }
+        }
+        set_fd_offset(fd, offset);
+        Ok(total_written)
+    })
 }
 
 fn write_dirents(
     root_pa: usize,
     buf: usize,
     len: usize,
-    entries: &[memfs::DirEntry],
-    mut index: usize,
+    entries: &[DirEntry],
+    base_index: usize,
 ) -> Result<(usize, usize), Errno> {
     const HDR_LEN: usize = 19;
     const RECORD_MAX: usize = 64;
     let mut written = 0usize;
+    let mut index = 0usize;
     while index < entries.len() {
         let entry = entries[index];
-        let name_len = entry.name.len();
+        let name = entry.name();
+        let name_len = name.len();
         let base_len = HDR_LEN + name_len + 1;
         let reclen = align_up(base_len, 8);
         if reclen > RECORD_MAX {
@@ -1044,12 +1093,12 @@ fn write_dirents(
         }
         let mut record = [0u8; RECORD_MAX];
         let ino = entry.ino;
-        let off = (index + 1) as i64;
+        let off = (base_index + index + 1) as i64;
         record[0..8].copy_from_slice(&ino.to_le_bytes());
         record[8..16].copy_from_slice(&off.to_le_bytes());
         record[16..18].copy_from_slice(&(reclen as u16).to_le_bytes());
-        record[18] = entry.dtype;
-        record[19..19 + name_len].copy_from_slice(entry.name);
+        record[18] = dirent_dtype(entry.file_type);
+        record[19..19 + name_len].copy_from_slice(name);
         let dst = buf.checked_add(written).ok_or(Errno::Fault)?;
         UserSlice::new(dst, reclen)
             .copy_from_slice(root_pa, &record[..reclen])
@@ -1139,21 +1188,14 @@ fn sys_readlinkat(_dirfd: usize, pathname: usize, buf: usize, len: usize) -> Res
     }
     validate_user_write(root_pa, buf, len)?;
     let (mount, inode) = vfs_lookup_inode(root_pa, pathname)?;
-    if mount != MountId::Root {
-        return Err(Errno::Inval);
-    }
-    let fs = memfs::MemFs::with_init_image(init_memfile_image());
-    match fs.readlink(inode) {
-        Ok(target) => {
-            let to_copy = min(len, target.len());
-            UserSlice::new(buf, to_copy)
-                .copy_from_slice(root_pa, &target[..to_copy])
-                .ok_or(Errno::Fault)?;
-            Ok(to_copy)
+    with_mounts(|mounts| {
+        let fs = mounts.fs_for(mount).ok_or(Errno::NoEnt)?;
+        let meta = fs.metadata(inode).map_err(map_vfs_err)?;
+        if meta.file_type != FileType::Symlink {
+            return Err(Errno::Inval);
         }
-        Err(VfsError::NotSupported) => Err(Errno::Inval),
-        Err(_) => Err(Errno::NoEnt),
-    }
+        Err(Errno::Inval)
+    })
 }
 
 fn sys_statfs(pathname: usize, buf: usize) -> Result<usize, Errno> {
@@ -1584,18 +1626,23 @@ fn sys_chdir(pathname: usize) -> Result<usize, Errno> {
         return Err(Errno::Fault);
     }
     let (mount, inode) = vfs_lookup_inode(root_pa, pathname)?;
-    if mount == MountId::Root && inode == memfs::ROOT_ID {
-        Ok(0)
-    } else {
-        Err(Errno::NoEnt)
-    }
+    with_mounts(|mounts| {
+        let fs = mounts.fs_for(mount).ok_or(Errno::NoEnt)?;
+        let meta = fs.metadata(inode).map_err(map_vfs_err)?;
+        if meta.file_type == FileType::Dir {
+            Ok(0)
+        } else {
+            Err(Errno::NotDir)
+        }
+    })
 }
 
 fn sys_fchdir(fd: usize) -> Result<usize, Errno> {
-    if resolve_fd(fd).is_some() {
-        return Err(Errno::NotDir);
+    let entry = resolve_fd(fd).ok_or(Errno::Badf)?;
+    match entry.kind {
+        FdKind::Vfs(handle) if handle.file_type == FileType::Dir => Ok(0),
+        _ => Err(Errno::NotDir),
     }
-    Err(Errno::Badf)
 }
 
 fn sys_close(fd: usize) -> Result<usize, Errno> {
@@ -1817,19 +1864,12 @@ fn sys_fstat(fd: usize, stat_ptr: usize) -> Result<usize, Errno> {
     if root_pa == 0 {
         return Err(Errno::Fault);
     }
-    let rootfs = memfs::MemFs::with_init_image(init_memfile_image());
-    let devfs = devfs::DevFs::new();
     let (mode, size) = match entry.kind {
         FdKind::PipeRead(_) | FdKind::PipeWrite(_) => (S_IFIFO | 0o600, 0),
-        FdKind::DirRoot => vfs_meta_for(&rootfs, memfs::ROOT_ID)?,
-        FdKind::DirDev => vfs_meta_for(&devfs, devfs::ROOT_ID)?,
-        FdKind::DirProc => {
-            let proc_fs = procfs::ProcFs::new();
-            vfs_meta_for(&proc_fs, procfs::ROOT_ID)?
-        }
-        FdKind::DevNull => vfs_meta_for(&devfs, devfs::DEV_NULL_ID)?,
-        FdKind::DevZero => vfs_meta_for(&devfs, devfs::DEV_ZERO_ID)?,
-        FdKind::InitFile => vfs_meta_for(&rootfs, memfs::INIT_ID)?,
+        FdKind::Vfs(handle) => with_mounts(|mounts| {
+            let fs = mounts.fs_for(handle.mount).ok_or(Errno::NoEnt)?;
+            vfs_meta_for(fs, handle.inode)
+        })?,
         _ => (S_IFCHR | 0o666, 0),
     };
     let stat = build_stat(mode, size);
@@ -1954,10 +1994,10 @@ fn sys_fcntl(fd: usize, cmd: usize, arg: usize) -> Result<usize, Errno> {
             let mode = match entry.kind {
                 FdKind::Stdin | FdKind::PipeRead(_) => O_RDONLY,
                 FdKind::Stdout | FdKind::Stderr | FdKind::PipeWrite(_) => O_WRONLY,
-                FdKind::DirRoot | FdKind::DirDev | FdKind::DirProc => O_RDONLY,
+                FdKind::Vfs(_) => entry.flags & O_ACCMODE,
                 _ => O_RDWR,
             };
-            Ok(mode | entry.flags)
+            Ok(mode | (entry.flags & O_NONBLOCK))
         }
         F_SETFL => {
             set_fd_flags(fd, arg)?;
@@ -2233,6 +2273,18 @@ fn file_type_mode(file_type: FileType) -> u32 {
     }
 }
 
+fn dirent_dtype(file_type: FileType) -> u8 {
+    match file_type {
+        FileType::Dir => 4,
+        FileType::File => 8,
+        FileType::Char => 2,
+        FileType::Block => 6,
+        FileType::Fifo => 1,
+        FileType::Socket => 12,
+        FileType::Symlink => 10,
+    }
+}
+
 fn vfs_meta_for(fs: &dyn VfsOps, inode: InodeId) -> Result<(u32, usize), Errno> {
     let meta = fs.metadata(inode).map_err(map_vfs_err)?;
     let mode = file_type_mode(meta.file_type) | meta.mode as u32;
@@ -2278,15 +2330,25 @@ fn read_user_path_str<'a>(root_pa: usize, path: usize, buf: &'a mut [u8]) -> Res
 }
 
 fn with_mounts<R>(f: impl FnOnce(&MountTable<'_, VFS_MOUNT_COUNT>) -> R) -> R {
-    let rootfs = memfs::MemFs::with_init_image(init_memfile_image());
     let devfs = devfs::DevFs::new();
     let procfs = procfs::ProcFs::new();
-    let mounts = MountTable::new([
-        MountPoint::new(MountId::Root, "/", &rootfs),
-        MountPoint::new(MountId::Dev, "/dev", &devfs),
-        MountPoint::new(MountId::Proc, "/proc", &procfs),
-    ]);
-    f(&mounts)
+    let root_dev = crate::fs::RootFsDevice::new();
+    if let Ok(rootfs) = fat32::Fat32Fs::new(&root_dev) {
+        let mounts = MountTable::new([
+            MountPoint::new(MountId::Root, "/", &rootfs),
+            MountPoint::new(MountId::Dev, "/dev", &devfs),
+            MountPoint::new(MountId::Proc, "/proc", &procfs),
+        ]);
+        f(&mounts)
+    } else {
+        let rootfs = memfs::MemFs::with_init_image(init_memfile_image());
+        let mounts = MountTable::new([
+            MountPoint::new(MountId::Root, "/", &rootfs),
+            MountPoint::new(MountId::Dev, "/dev", &devfs),
+            MountPoint::new(MountId::Proc, "/proc", &procfs),
+        ]);
+        f(&mounts)
+    }
 }
 
 fn vfs_lookup_inode(root_pa: usize, pathname: usize) -> Result<(MountId, InodeId), Errno> {
@@ -2530,10 +2592,10 @@ fn set_fd_flags(fd: usize, flags: usize) -> Result<(), Errno> {
         // SAFETY: 单核早期阶段访问重定向表/标志。
         unsafe {
             if let Some(mut entry) = STDIO_REDIRECT[fd] {
-                entry.flags = flags;
+                entry.flags = (entry.flags & O_ACCMODE) | flags;
                 STDIO_REDIRECT[fd] = Some(entry);
             } else {
-                STDIO_FLAGS[fd] = flags;
+                STDIO_FLAGS[fd] = (STDIO_FLAGS[fd] & O_ACCMODE) | flags;
             }
         }
         return Ok(());
@@ -2544,7 +2606,7 @@ fn set_fd_flags(fd: usize, flags: usize) -> Result<(), Errno> {
         if FD_TABLE[idx].kind == FdKind::Empty {
             return Err(Errno::Badf);
         }
-        FD_TABLE[idx].flags = flags;
+        FD_TABLE[idx].flags = (FD_TABLE[idx].flags & O_ACCMODE) | flags;
     }
     Ok(())
 }
@@ -2808,30 +2870,15 @@ fn poll_revents_for_fd(fd: i32, events: u16) -> u16 {
                 0
             }
         }
-        FdKind::DevNull | FdKind::DevZero => {
+        FdKind::Vfs(handle) => {
             let mut revents = 0u16;
             if (events & POLLIN) != 0 {
                 revents |= POLLIN;
             }
-            if (events & POLLOUT) != 0 {
+            if (events & POLLOUT) != 0 && handle.file_type != FileType::Dir {
                 revents |= POLLOUT;
             }
             revents
-        }
-        FdKind::InitFile => {
-            if (events & POLLIN) == 0 {
-                return 0;
-            }
-            let offset = match fd_offset(fd as usize) {
-                Some(value) => value,
-                None => return POLLNVAL,
-            };
-            let image = init_memfile_image();
-            if offset < image.len() {
-                POLLIN
-            } else {
-                0
-            }
         }
         _ => 0,
     }
@@ -2997,23 +3044,16 @@ fn read_from_entry(fd: usize, entry: FdEntry, root_pa: usize, buf: usize, len: u
             let nonblock = (entry.flags & O_NONBLOCK) != 0;
             read_console_into(root_pa, buf, len, nonblock)
         }
-        FdKind::DevNull => {
-            let fs = devfs::DevFs::new();
-            read_vfs_fd(fd, root_pa, &fs, devfs::DEV_NULL_ID, buf, len)
-        }
-        FdKind::DevZero => {
-            let fs = devfs::DevFs::new();
-            read_vfs_fd(fd, root_pa, &fs, devfs::DEV_ZERO_ID, buf, len)
-        }
-        FdKind::InitFile => {
-            let fs = memfs::MemFs::with_init_image(init_memfile_image());
-            read_vfs_fd(fd, root_pa, &fs, memfs::INIT_ID, buf, len)
+        FdKind::Vfs(handle) => {
+            if handle.file_type == FileType::Dir {
+                return Err(Errno::IsDir);
+            }
+            read_vfs_fd(fd, root_pa, handle.mount, handle.inode, buf, len)
         }
         FdKind::PipeRead(pipe_id) => {
             let nonblock = (entry.flags & O_NONBLOCK) != 0;
             pipe_read(pipe_id, root_pa, buf, len, nonblock)
         }
-        FdKind::DirRoot | FdKind::DirDev | FdKind::DirProc => Err(Errno::IsDir),
         FdKind::Stdout | FdKind::Stderr | FdKind::PipeWrite(_) => Err(Errno::Badf),
         FdKind::Empty => Err(Errno::Badf),
     }
@@ -3026,15 +3066,18 @@ fn init_memfile_image() -> &'static [u8] {
 fn read_vfs_fd(
     fd: usize,
     root_pa: usize,
-    fs: &dyn VfsOps,
+    mount: MountId,
     inode: InodeId,
     buf: usize,
     len: usize,
 ) -> Result<usize, Errno> {
-    let offset = fd_offset(fd).ok_or(Errno::Badf)?;
-    let read = read_vfs_at(root_pa, fs, inode, offset, buf, len)?;
-    set_fd_offset(fd, offset + read);
-    Ok(read)
+    with_mounts(|mounts| {
+        let fs = mounts.fs_for(mount).ok_or(Errno::NoEnt)?;
+        let offset = fd_offset(fd).ok_or(Errno::Badf)?;
+        let read = read_vfs_at(root_pa, fs, inode, offset, buf, len)?;
+        set_fd_offset(fd, offset + read);
+        Ok(read)
+    })
 }
 
 fn read_vfs_at(
@@ -3050,10 +3093,9 @@ fn read_vfs_at(
     let mut scratch = [0u8; 256];
     while remaining > 0 {
         let chunk = min(remaining, scratch.len());
-        let read = match fs.read_at(inode, (offset + total) as u64, &mut scratch[..chunk]) {
-            Ok(read) => read,
-            Err(_) => return Err(Errno::Badf),
-        };
+        let read = fs
+            .read_at(inode, (offset + total) as u64, &mut scratch[..chunk])
+            .map_err(map_vfs_err)?;
         if read == 0 {
             break;
         }
@@ -3070,15 +3112,18 @@ fn read_vfs_at(
 fn write_vfs_fd(
     fd: usize,
     root_pa: usize,
-    fs: &dyn VfsOps,
+    mount: MountId,
     inode: InodeId,
     buf: usize,
     len: usize,
 ) -> Result<usize, Errno> {
-    let offset = fd_offset(fd).ok_or(Errno::Badf)?;
-    let written = write_vfs_at(root_pa, fs, inode, offset, buf, len)?;
-    set_fd_offset(fd, offset + written);
-    Ok(written)
+    with_mounts(|mounts| {
+        let fs = mounts.fs_for(mount).ok_or(Errno::NoEnt)?;
+        let offset = fd_offset(fd).ok_or(Errno::Badf)?;
+        let written = write_vfs_at(root_pa, fs, inode, offset, buf, len)?;
+        set_fd_offset(fd, offset + written);
+        Ok(written)
+    })
 }
 
 fn write_vfs_at(
@@ -3101,10 +3146,9 @@ fn write_vfs_at(
         UserSlice::new(src, chunk)
             .copy_to_slice(root_pa, &mut scratch[..chunk])
             .ok_or(Errno::Fault)?;
-        let written = match fs.write_at(inode, (offset + total) as u64, &scratch[..chunk]) {
-            Ok(written) => written,
-            Err(_) => return Err(Errno::Badf),
-        };
+        let written = fs
+            .write_at(inode, (offset + total) as u64, &scratch[..chunk])
+            .map_err(map_vfs_err)?;
         total += written;
         if written < chunk {
             break;
@@ -3117,20 +3161,16 @@ fn write_vfs_at(
 fn write_to_entry(fd: usize, entry: FdEntry, root_pa: usize, buf: usize, len: usize) -> Result<usize, Errno> {
     match entry.kind {
         FdKind::Stdout | FdKind::Stderr => write_console_from(root_pa, buf, len),
-        FdKind::DevNull => {
-            let fs = devfs::DevFs::new();
-            write_vfs_fd(fd, root_pa, &fs, devfs::DEV_NULL_ID, buf, len)
+        FdKind::Vfs(handle) => {
+            if handle.file_type == FileType::Dir {
+                return Err(Errno::IsDir);
+            }
+            write_vfs_fd(fd, root_pa, handle.mount, handle.inode, buf, len)
         }
-        FdKind::DevZero => {
-            let fs = devfs::DevFs::new();
-            write_vfs_fd(fd, root_pa, &fs, devfs::DEV_ZERO_ID, buf, len)
-        }
-        FdKind::InitFile => Err(Errno::Badf),
         FdKind::PipeWrite(pipe_id) => {
             let nonblock = (entry.flags & O_NONBLOCK) != 0;
             pipe_write(pipe_id, root_pa, buf, len, nonblock)
         }
-        FdKind::DirRoot | FdKind::DirDev | FdKind::DirProc => Err(Errno::IsDir),
         FdKind::Stdin | FdKind::PipeRead(_) => Err(Errno::Badf),
         FdKind::Empty => Err(Errno::Badf),
     }

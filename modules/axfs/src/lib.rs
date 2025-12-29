@@ -8,7 +8,7 @@ pub mod memfs;
 pub mod mount;
 pub mod procfs;
 
-pub use axvfs::{FileType, InodeId, Metadata, VfsError, VfsOps};
+pub use axvfs::{DirEntry, FileType, InodeId, Metadata, VfsError, VfsOps, VfsResult, MAX_NAME_LEN};
 
 #[cfg(test)]
 extern crate std;
