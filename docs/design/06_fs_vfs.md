@@ -7,6 +7,7 @@
 
 ## 设计
 - VFS 以 `Inode`/`File` trait 为核心，提供统一的 `lookup/read/write/stat` 接口。
+- 早期阶段先以 `InodeId` 句柄定义 VFS trait，避免引入全局分配器；后续再切换到 `Arc<dyn Inode>` 形式。
 - 挂载点采用 `MountTable` 管理，根文件系统可切换 FAT32/ext4。
 - 路径解析走 dentry 缓存，减少重复 lookup。
 - 页缓存以页为单位缓存文件数据，写入采用 write-back + 定期刷盘。

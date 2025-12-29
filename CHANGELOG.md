@@ -73,6 +73,7 @@
 - Add a read-only /init pseudo file for openat/read/fstat support.
 - Route execve through the /init memfile path for ELF loading.
 - Route openat path matching through classify_path for /init and pseudo nodes.
+- Add axvfs no_std VFS trait scaffold for upcoming FS work.
 - Extend USER_TEST to cover getdents64 on / and /dev.
 - Extend USER_TEST to cover clone tid writeback validation.
 - Build clone_user_root from kernel mappings to avoid sharing parent page tables.
