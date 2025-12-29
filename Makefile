@@ -19,6 +19,7 @@ help:
 	@printf "  make clean\n"
 	@printf "\nOptions:\n"
 	@printf "  USER_TEST=1  Enable minimal user-mode ecall smoke path\n"
+	@printf "  SCHED_DEMO=1 Enable scheduler demo tasks/logs during bring-up\n"
 
 fmt:
 	@./scripts/fmt.sh

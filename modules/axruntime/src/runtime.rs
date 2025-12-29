@@ -2,6 +2,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+use crate::config;
 use crate::scheduler::RunQueue;
 use crate::sleep_queue::SleepQueue;
 use crate::stack;
@@ -64,7 +65,7 @@ fn dummy_task_c() -> ! {
 
 pub fn on_tick(ticks: u64) {
     TICK_COUNT.store(ticks, Ordering::Relaxed);
-    if ticks % 100 == 0 {
+    if config::ENABLE_SCHED_DEMO && ticks % 100 == 0 {
         crate::println!("scheduler: tick={}", ticks);
     }
     // Move expired sleepers back to the run queue.
@@ -113,10 +114,19 @@ pub fn on_trap_exit() {
 pub fn init() {
     TICK_COUNT.store(0, Ordering::Relaxed);
 
-    if let Some(stack) = stack::init_idle_stack() {
-        crate::println!("scheduler: idle stack top={:#x}", stack.top());
-    } else {
-        crate::println!("scheduler: failed to init idle stack");
+    match stack::init_idle_stack() {
+        Some(stack) => {
+            if config::ENABLE_SCHED_DEMO {
+                crate::println!("scheduler: idle stack top={:#x}", stack.top());
+            }
+        }
+        None => {
+            crate::println!("scheduler: failed to init idle stack");
+        }
+    }
+
+    if !config::ENABLE_SCHED_DEMO {
+        return;
     }
 
     if let Some(stack) = stack::alloc_task_stack() {

@@ -30,6 +30,7 @@
 - Add a task wait queue with block/wake helpers.
 - Add a sleep queue and scheduler-backed sleep helper.
 - Add a third dummy task to exercise sleep.
+- Gate dummy scheduler tasks and tick logs behind the sched-demo feature.
 - Refine block/wake state transitions for wait queues.
 - Add a trapframe guard for future preemption.
 - Track trapframe pointers in the task table.

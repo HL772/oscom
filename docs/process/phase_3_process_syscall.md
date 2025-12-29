@@ -10,6 +10,7 @@
 - 增加 RunQueue 轮转指针与第二个 dummy task，验证 RR 顺序。
 - 任务栈改为固定大小栈池分配，便于扩展任务数量。
 - 增加 TaskTable，RunQueue 仅保存 TaskId，减少 TCB 移动。
+- dummy task 与调度 tick 日志通过 sched-demo feature 开关控制，默认关闭。
 - 修复协作式 yield：主动入队并清理当前任务标志，保证空闲调度生效。
 - 增加 TaskWaitQueue 与 block/wake 接口，支撑后续阻塞系统调用。
 - 引入 SleepQueue 与 sleep_current_ms，tick 到期后唤醒任务。

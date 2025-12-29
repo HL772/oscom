@@ -20,6 +20,7 @@
 - 记录 trapframe 指针（TrapFrameGuard），为后续抢占式调度做准备。
 - 内核栈在早期由帧分配器分配连续页，任务栈来自固定大小的栈池（上限 `MAX_TASKS`）。
 - TaskControlBlock 支持入口函数指针与栈顶配置，早期用多 dummy task 验证轮转与睡眠唤醒。
+- dummy task 与调度日志通过 `sched-demo` feature 控制，默认构建保持安静。
 - 调度触发周期可配置（`SCHED_INTERVAL_TICKS`），避免频繁切换。
 - 引入 `transition_state` 校验任务状态转换，避免过期队列项覆盖运行态。
 
