@@ -1,4 +1,27 @@
-* commit 38b65aebb5b2f5a2f5245000187cbf124690da6a (HEAD -> bootstrap-riscv64)
+* commit e506b3fa72274cad218fdb67ba088530c2d81408 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 15:53:26 +0800
+| 
+|     feat(syscall): add stdin poll readiness and pipe smoke
+| 
+|  CHANGELOG.md                            |  1 +
+|  docs/design/05_syscall_abi.md           |  2 +-
+|  docs/design/10_testing_benchmark.md     |  2 +-
+|  docs/process/phase_3_process_syscall.md |  1 +
+|  modules/axruntime/src/syscall.rs        | 64 ++++++++++++++++++++++++++++---
+|  modules/axruntime/src/user.rs           | 46 +++++++++++++++++++++-
+|  6 files changed, 107 insertions(+), 9 deletions(-)
+| 
+* commit 72629d77ef9eda21e97443dcb8e6fba68bea9d99
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 15:39:46 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit 38b65aebb5b2f5a2f5245000187cbf124690da6a
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 15:39:32 +0800
 | 
