@@ -591,6 +591,10 @@ fn sys_execve(tf: &mut TrapFrame, pathname: usize, argv: usize, envp: usize) -> 
     if let Some(task_id) = crate::runtime::current_task_id() {
         let _ = crate::task::set_user_context(task_id, ctx.root_pa, ctx.entry, ctx.user_sp);
     }
+    let _ = crate::process::update_current_root(ctx.root_pa);
+    if ctx.root_pa != root_pa {
+        crate::mm::release_user_root(root_pa);
+    }
     Ok(0)
 }
 

@@ -16,6 +16,7 @@
 - RunQueue 保存 `TaskId`，任务实体存放在固定大小的 TaskTable。
 - 引入最小进程表（state/ppid/exit_code），以 TaskId+1 作为早期 PID 占位。
 - waitpid 使用“父进程专属等待队列”，子进程 exit 进入 Zombie 后唤醒父进程。
+- waitpid 回收 Zombie 时释放子进程地址空间与页表页，避免内存泄漏。
 - 增加 TaskWaitQueue，使用 TaskId 阻塞/唤醒任务并配合 RunQueue（状态切换由 runtime 负责）。
 - 增加 SleepQueue 与 `sleep_current_ms`，由 tick 触发唤醒并回收到 RunQueue。
 - WaitQueue 通过 TaskWaitQueue + SleepQueue 实现阻塞等待与超时，WaitReason 由任务表记录。

@@ -58,6 +58,7 @@
 - Track user task root/entry/sp/trapframe and add a trapframe resume path for user tasks.
 - Add clone syscall with fork-like semantics backed by CoW page table cloning.
 - Add PTE_COW and page-fault handling to copy pages on first write.
+- Add frame refcounting and release of user address spaces on waitpid/execve.
 - Track O_NONBLOCK via fcntl and honor it for pipe reads/writes.
 - Add uname syscall stub with minimal utsname fields.
 - Add minimal getppid/getuid/geteuid/getgid/getegid/getresuid/getresgid stubs.

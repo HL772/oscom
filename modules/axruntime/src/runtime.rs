@@ -181,7 +181,7 @@ pub fn spawn_user(ctx: UserContext) -> Option<TaskId> {
     if !ok {
         return None;
     }
-    let _ = crate::process::init_process(task_id, 0);
+    let _ = crate::process::init_process(task_id, 0, ctx.root_pa);
     let _ = task::set_user_sp(task_id, ctx.user_sp);
     let _ = RUN_QUEUE.push(task_id);
     NEED_RESCHED.store(true, Ordering::Relaxed);
@@ -208,7 +208,7 @@ pub fn spawn_forked_user(
     let _ = task::set_user_context(task_id, child_root_pa, parent_tf.sepc.wrapping_add(4), user_sp);
     let _ = task::set_user_sp(task_id, user_sp);
     let parent_pid = crate::process::current_pid().unwrap_or(1);
-    let pid = crate::process::init_process(task_id, parent_pid);
+    let pid = crate::process::init_process(task_id, parent_pid, child_root_pa);
     let _ = RUN_QUEUE.push(task_id);
     NEED_RESCHED.store(true, Ordering::Relaxed);
     Some(pid)

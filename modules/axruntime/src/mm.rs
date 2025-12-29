@@ -35,6 +35,7 @@ const SATP_MODE_SV39: usize = 8 << 60;
 const PTE_FLAGS_KERNEL: usize = PTE_V | PTE_R | PTE_W | PTE_X | PTE_G | PTE_A | PTE_D;
 const PTE_FLAGS_USER_CODE: usize = PTE_V | PTE_R | PTE_X | PTE_U | PTE_A;
 const PTE_FLAGS_USER_DATA: usize = PTE_V | PTE_R | PTE_W | PTE_U | PTE_A | PTE_D;
+const MAX_FRAMES: usize = IDENTITY_MAP_SIZE / PAGE_SIZE;
 
 #[derive(Clone, Copy)]
 pub struct UserMapFlags {
@@ -83,9 +84,14 @@ struct PageTable {
 
 static MEM_BASE: AtomicUsize = AtomicUsize::new(0);
 static MEM_SIZE: AtomicUsize = AtomicUsize::new(0);
+static FRAME_BASE: AtomicUsize = AtomicUsize::new(0);
+static FRAME_COUNT: AtomicUsize = AtomicUsize::new(0);
 static FRAME_ALLOC_READY: AtomicBool = AtomicBool::new(false);
 static mut FRAME_ALLOC: MaybeUninit<BumpFrameAllocator> = MaybeUninit::uninit();
 static KERNEL_ROOT_PA: AtomicUsize = AtomicUsize::new(0);
+static mut FRAME_REFCOUNT: [u16; MAX_FRAMES] = [0; MAX_FRAMES];
+static mut FRAME_FREE_LIST: [usize; MAX_FRAMES] = [0; MAX_FRAMES];
+static mut FRAME_FREE_LEN: usize = 0;
 
 extern "C" {
     static ekernel: u8;
@@ -263,8 +269,15 @@ pub fn alloc_frame() -> Option<PhysPageNum> {
     if !FRAME_ALLOC_READY.load(Ordering::Acquire) {
         return None;
     }
+    if let Some(pa) = pop_free_frame() {
+        let _ = set_refcount(pa, 1);
+        return Some(PhysPageNum::new(pa >> PAGE_SHIFT));
+    }
     // SAFETY: initialized once in init_frame_allocator before any allocations.
-    unsafe { FRAME_ALLOC.assume_init_ref().alloc() }
+    let frame = unsafe { FRAME_ALLOC.assume_init_ref().alloc()? };
+    let pa = frame.addr().as_usize();
+    let _ = set_refcount(pa, 1);
+    Some(frame)
 }
 
 #[derive(Clone, Copy)]
@@ -548,6 +561,16 @@ fn resolve_cow(root_pa: usize, va: usize) -> bool {
         return false;
     }
     let old_pa = entry.ppn().addr().as_usize();
+    let count = frame_refcount(old_pa).unwrap_or(1);
+    if count <= 1 {
+        let new_flags = (flags | PTE_W | PTE_D) & !PTE_COW;
+        // SAFETY: entry_ptr points to a valid writable PTE slot.
+        unsafe {
+            *entry_ptr = PageTableEntry::new(entry.ppn(), new_flags);
+        }
+        flush_tlb();
+        return true;
+    }
     let frame = match alloc_frame() {
         Some(frame) => frame,
         None => return false,
@@ -562,6 +585,7 @@ fn resolve_cow(root_pa: usize, va: usize) -> bool {
     unsafe {
         *entry_ptr = PageTableEntry::new(frame, new_flags);
     }
+    let _ = release_frame(old_pa);
     flush_tlb();
     true
 }
@@ -634,6 +658,97 @@ pub fn alloc_user_root() -> Option<usize> {
     Some(virt_to_phys(root as *const _ as usize))
 }
 
+fn frame_index(pa: usize) -> Option<usize> {
+    let base = FRAME_BASE.load(Ordering::Relaxed);
+    let count = FRAME_COUNT.load(Ordering::Relaxed);
+    if base == 0 || count == 0 || pa < base {
+        return None;
+    }
+    let offset = pa - base;
+    if offset & (PAGE_SIZE - 1) != 0 {
+        return None;
+    }
+    let idx = offset / PAGE_SIZE;
+    if idx >= count {
+        return None;
+    }
+    Some(idx)
+}
+
+fn set_refcount(pa: usize, count: u16) -> bool {
+    let Some(idx) = frame_index(pa) else {
+        return false;
+    };
+    // SAFETY: early boot single-hart; refcount table is only touched here.
+    unsafe {
+        FRAME_REFCOUNT[idx] = count;
+    }
+    true
+}
+
+fn retain_frame(pa: usize) -> bool {
+    let Some(idx) = frame_index(pa) else {
+        return false;
+    };
+    // SAFETY: early boot single-hart; refcount table is only touched here.
+    unsafe {
+        let current = FRAME_REFCOUNT[idx];
+        if current < u16::MAX {
+            FRAME_REFCOUNT[idx] = current + 1;
+        }
+    }
+    true
+}
+
+fn release_frame(pa: usize) -> bool {
+    let Some(idx) = frame_index(pa) else {
+        return false;
+    };
+    // SAFETY: early boot single-hart; refcount table is only touched here.
+    unsafe {
+        let current = FRAME_REFCOUNT[idx];
+        if current == 0 {
+            return false;
+        }
+        if current == 1 {
+            FRAME_REFCOUNT[idx] = 0;
+            let _ = push_free_frame(pa);
+            return true;
+        }
+        FRAME_REFCOUNT[idx] = current - 1;
+    }
+    false
+}
+
+fn frame_refcount(pa: usize) -> Option<u16> {
+    let idx = frame_index(pa)?;
+    // SAFETY: early boot single-hart; refcount table is only touched here.
+    unsafe { Some(FRAME_REFCOUNT[idx]) }
+}
+
+fn push_free_frame(pa: usize) -> bool {
+    // SAFETY: early boot single-hart; free list is only touched here.
+    unsafe {
+        if FRAME_FREE_LEN >= MAX_FRAMES {
+            return false;
+        }
+        FRAME_FREE_LIST[FRAME_FREE_LEN] = pa;
+        FRAME_FREE_LEN += 1;
+        true
+    }
+}
+
+fn pop_free_frame() -> Option<usize> {
+    // SAFETY: early boot single-hart; free list is only touched here.
+    unsafe {
+        if FRAME_FREE_LEN == 0 {
+            return None;
+        }
+        FRAME_FREE_LEN -= 1;
+        Some(FRAME_FREE_LIST[FRAME_FREE_LEN])
+    }
+}
+
 fn table_has_user_l0(table: &PageTable) -> bool {
     for entry in table.entries.iter() {
         if entry.is_valid() && entry.is_leaf() && (entry.flags() & PTE_U) != 0 {
@@ -678,11 +793,13 @@ pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
         if !parent_l2e.is_valid() {
             continue;
         }
-        if parent_l2e.is_leaf() {
+            if parent_l2e.is_leaf() {
             if (parent_l2e.flags() & PTE_U) != 0 {
-                let new_flags = cow_flags(parent_l2e.flags());
-                parent_root.entries[l2_idx] = PageTableEntry::new(parent_l2e.ppn(), new_flags);
-                child_root.entries[l2_idx] = PageTableEntry::new(parent_l2e.ppn(), new_flags);
+                if (parent_l2e.flags() & PTE_W) != 0 {
+                    return None;
+                }
+                let _ = retain_frame(parent_l2e.ppn().addr().as_usize());
+                child_root.entries[l2_idx] = parent_l2e;
             }
             continue;
         }
@@ -705,9 +822,11 @@ pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
             }
             if parent_l1e.is_leaf() {
                 if (parent_l1e.flags() & PTE_U) != 0 {
-                    let new_flags = cow_flags(parent_l1e.flags());
-                    parent_l1.entries[l1_idx] = PageTableEntry::new(parent_l1e.ppn(), new_flags);
-                    child_l1.entries[l1_idx] = PageTableEntry::new(parent_l1e.ppn(), new_flags);
+                    if (parent_l1e.flags() & PTE_W) != 0 {
+                        return None;
+                    }
+                    let _ = retain_frame(parent_l1e.ppn().addr().as_usize());
+                    child_l1.entries[l1_idx] = parent_l1e;
                 }
                 continue;
             }
@@ -734,11 +853,69 @@ pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
                 let new_flags = cow_flags(parent_l0e.flags());
                 parent_l0.entries[l0_idx] = PageTableEntry::new(parent_l0e.ppn(), new_flags);
                 child_l0.entries[l0_idx] = PageTableEntry::new(parent_l0e.ppn(), new_flags);
+                let _ = retain_frame(parent_l0e.ppn().addr().as_usize());
             }
         }
     }
     flush_tlb();
     Some(virt_to_phys(child_root as *const _ as usize))
+}
+
+pub fn release_user_root(root_pa: usize) {
+    if root_pa == 0 {
+        return;
+    }
+    let kernel_root_pa = kernel_root_pa();
+    if kernel_root_pa == 0 || root_pa == kernel_root_pa {
+        return;
+    }
+    // SAFETY: early boot single-hart; page tables are stable during release.
+    let root = unsafe { &mut *(root_pa as *mut PageTable) };
+    let kernel_root = unsafe { &*(kernel_root_pa as *const PageTable) };
+
+    for l2_idx in 0..SV39_ENTRIES {
+        let l2e = root.entries[l2_idx];
+        if !l2e.is_valid() {
+            continue;
+        }
+        if l2e.bits == kernel_root.entries[l2_idx].bits {
+            continue;
+        }
+        if l2e.is_leaf() {
+            // 仅处理 4KiB 用户页的释放；大页用户映射暂不支持回收。
+            continue;
+        }
+        let l1_pa = l2e.ppn().addr().as_usize();
+        // SAFETY: entry points to a valid next-level table page.
+        let l1 = unsafe { &mut *(l1_pa as *mut PageTable) };
+        for l1_idx in 0..SV39_ENTRIES {
+            let l1e = l1.entries[l1_idx];
+            if !l1e.is_valid() {
+                continue;
+            }
+            if l1e.is_leaf() {
+                // 仅处理 4KiB 用户页的释放；大页用户映射暂不支持回收。
+                continue;
+            }
+            let l0_pa = l1e.ppn().addr().as_usize();
+            // SAFETY: entry points to a valid next-level table page.
+            let l0 = unsafe { &mut *(l0_pa as *mut PageTable) };
+            for l0_idx in 0..SV39_ENTRIES {
+                let l0e = l0.entries[l0_idx];
+                if !l0e.is_valid() || !l0e.is_leaf() {
+                    continue;
+                }
+                if (l0e.flags() & PTE_U) == 0 {
+                    continue;
+                }
+                let _ = release_frame(l0e.ppn().addr().as_usize());
+            }
+            let _ = release_frame(l0_pa);
+        }
+        let _ = release_frame(l1_pa);
+    }
+    let _ = release_frame(root_pa);
+    flush_tlb();
 }
 
 pub fn switch_root(root_pa: usize) {
@@ -800,6 +977,13 @@ fn init_frame_allocator(region: MemoryRegion) {
         FRAME_ALLOC.write(allocator);
     }
     FRAME_ALLOC_READY.store(true, Ordering::Release);
+    FRAME_BASE.store(start, Ordering::Relaxed);
+    let count = (end - start) / PAGE_SIZE;
+    FRAME_COUNT.store(min(count, MAX_FRAMES), Ordering::Relaxed);
+    // SAFETY: early boot single-hart; reset free list length.
+    unsafe {
+        FRAME_FREE_LEN = 0;
+    }
     let pages = (end - start) / PAGE_SIZE;
     crate::println!(
         "mm: frame allocator start={:#x} end={:#x} pages={}",

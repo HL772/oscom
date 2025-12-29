@@ -50,6 +50,7 @@
 - sys_exit 退出时标记 Zombie 并唤醒父进程等待队列。
 - 用户任务保存 user root/entry/sp 与 trapframe 指针，支持调度后从 __trap_return 恢复回用户态。
 - 增加 clone：复制 trapframe 并创建子任务，结合 CoW 页表返回子 PID。
+- waitpid 回收 Zombie 时释放子进程的用户页表与物理页。
 - 增加 uname，占位返回内核与平台信息。
 - 增加 getppid/getuid/geteuid/getgid/getegid/getresuid/getresgid 等身份信息占位。
 - 增加 gettid 与 sched_yield，占位支持线程 ID；任务上下文可用时返回 TaskId+1。

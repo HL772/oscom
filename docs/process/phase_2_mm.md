@@ -14,9 +14,10 @@
 - 增加用户指针翻译与 UserPtr/UserSlice，支撑 syscall 访问用户内存。
 - 引入 PTE_COW 标记与 clone_user_root，fork 时复制页表并将可写页降级为只读。
 - page fault 处理 CoW 写入，分配新页并复制数据。
+- 增加帧引用计数与空闲帧复用，释放用户页与页表页。
 
 ## 问题与定位
-- bump allocator 无回收，CoW 写入后旧页无法释放。
+- 空闲帧复用缺乏清零/隔离策略，可能携带历史数据。
 - 当前仅处理 4KiB 页级别 CoW，未覆盖大页映射场景。
 
 ## 解决与验证

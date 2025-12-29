@@ -19,6 +19,7 @@ enum ProcState {
 static mut PROC_STATE: [ProcState; MAX_PROCS] = [ProcState::Empty; MAX_PROCS];
 static mut PROC_PPID: [usize; MAX_PROCS] = [0; MAX_PROCS];
 static mut PROC_EXIT: [i32; MAX_PROCS] = [0; MAX_PROCS];
+static mut PROC_ROOT: [usize; MAX_PROCS] = [0; MAX_PROCS];
 // 固定大小等待队列：每个父进程一个，用于 waitpid 阻塞。
 static PROC_WAITERS: [TaskWaitQueue; MAX_PROCS] = [
     TaskWaitQueue::new(),
@@ -31,7 +32,7 @@ static PROC_WAITERS: [TaskWaitQueue; MAX_PROCS] = [
     TaskWaitQueue::new(),
 ];
 
-pub fn init_process(task_id: TaskId, parent_pid: usize) -> usize {
+pub fn init_process(task_id: TaskId, parent_pid: usize, root_pa: usize) -> usize {
     let pid = task_id + 1;
     let idx = task_id;
     // SAFETY: early boot single-hart; process table writes are serialized.
@@ -40,6 +41,7 @@ pub fn init_process(task_id: TaskId, parent_pid: usize) -> usize {
             PROC_STATE[idx] = ProcState::Running;
             PROC_PPID[idx] = parent_pid;
             PROC_EXIT[idx] = 0;
+            PROC_ROOT[idx] = root_pa;
         }
     }
     pid
@@ -82,6 +84,21 @@ pub fn exit_current(code: i32) -> bool {
     true
 }
 
+pub fn update_current_root(root_pa: usize) -> bool {
+    let Some(task_id) = runtime::current_task_id() else {
+        return false;
+    };
+    let idx = task_id;
+    // SAFETY: early boot single-hart; process table writes are serialized.
+    unsafe {
+        if idx >= MAX_PROCS || PROC_STATE[idx] == ProcState::Empty {
+            return false;
+        }
+        PROC_ROOT[idx] = root_pa;
+        true
+    }
+}
+
 pub fn waitpid(target: isize, status: usize, options: usize) -> Result<usize, Errno> {
     const WNOHANG: usize = 1;
     let Some(parent_pid) = current_pid() else {
@@ -113,9 +130,14 @@ pub fn waitpid(target: isize, status: usize, options: usize) -> Result<usize, Er
             if PROC_STATE[idx] == ProcState::Zombie {
                 zombie_pid = pid;
                 zombie_code = PROC_EXIT[idx];
+                let root = PROC_ROOT[idx];
                 PROC_STATE[idx] = ProcState::Empty;
                 PROC_PPID[idx] = 0;
                 PROC_EXIT[idx] = 0;
+                PROC_ROOT[idx] = 0;
+                if root != 0 {
+                    crate::mm::release_user_root(root);
+                }
                 break;
             }
         }
