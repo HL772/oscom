@@ -1,4 +1,25 @@
-* commit ae7fabe6f402975fc43d9b3556ecc6dac2c5ccde (HEAD -> bootstrap-riscv64)
+* commit 6d1cb92b18256fb71b812067b8de202f08893000 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 22:10:46 +0800
+| 
+|     feat(fs): read dev nodes via memfs
+| 
+|  CHANGELOG.md                     |  1 +
+|  docs/process/phase_4_fs.md       |  1 +
+|  modules/axfs/src/memfs.rs        | 44 +++++++++++++++++++++++++++-----------
+|  modules/axruntime/src/syscall.rs | 34 ++++++++++++++++++++++++-----
+|  4 files changed, 62 insertions(+), 18 deletions(-)
+| 
+* commit 7f10c943c0033db6865d563a74e64d60b1435077
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 22:08:19 +0800
+| 
+|     chore(process): refresh git log
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit ae7fabe6f402975fc43d9b3556ecc6dac2c5ccde
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 22:08:06 +0800
 | 
