@@ -14,6 +14,7 @@
 - 补充驱动模型设计文档草案，描述 DTB 枚举与驱动注册流程。
 - 补充创新特性设计文档草案，明确异步/eBPF/io_uring/AIA 取舍。
 - 补充 VFS/文件系统设计文档草案，明确缓存与挂载策略。
+- 补充网络子系统设计文档草案，明确 virtio-net 与协议栈接口。
 - 更新 04_task_process 设计与 phase_3 过程文档。
 - `make test-qemu-smoke ARCH=riscv64 PLATFORM=qemu` 通过。
 
