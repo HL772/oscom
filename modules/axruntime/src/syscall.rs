@@ -85,6 +85,7 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_GET_ROBUST_LIST => sys_get_robust_list(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_RT_SIGACTION => sys_rt_sigaction(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_RT_SIGPROCMASK => sys_rt_sigprocmask(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
+        SYS_FCNTL => sys_fcntl(ctx.args[0], ctx.args[1], ctx.args[2]),
         _ => Err(Errno::NoSys),
     }
 }
@@ -108,6 +109,7 @@ const SYS_SET_ROBUST_LIST: usize = 99;
 const SYS_GET_ROBUST_LIST: usize = 100;
 const SYS_RT_SIGACTION: usize = 134;
 const SYS_RT_SIGPROCMASK: usize = 135;
+const SYS_FCNTL: usize = 25;
 
 const TIOCGWINSZ: usize = 0x5413;
 const SYS_CLOCK_GETTIME: usize = 113;
@@ -134,6 +136,10 @@ const O_CLOEXEC: usize = 0x80000;
 const SIG_BLOCK: usize = 0;
 const SIG_UNBLOCK: usize = 1;
 const SIG_SETMASK: usize = 2;
+const F_GETFD: usize = 1;
+const F_SETFD: usize = 2;
+const F_GETFL: usize = 3;
+const F_SETFL: usize = 4;
 
 static RNG_STATE: AtomicU64 = AtomicU64::new(0);
 
@@ -798,6 +804,19 @@ fn sys_rt_sigprocmask(how: usize, set: usize, oldset: usize, sigsetsize: usize) 
             .ok_or(Errno::Fault)?;
     }
     Ok(0)
+}
+
+fn sys_fcntl(fd: usize, cmd: usize, _arg: usize) -> Result<usize, Errno> {
+    if fd > 2 {
+        return Err(Errno::Badf);
+    }
+    match cmd {
+        F_GETFD => Ok(0),
+        F_SETFD => Ok(0),
+        F_GETFL => Ok(0),
+        F_SETFL => Ok(0),
+        _ => Err(Errno::Inval),
+    }
 }
 
 fn load_iovec(root_pa: usize, iov_ptr: usize, index: usize) -> Result<Iovec, Errno> {
