@@ -1,4 +1,26 @@
-* commit a2722aae2c8978ddbe2ad6a0ccc2b54b2223b7bc (HEAD -> bootstrap-riscv64)
+* commit c6d5f74b033a1f310dfe7a34c4b9d65255e9ca36 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:11:33 +0800
+| 
+|     feat(syscall): derive pid from task context
+| 
+|  CHANGELOG.md                            | 2 +-
+|  docs/design/05_syscall_abi.md           | 2 +-
+|  docs/process/phase_3_process_syscall.md | 2 +-
+|  modules/axruntime/src/runtime.rs        | 5 +++++
+|  modules/axruntime/src/syscall.rs        | 6 ++++--
+|  5 files changed, 12 insertions(+), 5 deletions(-)
+| 
+* commit 378b85ad8ab38bb14791f506a91bae038a496c88
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 11:10:24 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 22 +++++++++++++++++++++-
+|  1 file changed, 21 insertions(+), 1 deletion(-)
+| 
+* commit a2722aae2c8978ddbe2ad6a0ccc2b54b2223b7bc
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 11:10:11 +0800
 | 
