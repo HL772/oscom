@@ -483,6 +483,8 @@ static mut FD_TABLE: [FdEntry; FD_TABLE_SLOTS] = [EMPTY_FD_ENTRY; FD_TABLE_SLOTS
 static mut STDIO_REDIRECT: [Option<FdEntry>; 3] = [None, None, None];
 // SAFETY: 标准 fd 的状态标志在单核阶段顺序访问。
 static mut STDIO_FLAGS: [usize; 3] = [0; 3];
+// SAFETY: 控制台输入缓存仅在单核阶段顺序访问。
+static mut CONSOLE_STASH: i16 = -1;
 // SAFETY: pipe 表在早期阶段串行访问。
 static mut PIPES: [Pipe; PIPE_SLOTS] = [EMPTY_PIPE; PIPE_SLOTS];
 // SAFETY: pipe 等待队列只在单核早期阶段访问。
@@ -2355,6 +2357,13 @@ fn poll_revents_for_fd(fd: i32, events: u16) -> u16 {
         None => return POLLNVAL,
     };
     match entry.kind {
+        FdKind::Stdin => {
+            let mut revents = 0u16;
+            if (events & POLLIN) != 0 && console_peek() {
+                revents |= POLLIN;
+            }
+            revents
+        }
         FdKind::PipeRead(pipe_id) => {
             let (len, _readers, writers) = match pipe_snapshot(pipe_id) {
                 Some(state) => state,
@@ -2552,7 +2561,10 @@ fn ppoll_single_waiter_queue(fd: i32, events: u16) -> Option<&'static crate::tas
 
 fn read_from_entry(entry: FdEntry, root_pa: usize, buf: usize, len: usize) -> Result<usize, Errno> {
     match entry.kind {
-        FdKind::Stdin => read_console_into(root_pa, buf, len),
+        FdKind::Stdin => {
+            let nonblock = (entry.flags & O_NONBLOCK) != 0;
+            read_console_into(root_pa, buf, len, nonblock)
+        }
         FdKind::DevNull => Ok(0),
         FdKind::DevZero => {
             zero_user_write(root_pa, buf, len)?;
@@ -2666,7 +2678,7 @@ fn rng_seed() -> u64 {
     tick ^ addr ^ (tick << 32)
 }
 
-fn read_console_into(root_pa: usize, buf: usize, len: usize) -> Result<usize, Errno> {
+fn read_console_into(root_pa: usize, buf: usize, len: usize, nonblock: bool) -> Result<usize, Errno> {
     if len == 0 {
         return Ok(0);
     }
@@ -2681,15 +2693,24 @@ fn read_console_into(root_pa: usize, buf: usize, len: usize) -> Result<usize, Er
         // SAFETY: 翻译结果确保该片段在用户态可写。
         unsafe {
             let dst = pa as *mut u8;
-            for i in 0..chunk {
-                match sbi::console_getchar() {
+            let mut i = 0usize;
+            while i < chunk {
+                match console_take() {
                     Some(ch) => {
                         dst.add(i).write(ch);
                         read += 1;
+                        i += 1;
                     }
                     None => {
-                        // 早期阶段无阻塞控制台输入；无数据则立即返回。
-                        return if read == 0 { Err(Errno::Again) } else { Ok(read) };
+                        if read > 0 {
+                            return Ok(read);
+                        }
+                        if nonblock || !can_block_current() {
+                            return Err(Errno::Again);
+                        }
+                        if !crate::runtime::sleep_current_ms(PPOLL_RETRY_SLEEP_MS) {
+                            return Err(Errno::Again);
+                        }
                     }
                 }
             }
@@ -2698,6 +2719,37 @@ fn read_console_into(root_pa: usize, buf: usize, len: usize) -> Result<usize, Er
         remaining -= chunk;
     }
     Ok(read)
+}
+
+fn console_peek() -> bool {
+    // SAFETY: 单核早期阶段顺序访问控制台缓存。
+    unsafe {
+        if CONSOLE_STASH >= 0 {
+            return true;
+        }
+        if let Some(ch) = sbi::console_getchar() {
+            CONSOLE_STASH = ch as i16;
+            let _ = crate::runtime::wake_all(ppoll_wait_queue());
+            return true;
+        }
+    }
+    false
+}
+
+fn console_take() -> Option<u8> {
+    // SAFETY: 单核早期阶段顺序访问控制台缓存。
+    unsafe {
+        if CONSOLE_STASH >= 0 {
+            let ch = CONSOLE_STASH as u8;
+            CONSOLE_STASH = -1;
+            return Some(ch);
+        }
+    }
+    let ch = sbi::console_getchar();
+    if ch.is_some() {
+        let _ = crate::runtime::wake_all(ppoll_wait_queue());
+    }
+    ch
 }
 
 fn write_console_from(root_pa: usize, buf: usize, len: usize) -> Result<usize, Errno> {

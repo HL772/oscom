@@ -19,6 +19,8 @@ const USER_CODE_VA: usize = config::USER_TEST_BASE;
 const USER_DATA_VA: usize = config::USER_TEST_BASE + PAGE_SIZE;
 const USER_STACK_VA: usize = config::USER_TEST_BASE + PAGE_SIZE * 2;
 const USER_IOVEC_VA: usize = USER_DATA_VA;
+const USER_PIPEFD_VA: usize = USER_DATA_VA + 0x40;
+const USER_POLLFD_VA: usize = USER_DATA_VA + 0x50;
 
 const USER_MESSAGE_LEN: usize = 12;
 const USER_MESSAGE: &[u8; USER_MESSAGE_LEN] = b"user: hello\n";
@@ -26,15 +28,47 @@ const USER_MESSAGE_VA: usize = USER_DATA_VA + PAGE_SIZE - 4;
 const USER_MESSAGE_OFFSET: usize = USER_MESSAGE_VA - USER_DATA_VA;
 const USER_MESSAGE_SPLIT: usize = PAGE_SIZE - USER_MESSAGE_OFFSET;
 const USER_IOV_COUNT: usize = 2;
+const USER_POLLIN: i16 = 0x001;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct UserPollFd {
+    fd: i32,
+    events: i16,
+    revents: i16,
+}
 
 // 最小用户态程序：
 //   poll(NULL, 0, 1) -> 走一次 poll 休眠路径（1ms 超时）
+//   pipe2 + write -> 写入管道
+//   poll(pipefd[0], 1, 0) -> 覆盖 pipe 可读就绪路径
 //   writev(1, USER_IOVEC_VA, 2) -> 控制台输出（跨页验证 UserSlice）
 //   exit(0) -> 关机
-const USER_CODE: [u8; 56] = [
+const USER_CODE: [u8; 140] = [
     0x13, 0x05, 0x00, 0x00, // addi a0, zero, 0
     0x93, 0x05, 0x00, 0x00, // addi a1, zero, 0
     0x13, 0x06, 0x10, 0x00, // addi a2, zero, 1
+    0x93, 0x08, 0x70, 0x00, // addi a7, zero, 7
+    0x73, 0x00, 0x00, 0x00, // ecall
+    0xb7, 0x16, 0x00, 0x40, // lui a3, 0x40001 (USER_PIPEFD_VA)
+    0x93, 0x86, 0x06, 0x04, // addi a3, a3, 0x40
+    0x13, 0x85, 0x06, 0x00, // addi a0, a3, 0
+    0x93, 0x05, 0x00, 0x00, // addi a1, zero, 0
+    0x93, 0x08, 0xb0, 0x03, // addi a7, zero, 59
+    0x73, 0x00, 0x00, 0x00, // ecall
+    0x03, 0xa5, 0x46, 0x00, // lw a0, 4(a3)
+    0xb7, 0x25, 0x00, 0x40, // lui a1, 0x40002 (USER_MESSAGE_VA)
+    0x93, 0x85, 0xc5, 0xff, // addi a1, a1, -4
+    0x13, 0x06, 0x10, 0x00, // addi a2, zero, 1
+    0x93, 0x08, 0x00, 0x04, // addi a7, zero, 64
+    0x73, 0x00, 0x00, 0x00, // ecall
+    0x83, 0xa7, 0x06, 0x00, // lw a5, 0(a3)
+    0x37, 0x17, 0x00, 0x40, // lui a4, 0x40001 (USER_POLLFD_VA)
+    0x13, 0x07, 0x07, 0x05, // addi a4, a4, 0x50
+    0x23, 0x20, 0xf7, 0x00, // sw a5, 0(a4)
+    0x13, 0x05, 0x07, 0x00, // addi a0, a4, 0
+    0x93, 0x05, 0x10, 0x00, // addi a1, zero, 1
+    0x13, 0x06, 0x00, 0x00, // addi a2, zero, 0
     0x93, 0x08, 0x70, 0x00, // addi a7, zero, 7
     0x73, 0x00, 0x00, 0x00, // ecall
     0x13, 0x05, 0x10, 0x00, // addi a0, zero, 1
@@ -86,6 +120,16 @@ pub fn prepare_user_test() -> Option<UserContext> {
         iov_base.add(1).write(USER_MESSAGE_LEN);
         iov_base.add(2).write(USER_DATA_VA);
         iov_base.add(3).write(0);
+        // 预留 pipefd 与 pollfd 空间，pollfd 事件初始化为 POLLIN。
+        let pipefd_base = (data_pa + (USER_PIPEFD_VA - USER_DATA_VA)) as *mut i32;
+        pipefd_base.write(0);
+        pipefd_base.add(1).write(0);
+        let pollfd_base = (data_pa + (USER_POLLFD_VA - USER_DATA_VA)) as *mut UserPollFd;
+        pollfd_base.write(UserPollFd {
+            fd: -1,
+            events: USER_POLLIN,
+            revents: 0,
+        });
     }
     mm::flush_icache();
 
