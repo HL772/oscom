@@ -1,4 +1,24 @@
-* commit 95158dfeb4f265f4c968152f481dd2735b63bb55 (HEAD -> bootstrap-riscv64)
+* commit d2b4bb245f178d2ff1ba5c3eb625aafe51da1dc5 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 12:13:00 +0800
+| 
+|     fix(syscall): validate getdents64 buffer
+| 
+|  CHANGELOG.md                            |  2 +-
+|  docs/process/phase_3_process_syscall.md |  2 +-
+|  modules/axruntime/src/syscall.rs        | 18 ++++++++++++++++++
+|  3 files changed, 20 insertions(+), 2 deletions(-)
+| 
+* commit 21903c9cbd598e524a4e9faefe0e55dee92bb8e9
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 12:10:40 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit 95158dfeb4f265f4c968152f481dd2735b63bb55
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 12:10:23 +0800
 | 
