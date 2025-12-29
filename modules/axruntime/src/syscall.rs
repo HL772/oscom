@@ -859,36 +859,36 @@ fn sys_openat(_dirfd: usize, pathname: usize, flags: usize, _mode: usize) -> Res
     }
     let status_flags = if (flags & O_NONBLOCK) != 0 { O_NONBLOCK } else { 0 };
     let accmode = flags & O_ACCMODE;
-    if user_path_eq(root_pa, pathname, DEV_NULL_PATH)? {
-        return alloc_fd(FdEntry { kind: FdKind::DevNull, flags: status_flags })
-            .ok_or(Errno::MFile);
-    }
-    if user_path_eq(root_pa, pathname, DEV_ZERO_PATH)? {
-        return alloc_fd(FdEntry { kind: FdKind::DevZero, flags: status_flags })
-            .ok_or(Errno::MFile);
-    }
-    if user_path_eq(root_pa, pathname, ROOT_PATH)? {
-        if accmode != O_RDONLY {
-            return Err(Errno::IsDir);
+    match classify_path(root_pa, pathname)? {
+        Some(KnownPath::DevNull) => {
+            alloc_fd(FdEntry { kind: FdKind::DevNull, flags: status_flags }).ok_or(Errno::MFile)
         }
-        return alloc_fd(FdEntry { kind: FdKind::DirRoot, flags: status_flags })
-            .ok_or(Errno::MFile);
-    }
-    if user_path_eq(root_pa, pathname, DEV_PATH)? {
-        if accmode != O_RDONLY {
-            return Err(Errno::IsDir);
+        Some(KnownPath::DevZero) => {
+            alloc_fd(FdEntry { kind: FdKind::DevZero, flags: status_flags }).ok_or(Errno::MFile)
         }
-        return alloc_fd(FdEntry { kind: FdKind::DirDev, flags: status_flags })
-            .ok_or(Errno::MFile);
-    }
-    if user_path_eq(root_pa, pathname, INIT_PATH)? {
-        if accmode != O_RDONLY {
-            return Err(Errno::Inval);
+        Some(KnownPath::Root) => {
+            if accmode != O_RDONLY {
+                return Err(Errno::IsDir);
+            }
+            alloc_fd(FdEntry { kind: FdKind::DirRoot, flags: status_flags })
+                .ok_or(Errno::MFile)
         }
-        return alloc_fd(FdEntry { kind: FdKind::InitFile, flags: status_flags })
-            .ok_or(Errno::MFile);
+        Some(KnownPath::DevDir) => {
+            if accmode != O_RDONLY {
+                return Err(Errno::IsDir);
+            }
+            alloc_fd(FdEntry { kind: FdKind::DirDev, flags: status_flags })
+                .ok_or(Errno::MFile)
+        }
+        Some(KnownPath::Init) => {
+            if accmode != O_RDONLY {
+                return Err(Errno::Inval);
+            }
+            alloc_fd(FdEntry { kind: FdKind::InitFile, flags: status_flags })
+                .ok_or(Errno::MFile)
+        }
+        None => Err(Errno::NoEnt),
     }
-    Err(Errno::NoEnt)
 }
 
 fn sys_mknodat(dirfd: usize, pathname: usize, _mode: usize, _dev: usize) -> Result<usize, Errno> {
