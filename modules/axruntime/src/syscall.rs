@@ -69,6 +69,7 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_UNAME => sys_uname(ctx.args[0]),
         SYS_EXIT_GROUP => sys_exit_group(ctx.args[0]),
         SYS_GETCWD => sys_getcwd(ctx.args[0], ctx.args[1]),
+        SYS_CLOSE => sys_close(ctx.args[0]),
         _ => Err(Errno::NoSys),
     }
 }
@@ -80,6 +81,7 @@ const SYS_WRITE: usize = 64;
 const SYS_READV: usize = 65;
 const SYS_WRITEV: usize = 66;
 const SYS_GETCWD: usize = 17;
+const SYS_CLOSE: usize = 57;
 const SYS_CLOCK_GETTIME: usize = 113;
 const SYS_CLOCK_GETTIME64: usize = 403;
 const SYS_GETTIMEOFDAY: usize = 169;
@@ -388,6 +390,13 @@ fn sys_getcwd(buf: usize, size: usize) -> Result<usize, Errno> {
         .copy_from_slice(root_pa, PATH)
         .ok_or(Errno::Fault)?;
     Ok(PATH.len())
+}
+
+fn sys_close(fd: usize) -> Result<usize, Errno> {
+    if fd <= 2 {
+        return Ok(0);
+    }
+    Err(Errno::Badf)
 }
 
 fn load_iovec(root_pa: usize, iov_ptr: usize, index: usize) -> Result<Iovec, Errno> {
