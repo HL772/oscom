@@ -75,6 +75,7 @@
 - Route openat path matching through classify_path for /init and pseudo nodes.
 - Add axvfs no_std VFS trait scaffold for upcoming FS work.
 - Add axfs memfs scaffold and wire getdents64 to memfs directory entries.
+- Route openat/newfstatat path resolution through memfs metadata.
 - Extend USER_TEST to cover getdents64 on / and /dev.
 - Extend USER_TEST to cover clone tid writeback validation.
 - Build clone_user_root from kernel mappings to avoid sharing parent page tables.

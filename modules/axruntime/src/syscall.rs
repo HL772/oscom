@@ -5,6 +5,7 @@ use core::mem::size_of;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use axfs::memfs;
+use axfs::{FileType, InodeId};
 use crate::futex;
 use crate::mm::{self, UserAccess, UserPtr, UserSlice};
 use crate::{sbi, time};
@@ -253,6 +254,7 @@ const CLOCK_MONOTONIC_RAW: usize = 4;
 const CLOCK_BOOTTIME: usize = 7;
 const IOV_MAX: usize = 1024;
 const S_IFCHR: u32 = 0o020000;
+const S_IFBLK: u32 = 0o060000;
 const S_IFDIR: u32 = 0o040000;
 const S_IFREG: u32 = 0o100000;
 const O_CLOEXEC: usize = 0x80000;
@@ -274,6 +276,7 @@ const DEV_ZERO_PATH: &[u8] = b"/dev/zero";
 const DEV_PATH: &[u8] = b"/dev";
 const ROOT_PATH: &[u8] = b"/";
 const INIT_PATH: &[u8] = b"/init";
+const MAX_PATH_LEN: usize = 128;
 const SIG_BLOCK: usize = 0;
 const SIG_UNBLOCK: usize = 1;
 const SIG_SETMASK: usize = 2;
@@ -837,36 +840,29 @@ fn sys_openat(_dirfd: usize, pathname: usize, flags: usize, _mode: usize) -> Res
     }
     let status_flags = if (flags & O_NONBLOCK) != 0 { O_NONBLOCK } else { 0 };
     let accmode = flags & O_ACCMODE;
-    match classify_path(root_pa, pathname)? {
-        Some(KnownPath::DevNull) => {
-            alloc_fd(FdEntry { kind: FdKind::DevNull, flags: status_flags }).ok_or(Errno::MFile)
-        }
-        Some(KnownPath::DevZero) => {
-            alloc_fd(FdEntry { kind: FdKind::DevZero, flags: status_flags }).ok_or(Errno::MFile)
-        }
-        Some(KnownPath::Root) => {
+    let inode = memfs_lookup_inode(root_pa, pathname)?;
+    let kind = match inode {
+        memfs::ROOT_ID => FdKind::DirRoot,
+        memfs::DEV_ID => FdKind::DirDev,
+        memfs::DEV_NULL_ID => FdKind::DevNull,
+        memfs::DEV_ZERO_ID => FdKind::DevZero,
+        memfs::INIT_ID => FdKind::InitFile,
+        _ => return Err(Errno::NoEnt),
+    };
+    match kind {
+        FdKind::DirRoot | FdKind::DirDev => {
             if accmode != O_RDONLY {
                 return Err(Errno::IsDir);
             }
-            alloc_fd(FdEntry { kind: FdKind::DirRoot, flags: status_flags })
-                .ok_or(Errno::MFile)
         }
-        Some(KnownPath::DevDir) => {
-            if accmode != O_RDONLY {
-                return Err(Errno::IsDir);
-            }
-            alloc_fd(FdEntry { kind: FdKind::DirDev, flags: status_flags })
-                .ok_or(Errno::MFile)
-        }
-        Some(KnownPath::Init) => {
+        FdKind::InitFile => {
             if accmode != O_RDONLY {
                 return Err(Errno::Inval);
             }
-            alloc_fd(FdEntry { kind: FdKind::InitFile, flags: status_flags })
-                .ok_or(Errno::MFile)
         }
-        None => Err(Errno::NoEnt),
+        _ => {}
     }
+    alloc_fd(FdEntry { kind, flags: status_flags }).ok_or(Errno::MFile)
 }
 
 fn sys_mknodat(dirfd: usize, pathname: usize, _mode: usize, _dev: usize) -> Result<usize, Errno> {
@@ -1077,12 +1073,15 @@ fn sys_newfstatat(_dirfd: usize, pathname: usize, stat_ptr: usize, _flags: usize
     if mm::translate_user_ptr(root_pa, stat_ptr, size, UserAccess::Write).is_none() {
         return Err(Errno::Fault);
     }
-    let (mode, size) = match classify_path(root_pa, pathname)? {
-        Some(KnownPath::Root | KnownPath::DevDir) => (S_IFDIR | 0o755, 0),
-        Some(KnownPath::DevNull | KnownPath::DevZero) => (S_IFCHR | 0o666, 0),
-        Some(KnownPath::Init) => (S_IFREG | 0o444, init_memfile_image().len()),
-        None => return Err(Errno::NoEnt),
+    let fs = memfs::MemFs::new();
+    let inode = memfs_lookup_inode(root_pa, pathname)?;
+    let meta = fs.metadata_for(inode).ok_or(Errno::NoEnt)?;
+    let size = if inode == memfs::INIT_ID {
+        init_memfile_image().len()
+    } else {
+        meta.size as usize
     };
+    let mode = file_type_mode(meta.file_type) | meta.mode as u32;
     UserPtr::new(stat_ptr)
         .write(root_pa, build_stat(mode, size))
         .ok_or(Errno::Fault)?;
@@ -2207,6 +2206,18 @@ fn build_stat(mode: u32, size: usize) -> Stat {
     }
 }
 
+fn file_type_mode(file_type: FileType) -> u32 {
+    match file_type {
+        FileType::Dir => S_IFDIR,
+        FileType::File => S_IFREG,
+        FileType::Char => S_IFCHR,
+        FileType::Block => S_IFBLK,
+        FileType::Fifo => S_IFIFO,
+        FileType::Socket => 0,
+        FileType::Symlink => 0,
+    }
+}
+
 fn current_pid() -> usize {
     // Single-hart early boot uses TaskId+1 as a stable placeholder PID.
     crate::process::current_pid()
@@ -2232,6 +2243,32 @@ fn validate_user_path(root_pa: usize, path: usize) -> Result<(), Errno> {
     // 只读取首字节，确保指针可访问，避免提前扫描整条路径。
     read_user_byte(root_pa, path)?;
     Ok(())
+}
+
+fn read_user_path_str<'a>(root_pa: usize, path: usize, buf: &'a mut [u8]) -> Result<&'a str, Errno> {
+    for i in 0..buf.len() {
+        let ch = read_user_byte(root_pa, path + i)?;
+        if ch == 0 {
+            return core::str::from_utf8(&buf[..i]).map_err(|_| Errno::Inval);
+        }
+        buf[i] = ch;
+    }
+    Err(Errno::Range)
+}
+
+fn memfs_lookup_inode(root_pa: usize, pathname: usize) -> Result<InodeId, Errno> {
+    let mut buf = [0u8; MAX_PATH_LEN];
+    let path = read_user_path_str(root_pa, pathname, &mut buf)?;
+    let fs = memfs::MemFs::new();
+    fs.resolve_path(path).map_err(map_memfs_err)
+}
+
+fn map_memfs_err(err: memfs::ResolveError) -> Errno {
+    match err {
+        memfs::ResolveError::NotFound => Errno::NoEnt,
+        memfs::ResolveError::NotDir => Errno::NotDir,
+        memfs::ResolveError::Invalid => Errno::Inval,
+    }
 }
 
 fn validate_user_ptr_list(root_pa: usize, ptr: usize) -> Result<(), Errno> {

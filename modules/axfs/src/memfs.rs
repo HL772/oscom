@@ -10,6 +10,13 @@ pub const DEV_NULL_ID: InodeId = 3;
 pub const DEV_ZERO_ID: InodeId = 4;
 pub const INIT_ID: InodeId = 5;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResolveError {
+    NotFound,
+    NotDir,
+    Invalid,
+}
+
 #[derive(Clone, Copy)]
 struct Node {
     id: InodeId,
@@ -128,6 +135,44 @@ impl MemFs {
             _ => None,
         }
     }
+
+    pub fn resolve_path(&self, path: &str) -> Result<InodeId, ResolveError> {
+        if !path.starts_with('/') {
+            return Err(ResolveError::Invalid);
+        }
+        if path == "/" {
+            return Ok(ROOT_ID);
+        }
+        let mut current = ROOT_ID;
+        for segment in path.split('/') {
+            if segment.is_empty() {
+                continue;
+            }
+            if segment == "." {
+                continue;
+            }
+            if segment == ".." {
+                let node = self.node(current).ok_or(ResolveError::NotFound)?;
+                current = node.parent;
+                continue;
+            }
+            let node = self.node(current).ok_or(ResolveError::NotFound)?;
+            if node.file_type != FileType::Dir {
+                return Err(ResolveError::NotDir);
+            }
+            match self.lookup(current, segment) {
+                Ok(Some(next)) => current = next,
+                Ok(None) => return Err(ResolveError::NotFound),
+                Err(_) => return Err(ResolveError::NotFound),
+            }
+        }
+        Ok(current)
+    }
+
+    pub fn metadata_for(&self, inode: InodeId) -> Option<Metadata> {
+        let node = self.node(inode)?;
+        Some(Metadata::new(node.file_type, 0, node.mode))
+    }
 }
 
 impl VfsOps for MemFs {
@@ -152,8 +197,7 @@ impl VfsOps for MemFs {
     }
 
     fn metadata(&self, inode: InodeId) -> VfsResult<Metadata> {
-        let node = self.node(inode).ok_or(VfsError::NotFound)?;
-        Ok(Metadata::new(node.file_type, 0, node.mode))
+        self.metadata_for(inode).ok_or(VfsError::NotFound)
     }
 
     fn read_at(&self, _inode: InodeId, _offset: u64, _buf: &mut [u8]) -> VfsResult<usize> {

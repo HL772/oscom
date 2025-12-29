@@ -9,6 +9,7 @@
 - VFS 以 `Inode`/`File` trait 为核心，提供统一的 `lookup/read/write/stat` 接口。
 - 早期阶段先以 `InodeId` 句柄定义 VFS trait，避免引入全局分配器；后续再切换到 `Arc<dyn Inode>` 形式。
 - `modules/axfs` 提供 memfs 作为最小只读实现，先覆盖 `/` 与 `/dev` 等伪目录，逐步替换 syscall 中的硬编码路径。
+- 早期 syscalls 通过 memfs 的路径解析与元数据查询返回 openat/newfstatat 结果，作为接入 VFS 的第一步。
 - 挂载点采用 `MountTable` 管理，根文件系统可切换 FAT32/ext4。
 - 路径解析走 dentry 缓存，减少重复 lookup。
 - 页缓存以页为单位缓存文件数据，写入采用 write-back + 定期刷盘。
