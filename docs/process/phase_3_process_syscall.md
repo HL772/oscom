@@ -33,6 +33,7 @@
 - 用户态测试字符串跨页布局，用于覆盖 UserSlice 跨页读路径。
 - 增加 clock_gettime/gettimeofday/getpid，占位返回 tick 时间与固定 PID。
 - 增加 readv/writev，占位支持分段缓冲区访问。
+- 增加 uname，占位返回内核与平台信息。
 
 ## 问题与定位
 - 调度仍处于占位阶段，尚未引入用户态/系统调用上下文保存。

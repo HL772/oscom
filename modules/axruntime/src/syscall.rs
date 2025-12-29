@@ -56,6 +56,7 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_CLOCK_GETTIME => sys_clock_gettime(ctx.args[0], ctx.args[1]),
         SYS_GETTIMEOFDAY => sys_gettimeofday(ctx.args[0], ctx.args[1]),
         SYS_GETPID => sys_getpid(),
+        SYS_UNAME => sys_uname(ctx.args[0]),
         _ => Err(Errno::NoSys),
     }
 }
@@ -68,6 +69,7 @@ const SYS_WRITEV: usize = 66;
 const SYS_CLOCK_GETTIME: usize = 113;
 const SYS_GETTIMEOFDAY: usize = 169;
 const SYS_GETPID: usize = 172;
+const SYS_UNAME: usize = 160;
 
 const CLOCK_REALTIME: usize = 0;
 const CLOCK_MONOTONIC: usize = 1;
@@ -99,6 +101,17 @@ struct TimeZone {
 struct Iovec {
     iov_base: usize,
     iov_len: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Utsname {
+    sysname: [u8; 65],
+    nodename: [u8; 65],
+    release: [u8; 65],
+    version: [u8; 65],
+    machine: [u8; 65],
+    domainname: [u8; 65],
 }
 
 fn sys_exit(_code: usize) -> Result<usize, Errno> {
@@ -261,11 +274,44 @@ fn sys_getpid() -> Result<usize, Errno> {
     Ok(1)
 }
 
+fn sys_uname(buf: usize) -> Result<usize, Errno> {
+    if buf == 0 {
+        return Err(Errno::Fault);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    let mut uts = Utsname {
+        sysname: [0; 65],
+        nodename: [0; 65],
+        release: [0; 65],
+        version: [0; 65],
+        machine: [0; 65],
+        domainname: [0; 65],
+    };
+    fill_uts_field(&mut uts.sysname, "Aurora");
+    fill_uts_field(&mut uts.nodename, "aurora");
+    fill_uts_field(&mut uts.release, "0.1");
+    fill_uts_field(&mut uts.version, "aurora");
+    fill_uts_field(&mut uts.machine, "riscv64");
+    fill_uts_field(&mut uts.domainname, "localdomain");
+    UserPtr::new(buf).write(root_pa, uts).ok_or(Errno::Fault)?;
+    Ok(0)
+}
+
 fn load_iovec(root_pa: usize, iov_ptr: usize, index: usize) -> Result<Iovec, Errno> {
     let size = size_of::<Iovec>();
     let offset = index.checked_mul(size).ok_or(Errno::Fault)?;
     let addr = iov_ptr.checked_add(offset).ok_or(Errno::Fault)?;
     UserPtr::new(addr).read(root_pa).ok_or(Errno::Fault)
+}
+
+fn fill_uts_field(dst: &mut [u8; 65], src: &str) {
+    let bytes = src.as_bytes();
+    let len = core::cmp::min(bytes.len(), dst.len() - 1);
+    dst[..len].copy_from_slice(&bytes[..len]);
+    dst[len] = 0;
 }
 
 fn read_console_into(root_pa: usize, buf: usize, len: usize) -> Result<usize, Errno> {
