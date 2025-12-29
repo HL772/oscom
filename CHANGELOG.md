@@ -68,7 +68,7 @@
 - Add fcntl stub returning stdio access mode.
 - Add clock_getres stubs using timebase resolution.
 - Add umask stub with stored mask.
-- Add prctl stub for process name.
+- Add prctl stub that stores process name.
 - Add sched affinity stubs for single CPU.
 - Add getrusage stub returning zero stats.
 - Add setpgid/getpgid/getsid/setsid/getpgrp/setpgrp stubs (TaskId+1 when available).

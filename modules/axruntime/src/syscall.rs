@@ -185,6 +185,8 @@ const RUSAGE_THREAD: isize = 1;
 
 static RNG_STATE: AtomicU64 = AtomicU64::new(0);
 static UMASK: AtomicU64 = AtomicU64::new(0);
+const DEFAULT_PRCTL_NAME: [u8; 16] = *b"aurora\0\0\0\0\0\0\0\0\0\0";
+static mut PRCTL_NAME: [u8; 16] = DEFAULT_PRCTL_NAME;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -1022,8 +1024,20 @@ fn sys_prctl(option: usize, arg2: usize) -> Result<usize, Errno> {
             if arg2 == 0 {
                 return Err(Errno::Fault);
             }
-            if mm::translate_user_ptr(root_pa, arg2, 1, UserAccess::Read).is_none() {
-                return Err(Errno::Fault);
+            let mut name = [0u8; 16];
+            UserSlice::new(arg2, name.len())
+                .copy_to_slice(root_pa, &mut name)
+                .ok_or(Errno::Fault)?;
+            if let Some(pos) = name.iter().position(|&b| b == 0) {
+                for byte in &mut name[pos + 1..] {
+                    *byte = 0;
+                }
+            } else {
+                name[15] = 0;
+            }
+            // SAFETY: single-hart early boot; process name is updated atomically.
+            unsafe {
+                PRCTL_NAME = name;
             }
             Ok(0)
         }
@@ -1031,12 +1045,9 @@ fn sys_prctl(option: usize, arg2: usize) -> Result<usize, Errno> {
             if arg2 == 0 {
                 return Err(Errno::Fault);
             }
-            let mut name = [0u8; 16];
-            let src = b"aurora";
-            let copy_len = core::cmp::min(src.len(), name.len() - 1);
-            name[..copy_len].copy_from_slice(&src[..copy_len]);
-            UserSlice::new(arg2, name.len())
-                .copy_from_slice(root_pa, &name)
+            // SAFETY: single-hart early boot; process name is read atomically.
+            let name = unsafe { PRCTL_NAME };
+            UserSlice::new(arg2, name.len()).copy_from_slice(root_pa, &name)
                 .ok_or(Errno::Fault)?;
             Ok(0)
         }
