@@ -1,4 +1,25 @@
-* commit 27d1b1735e73d379f470a7647ca04056a3632a27 (HEAD -> bootstrap-riscv64)
+* commit 4a527ee03e190b0ba0e7127261dc23e644798509 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 12:49:51 +0800
+| 
+|     feat(syscall): add mkdirat/unlinkat stubs
+| 
+|  CHANGELOG.md                            |  2 +-
+|  docs/design/05_syscall_abi.md           |  2 +-
+|  docs/process/phase_3_process_syscall.md |  2 +-
+|  modules/axruntime/src/syscall.rs        | 33 +++++++++++++++++++++++++++++++
+|  4 files changed, 36 insertions(+), 3 deletions(-)
+| 
+* commit 00c7f7b03b3bbc28f72f7dbb6ce5f438b8b3258d
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 12:47:53 +0800
+| 
+|     chore(process): refresh git history logs
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit 27d1b1735e73d379f470a7647ca04056a3632a27
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 12:47:33 +0800
 | 
