@@ -30,7 +30,7 @@
 - 实现最小 sys_write：翻译用户指针并输出到控制台。
 - 实现最小 sys_read：对接 SBI getchar，无输入返回 EAGAIN。
 - 增加 UserPtr/UserSlice 封装用户态访问，并在 sys_write 复用分段遍历。
-- 增加 user-test feature 与 USER_TEST=1 冒烟校验，便于验证 U-mode ecall 输出。
+- 增加 user-test feature 与 USER_TEST=1 冒烟校验，便于验证 U-mode ecall 输出与 poll 睡眠路径。
 - 用户态测试字符串跨页布局，用于覆盖 UserSlice 跨页读路径。
 - 增加 clock_gettime/gettimeofday/getpid，占位支持 MONOTONIC/RAW/BOOTTIME/COARSE 时间源。
 - 增加 clock_gettime64，占位复用 clock_gettime 逻辑。

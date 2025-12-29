@@ -28,9 +28,15 @@ const USER_MESSAGE_SPLIT: usize = PAGE_SIZE - USER_MESSAGE_OFFSET;
 const USER_IOV_COUNT: usize = 2;
 
 // 最小用户态程序：
+//   poll(NULL, 0, 1) -> 走一次 poll 休眠路径（1ms 超时）
 //   writev(1, USER_IOVEC_VA, 2) -> 控制台输出（跨页验证 UserSlice）
 //   exit(0) -> 关机
-const USER_CODE: [u8; 36] = [
+const USER_CODE: [u8; 56] = [
+    0x13, 0x05, 0x00, 0x00, // addi a0, zero, 0
+    0x93, 0x05, 0x00, 0x00, // addi a1, zero, 0
+    0x13, 0x06, 0x10, 0x00, // addi a2, zero, 1
+    0x93, 0x08, 0x70, 0x00, // addi a7, zero, 7
+    0x73, 0x00, 0x00, 0x00, // ecall
     0x13, 0x05, 0x10, 0x00, // addi a0, zero, 1
     0xb7, 0x15, 0x00, 0x40, // lui a1, 0x40001 (USER_IOVEC_VA)
     0x13, 0x06, 0x20, 0x00, // addi a2, zero, 2

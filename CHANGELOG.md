@@ -40,7 +40,7 @@
 - Add a minimal syscall dispatcher and U-mode ecall handling.
 - Add a minimal user-mode mapping and sscratch-based trap stack swap.
 - Add minimal user pointer translation and sys_write console output.
-- Add a user-test feature flag and USER_TEST=1 smoke validation for U-mode ecall.
+- Add a user-test feature flag and USER_TEST=1 smoke validation for U-mode ecall (poll sleep + writev).
 - Add UserPtr/UserSlice helpers to validate and copy user buffers.
 - Add minimal sys_read for fd=0 using SBI getchar (EAGAIN when no input).
 - Make user-mode smoke buffer cross-page to exercise UserSlice chunking.
