@@ -37,6 +37,7 @@
 - 早期实现 `rt_sigaction/rt_sigprocmask`，占位接受信号配置请求。
 - 早期实现 `fcntl`，占位支持标准输入输出标志查询/设置。
 - 早期实现 `umask`，返回并更新进程掩码占位。
+- 早期实现 `prctl(PR_SET_NAME/PR_GET_NAME)`，占位处理进程名。
 
 ## 关键数据结构
 - `SyscallAbi`：抽象获取 syscall 号与参数、设置返回值与 `sepc` 前进。

@@ -89,6 +89,7 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_RT_SIGPROCMASK => sys_rt_sigprocmask(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_FCNTL => sys_fcntl(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_UMASK => sys_umask(ctx.args[0]),
+        SYS_PRCTL => sys_prctl(ctx.args[0], ctx.args[1]),
         _ => Err(Errno::NoSys),
     }
 }
@@ -114,6 +115,7 @@ const SYS_RT_SIGACTION: usize = 134;
 const SYS_RT_SIGPROCMASK: usize = 135;
 const SYS_FCNTL: usize = 25;
 const SYS_UMASK: usize = 166;
+const SYS_PRCTL: usize = 167;
 
 const TIOCGWINSZ: usize = 0x5413;
 const SYS_CLOCK_GETTIME: usize = 113;
@@ -146,6 +148,8 @@ const F_GETFD: usize = 1;
 const F_SETFD: usize = 2;
 const F_GETFL: usize = 3;
 const F_SETFL: usize = 4;
+const PR_SET_NAME: usize = 15;
+const PR_GET_NAME: usize = 16;
 
 static RNG_STATE: AtomicU64 = AtomicU64::new(0);
 static UMASK: AtomicU64 = AtomicU64::new(0);
@@ -856,6 +860,38 @@ fn sys_fcntl(fd: usize, cmd: usize, _arg: usize) -> Result<usize, Errno> {
 fn sys_umask(mask: usize) -> Result<usize, Errno> {
     let old = UMASK.swap((mask & 0o777) as u64, Ordering::Relaxed);
     Ok(old as usize)
+}
+
+fn sys_prctl(option: usize, arg2: usize) -> Result<usize, Errno> {
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    match option {
+        PR_SET_NAME => {
+            if arg2 == 0 {
+                return Err(Errno::Fault);
+            }
+            if mm::translate_user_ptr(root_pa, arg2, 1, UserAccess::Read).is_none() {
+                return Err(Errno::Fault);
+            }
+            Ok(0)
+        }
+        PR_GET_NAME => {
+            if arg2 == 0 {
+                return Err(Errno::Fault);
+            }
+            let mut name = [0u8; 16];
+            let src = b"aurora";
+            let copy_len = core::cmp::min(src.len(), name.len() - 1);
+            name[..copy_len].copy_from_slice(&src[..copy_len]);
+            UserSlice::new(arg2, name.len())
+                .copy_from_slice(root_pa, &name)
+                .ok_or(Errno::Fault)?;
+            Ok(0)
+        }
+        _ => Err(Errno::Inval),
+    }
 }
 
 fn load_iovec(root_pa: usize, iov_ptr: usize, index: usize) -> Result<Iovec, Errno> {

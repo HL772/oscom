@@ -65,3 +65,4 @@
 - Add fcntl stub for stdio flags.
 - Add clock_getres stubs using tick resolution.
 - Add umask stub with stored mask.
+- Add prctl stub for process name.
