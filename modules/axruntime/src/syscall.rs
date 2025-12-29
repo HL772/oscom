@@ -90,6 +90,8 @@ fn dispatch(ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_FCNTL => sys_fcntl(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_UMASK => sys_umask(ctx.args[0]),
         SYS_PRCTL => sys_prctl(ctx.args[0], ctx.args[1]),
+        SYS_SCHED_SETAFFINITY => sys_sched_setaffinity(ctx.args[0], ctx.args[1], ctx.args[2]),
+        SYS_SCHED_GETAFFINITY => sys_sched_getaffinity(ctx.args[0], ctx.args[1], ctx.args[2]),
         _ => Err(Errno::NoSys),
     }
 }
@@ -116,6 +118,8 @@ const SYS_RT_SIGPROCMASK: usize = 135;
 const SYS_FCNTL: usize = 25;
 const SYS_UMASK: usize = 166;
 const SYS_PRCTL: usize = 167;
+const SYS_SCHED_SETAFFINITY: usize = 122;
+const SYS_SCHED_GETAFFINITY: usize = 123;
 
 const TIOCGWINSZ: usize = 0x5413;
 const SYS_CLOCK_GETTIME: usize = 113;
@@ -892,6 +896,42 @@ fn sys_prctl(option: usize, arg2: usize) -> Result<usize, Errno> {
         }
         _ => Err(Errno::Inval),
     }
+}
+
+fn sys_sched_setaffinity(_pid: usize, len: usize, mask: usize) -> Result<usize, Errno> {
+    let size = size_of::<usize>();
+    if len < size {
+        return Err(Errno::Inval);
+    }
+    if mask == 0 {
+        return Err(Errno::Fault);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    if mm::translate_user_ptr(root_pa, mask, size, UserAccess::Read).is_none() {
+        return Err(Errno::Fault);
+    }
+    Ok(0)
+}
+
+fn sys_sched_getaffinity(_pid: usize, len: usize, mask: usize) -> Result<usize, Errno> {
+    let size = size_of::<usize>();
+    if len < size {
+        return Err(Errno::Inval);
+    }
+    if mask == 0 {
+        return Err(Errno::Fault);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    UserPtr::<usize>::new(mask)
+        .write(root_pa, 1)
+        .ok_or(Errno::Fault)?;
+    Ok(size)
 }
 
 fn load_iovec(root_pa: usize, iov_ptr: usize, index: usize) -> Result<Iovec, Errno> {
