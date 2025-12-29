@@ -70,6 +70,7 @@
 - Key shared futex waits by physical address to avoid aliasing across address spaces.
 - Fill wait4 rusage with minimal placeholder stats when requested.
 - Add static root and /dev directory entries for getdents64.
+- Extend USER_TEST to cover getdents64 on / and /dev.
 - Extend USER_TEST to cover clone tid writeback validation.
 - Build clone_user_root from kernel mappings to avoid sharing parent page tables.
 - Add PTE_COW and page-fault handling to copy pages on first write.
