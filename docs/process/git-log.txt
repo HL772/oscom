@@ -1,4 +1,30 @@
-* commit 160f8e2f79feae029ad44f73c529a5213297c43f (HEAD -> bootstrap-riscv64)
+* commit c615e9b5378ff80c32f1b74888bdfdc99b09e229 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 17:17:52 +0800
+| 
+|     feat(fs): add fat32 write growth and ramdisk self-test
+| 
+|  CHANGELOG.md                        |   2 +
+|  docs/design/06_fs_vfs.md            |   4 +-
+|  docs/design/10_testing_benchmark.md |   4 +-
+|  docs/process/phase_4_fs.md          |   5 +-
+|  modules/axfs/src/fat32.rs           | 319 +++++++++++++++++++++++++++++-----
+|  modules/axruntime/src/user.rs       |  34 +++-
+|  scripts/test_oscomp.sh              |   5 +-
+|  scripts/test_qemu_smoke.sh          |   9 +
+|  tests/self/README.md                |   2 +-
+|  9 files changed, 327 insertions(+), 57 deletions(-)
+| 
+* commit 833681f234ae9f421a4a83593a0d0d349fbfc668
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 16:52:41 +0800
+| 
+|     chore(process): update git log
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit 160f8e2f79feae029ad44f73c529a5213297c43f
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-30 16:52:22 +0800
 | 
