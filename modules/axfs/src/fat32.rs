@@ -1,4 +1,7 @@
 use axvfs::{DirEntry, FileType, InodeId, Metadata, VfsError, VfsOps, VfsResult, MAX_NAME_LEN};
+use core::cell::UnsafeCell;
+use core::hint::spin_loop;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::block::{BlockCache, BlockDevice, BlockId};
 
@@ -21,10 +24,57 @@ const FAT32_EOC_MIN: u32 = 0x0fff_fff8;
 const ATTR_LONG_NAME: u8 = 0x0f;
 const ATTR_DIRECTORY: u8 = 0x10;
 const ATTR_VOLUME_ID: u8 = 0x08;
+const FAT_SCRATCH_SIZE: usize = 4096;
 const INODE_DIR_FLAG: u64 = 1 << 62;
 const INODE_TAG: u64 = 1 << 63;
 const INODE_CLUSTER_SHIFT: u64 = 32;
 const INODE_CLUSTER_MASK: u64 = 0x3fff_ffff;
+
+struct ScratchLock {
+    locked: AtomicBool,
+    buf: UnsafeCell<[u8; FAT_SCRATCH_SIZE]>,
+}
+
+unsafe impl Sync for ScratchLock {}
+
+impl ScratchLock {
+    const fn new() -> Self {
+        Self {
+            locked: AtomicBool::new(false),
+            buf: UnsafeCell::new([0u8; FAT_SCRATCH_SIZE]),
+        }
+    }
+
+    fn lock(&self) -> ScratchGuard<'_> {
+        while self
+            .locked
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            spin_loop();
+        }
+        ScratchGuard { lock: self }
+    }
+}
+
+struct ScratchGuard<'a> {
+    lock: &'a ScratchLock,
+}
+
+impl<'a> ScratchGuard<'a> {
+    fn get_mut(&self) -> &mut [u8; FAT_SCRATCH_SIZE] {
+        // SAFETY: guard ensures exclusive access to the scratch buffer.
+        unsafe { &mut *self.lock.buf.get() }
+    }
+}
+
+impl Drop for ScratchGuard<'_> {
+    fn drop(&mut self) {
+        self.lock.locked.store(false, Ordering::Release);
+    }
+}
+
+static FAT_SCRATCH: ScratchLock = ScratchLock::new();
 
 #[derive(Clone, Copy, Debug)]
 pub struct Bpb {
@@ -275,6 +325,10 @@ impl<'a> Fat32Fs<'a> {
         self.cache.read_block(sector, buf)
     }
 
+    pub fn write_sector(&self, sector: BlockId, buf: &[u8]) -> VfsResult<()> {
+        self.cache.write_block(sector, buf)
+    }
+
     fn bytes_per_sector(&self) -> usize {
         self.bpb.bytes_per_sector as usize
     }
@@ -307,6 +361,45 @@ impl<'a> Fat32Fs<'a> {
             next[first..].copy_from_slice(&scratch[..FAT_ENTRY_SIZE - first]);
             Ok(u32::from_le_bytes(next) & 0x0fff_ffff)
         }
+    }
+
+    fn write_cluster_bytes(&self, cluster: u32, offset: usize, buf: &[u8]) -> VfsResult<usize> {
+        let cluster_size = self.cluster_size();
+        if offset >= cluster_size || buf.is_empty() {
+            return Ok(0);
+        }
+        let bytes_per_sector = self.bytes_per_sector();
+        if bytes_per_sector == 0 || bytes_per_sector > FAT_SCRATCH_SIZE {
+            return Err(VfsError::Invalid);
+        }
+        let to_write = core::cmp::min(buf.len(), cluster_size - offset);
+        let mut remaining = to_write;
+        let mut written = 0usize;
+        let mut sector = self.cluster_to_sector(cluster);
+        let sector_index = offset / bytes_per_sector;
+        let mut in_sector = offset % bytes_per_sector;
+        sector += sector_index as u32;
+        let guard = FAT_SCRATCH.lock();
+        let scratch = guard.get_mut();
+        while remaining > 0 {
+            let chunk = core::cmp::min(remaining, bytes_per_sector - in_sector);
+            if in_sector == 0 && chunk == bytes_per_sector {
+                self.write_sector(
+                    sector as BlockId,
+                    &buf[written..written + bytes_per_sector],
+                )?;
+            } else {
+                self.read_sector(sector as BlockId, &mut scratch[..bytes_per_sector])?;
+                scratch[in_sector..in_sector + chunk]
+                    .copy_from_slice(&buf[written..written + chunk]);
+                self.write_sector(sector as BlockId, &scratch[..bytes_per_sector])?;
+            }
+            remaining -= chunk;
+            written += chunk;
+            in_sector = 0;
+            sector += 1;
+        }
+        Ok(written)
     }
 
     fn next_cluster(&self, cluster: u32) -> VfsResult<Option<u32>> {
@@ -710,7 +803,49 @@ impl VfsOps for Fat32Fs<'_> {
     }
 
     fn write_at(&self, _inode: InodeId, _offset: u64, _buf: &[u8]) -> VfsResult<usize> {
-        Err(VfsError::NotSupported)
+        if inode_is_dir(_inode) {
+            return Err(VfsError::NotDir);
+        }
+        let size = inode_size(_inode) as usize;
+        let offset = _offset as usize;
+        if size == 0 || offset >= size {
+            return Ok(0);
+        }
+        let to_write = core::cmp::min(_buf.len(), size - offset);
+        if to_write == 0 {
+            return Ok(0);
+        }
+        let cluster_size = self.cluster_size();
+        let mut cluster = inode_cluster(_inode);
+        if cluster < 2 {
+            return Ok(0);
+        }
+        let mut skip = offset / cluster_size;
+        let mut in_cluster = offset % cluster_size;
+        while skip > 0 {
+            match self.next_cluster(cluster)? {
+                Some(next) => cluster = next,
+                None => return Ok(0),
+            }
+            skip -= 1;
+        }
+        let mut remaining = to_write;
+        let mut total = 0usize;
+        while remaining > 0 {
+            let chunk = core::cmp::min(remaining, cluster_size - in_cluster);
+            let wrote = self.write_cluster_bytes(cluster, in_cluster, &_buf[total..total + chunk])?;
+            total += wrote;
+            remaining -= wrote;
+            if remaining == 0 || wrote == 0 {
+                break;
+            }
+            in_cluster = 0;
+            match self.next_cluster(cluster)? {
+                Some(next) => cluster = next,
+                None => break,
+            }
+        }
+        Ok(total)
     }
 
     fn read_dir(&self, inode: InodeId, offset: usize, entries: &mut [DirEntry]) -> VfsResult<usize> {
@@ -769,7 +904,13 @@ mod tests {
         }
 
         fn write_block(&self, _block_id: BlockId, _buf: &[u8]) -> VfsResult<()> {
-            Err(VfsError::NotSupported)
+            let offset = _block_id as usize * self.block_size;
+            let mut data = self.data.borrow_mut();
+            if offset + self.block_size > data.len() {
+                return Err(VfsError::NotFound);
+            }
+            data[offset..offset + self.block_size].copy_from_slice(&_buf[..self.block_size]);
+            Ok(())
         }
 
         fn flush(&self) -> VfsResult<()> {
@@ -822,5 +963,25 @@ mod tests {
         let mut buf = [0u8; 16];
         let read = fs.read_at(inode, 0, &mut buf).unwrap();
         assert_eq!(&buf[..read], file_data);
+    }
+
+    #[test]
+    fn write_existing_file() {
+        let mut data = [0u8; IMAGE_SIZE];
+        let file_data = b"hello-world";
+        build_minimal_image(&mut data, "init", file_data).unwrap();
+        let dev = TestBlockDevice {
+            block_size: 512,
+            data: RefCell::new(data),
+        };
+        let fs = Fat32Fs::new(&dev).unwrap();
+        let root = fs.root().unwrap();
+        let inode = fs.lookup(root, "init").unwrap().unwrap();
+        let written = fs.write_at(inode, 6, b"FAT").unwrap();
+        assert_eq!(written, 3);
+        let mut buf = [0u8; 11];
+        let read = fs.read_at(inode, 0, &mut buf).unwrap();
+        assert_eq!(read, file_data.len());
+        assert_eq!(&buf[..read], b"hello-FATld");
     }
 }

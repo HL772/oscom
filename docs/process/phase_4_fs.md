@@ -27,6 +27,7 @@
 - 增加 /proc 挂载点的目录句柄占位，getdents64 返回最小 `.`/`..` 项。
 - VFS trait 增加 `read_dir` 目录枚举接口，`getdents64` 走统一目录遍历返回。
 - FAT32 完成目录项解析 + 簇链读取，支持 `/init` 文件读取与根目录枚举。
+- FAT32 增加最小 write_at：仅支持已有文件的簇内写入，host 测试覆盖写回路径。
 - 使用内存块设备构建 FAT32 ramdisk 挂载为 rootfs，`/init` 通过 VFS 读取。
 - ext4 增加组描述符 + inode 表读取，目录查找与只读读路径打通。
 - fd 表改为记录通用 VFS 句柄，open/read/write/stat/getdents64 统一走 VFS。

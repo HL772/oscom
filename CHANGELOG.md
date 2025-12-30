@@ -94,6 +94,7 @@
 - Add an ext4 superblock parser and root-inode scaffold for read-path bring-up.
 - Add a VFS read_dir interface and directory entry structure for getdents64.
 - Implement FAT32 directory traversal and cluster-chain reads plus a minimal FAT32 rootfs ramdisk.
+- Add minimal FAT32 write_at support for existing files and cover it in host tests.
 - Implement ext4 group descriptor/inode table parsing with read-only directory lookup and extent depth-0 reads.
 - Switch fd entries to carry VFS handles so open/read/write/stat/getdents64 route through VFS.
 - Load execve images from VFS-backed /init instead of the memfile path.

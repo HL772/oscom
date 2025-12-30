@@ -22,6 +22,7 @@
 - 页缓存以页为单位缓存文件数据，写入采用 write-back + 定期刷盘。
 - 块设备通过 `BlockDevice` 抽象接入 virtio-block，早期以 BlockCache 直通占位。
 - FAT32 完成 BPB 解析、簇链遍历与目录项解析，实现只读文件读取与根目录枚举。
+- FAT32 增加最小 write_at：仅支持已有文件的簇内写入，作为写路径起点。
 - ext4 完成 superblock + 组描述符 + inode 表读取，支持目录查找与只读文件读取（含 extent 树与间接块读路径）。
 - 权限与时间戳语义对齐 Linux，错误码通过 errno 映射返回。
 
