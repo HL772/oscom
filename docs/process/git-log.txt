@@ -1,4 +1,26 @@
-* commit 46898427c8ec1f946c69d0c16e25ab79a8ac6f08 (HEAD -> bootstrap-riscv64)
+* commit 63bc23c2121eb653cb8d25b6257a6e2abc24c55a (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 16:38:17 +0800
+| 
+|     feat(fs): add writable memfs tmp log
+| 
+|  CHANGELOG.md                     |   1 +
+|  docs/design/06_fs_vfs.md         |   1 +
+|  docs/process/phase_4_fs.md       |   1 +
+|  modules/axfs/src/memfs.rs        | 161 ++++++++++++++++++++++++++++++++++++-
+|  modules/axruntime/src/syscall.rs |   5 ++
+|  5 files changed, 166 insertions(+), 3 deletions(-)
+| 
+* commit 31a5706c3fac0c436f0a668204468003e5e401ff
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 16:29:26 +0800
+| 
+|     chore(process): update git log
+| 
+|  docs/process/git-log.txt | 24 +++++++++++++++++++++++-
+|  1 file changed, 23 insertions(+), 1 deletion(-)
+| 
+* commit 46898427c8ec1f946c69d0c16e25ab79a8ac6f08
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-30 16:29:09 +0800
 | 
