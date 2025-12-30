@@ -1,4 +1,34 @@
-* commit e6836446efe1d3f7f5eee72ee17812cf4a5652d9 (HEAD -> bootstrap-riscv64)
+* commit 26dd4a0fef79b72207de5243bb9b4508634a2827 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 09:56:53 +0800
+| 
+|     feat(driver): add virtio-blk rootfs support
+| 
+|  CHANGELOG.md                        |   1 +
+|  Makefile                            |   6 +-
+|  docs/design/06_fs_vfs.md            |   3 +-
+|  docs/design/08_driver_model.md      |   4 +
+|  docs/process/phase_4_fs.md          |   3 +
+|  modules/axruntime/src/dtb.rs        |  56 ++++-
+|  modules/axruntime/src/fs.rs         |  29 +++
+|  modules/axruntime/src/main.rs       |  12 +-
+|  modules/axruntime/src/mm.rs         |  26 ++-
+|  modules/axruntime/src/syscall.rs    |  14 +-
+|  modules/axruntime/src/virtio_blk.rs | 419 ++++++++++++++++++++++++++++++++++
+|  scripts/mkfs_ext4.sh                |  22 ++
+|  tools/build_init_elf.py             |  89 ++++++++
+|  13 files changed, 676 insertions(+), 8 deletions(-)
+| 
+* commit e8a45def458ba41d410ee7b72bd138d52c13bce5
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-29 23:52:56 +0800
+| 
+|     chore(process): refresh git log
+| 
+|  docs/process/git-log.txt | 34 +++++++++++++++++++++++++++++++++-
+|  1 file changed, 33 insertions(+), 1 deletion(-)
+| 
+* commit e6836446efe1d3f7f5eee72ee17812cf4a5652d9
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-29 23:52:29 +0800
 | 
