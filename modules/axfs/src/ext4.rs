@@ -256,83 +256,6 @@ impl<'a> Ext4Fs<'a> {
         }
         Ok(())
     }
-}
-
-impl VfsOps for Ext4Fs<'_> {
-    fn root(&self) -> VfsResult<InodeId> {
-        Ok(EXT4_ROOT_INODE)
-    }
-
-    fn lookup(&self, parent: InodeId, name: &str) -> VfsResult<Option<InodeId>> {
-        let parent_inode = self.read_inode(parent)?;
-        if inode_mode_type(parent_inode.mode) != FileType::Dir {
-            return Err(VfsError::NotDir);
-        }
-        let target = name.as_bytes();
-        let mut found = None;
-        self.scan_dir_entries(&parent_inode, |inode_num, entry_name, _file_type| {
-            if entry_name == target {
-                found = Some(inode_num);
-                return Ok(true);
-            }
-            Ok(false)
-        })?;
-        Ok(found)
-    }
-
-    fn create(&self, _parent: InodeId, _name: &str, _kind: FileType, _mode: u16) -> VfsResult<InodeId> {
-        Err(VfsError::NotSupported)
-    }
-
-    fn remove(&self, _parent: InodeId, _name: &str) -> VfsResult<()> {
-        Err(VfsError::NotSupported)
-    }
-
-    fn metadata(&self, inode: InodeId) -> VfsResult<Metadata> {
-        let inode_meta = self.read_inode(inode)?;
-        let file_type = inode_mode_type(inode_meta.mode);
-        let mode = (inode_meta.mode & 0o777) as u16;
-        Ok(Metadata::new(file_type, inode_meta.size, mode))
-    }
-
-    fn read_at(&self, inode: InodeId, offset: u64, buf: &mut [u8]) -> VfsResult<usize> {
-        let inode_meta = self.read_inode(inode)?;
-        if inode_mode_type(inode_meta.mode) == FileType::Dir {
-            return Err(VfsError::NotDir);
-        }
-        self.read_from_inode(&inode_meta, offset, buf)
-    }
-
-    fn write_at(&self, _inode: InodeId, _offset: u64, _buf: &[u8]) -> VfsResult<usize> {
-        Err(VfsError::NotSupported)
-    }
-
-    fn read_dir(&self, inode: InodeId, offset: usize, entries: &mut [DirEntry]) -> VfsResult<usize> {
-        let inode_meta = self.read_inode(inode)?;
-        if inode_mode_type(inode_meta.mode) != FileType::Dir {
-            return Err(VfsError::NotDir);
-        }
-        let mut index = 0usize;
-        let mut written = 0usize;
-        self.scan_dir_entries(&inode_meta, |inode_num, name, file_type| {
-            if index < offset {
-                index += 1;
-                return Ok(false);
-            }
-            if written >= entries.len() {
-                return Ok(true);
-            }
-            let mut entry = DirEntry::empty();
-            entry.ino = inode_num;
-            entry.file_type = file_type;
-            entry.set_name(name)?;
-            entries[written] = entry;
-            written += 1;
-            index += 1;
-            Ok(false)
-        })?;
-        Ok(written)
-    }
 
     fn map_extent_tree(&self, inode: &Ext4Inode, logical: u32) -> VfsResult<Option<u64>> {
         let mut raw = [0u8; INODE_BLOCK_LEN];
@@ -435,6 +358,84 @@ impl VfsOps for Ext4Fs<'_> {
         let offset = block * block_size as u64;
         read_bytes(&self.cache, offset, &mut buf[..block_size])
     }
+}
+
+impl VfsOps for Ext4Fs<'_> {
+    fn root(&self) -> VfsResult<InodeId> {
+        Ok(EXT4_ROOT_INODE)
+    }
+
+    fn lookup(&self, parent: InodeId, name: &str) -> VfsResult<Option<InodeId>> {
+        let parent_inode = self.read_inode(parent)?;
+        if inode_mode_type(parent_inode.mode) != FileType::Dir {
+            return Err(VfsError::NotDir);
+        }
+        let target = name.as_bytes();
+        let mut found = None;
+        self.scan_dir_entries(&parent_inode, |inode_num, entry_name, _file_type| {
+            if entry_name == target {
+                found = Some(inode_num);
+                return Ok(true);
+            }
+            Ok(false)
+        })?;
+        Ok(found)
+    }
+
+    fn create(&self, _parent: InodeId, _name: &str, _kind: FileType, _mode: u16) -> VfsResult<InodeId> {
+        Err(VfsError::NotSupported)
+    }
+
+    fn remove(&self, _parent: InodeId, _name: &str) -> VfsResult<()> {
+        Err(VfsError::NotSupported)
+    }
+
+    fn metadata(&self, inode: InodeId) -> VfsResult<Metadata> {
+        let inode_meta = self.read_inode(inode)?;
+        let file_type = inode_mode_type(inode_meta.mode);
+        let mode = (inode_meta.mode & 0o777) as u16;
+        Ok(Metadata::new(file_type, inode_meta.size, mode))
+    }
+
+    fn read_at(&self, inode: InodeId, offset: u64, buf: &mut [u8]) -> VfsResult<usize> {
+        let inode_meta = self.read_inode(inode)?;
+        if inode_mode_type(inode_meta.mode) == FileType::Dir {
+            return Err(VfsError::NotDir);
+        }
+        self.read_from_inode(&inode_meta, offset, buf)
+    }
+
+    fn write_at(&self, _inode: InodeId, _offset: u64, _buf: &[u8]) -> VfsResult<usize> {
+        Err(VfsError::NotSupported)
+    }
+
+    fn read_dir(&self, inode: InodeId, offset: usize, entries: &mut [DirEntry]) -> VfsResult<usize> {
+        let inode_meta = self.read_inode(inode)?;
+        if inode_mode_type(inode_meta.mode) != FileType::Dir {
+            return Err(VfsError::NotDir);
+        }
+        let mut index = 0usize;
+        let mut written = 0usize;
+        self.scan_dir_entries(&inode_meta, |inode_num, name, file_type| {
+            if index < offset {
+                index += 1;
+                return Ok(false);
+            }
+            if written >= entries.len() {
+                return Ok(true);
+            }
+            let mut entry = DirEntry::empty();
+            entry.ino = inode_num;
+            entry.file_type = file_type;
+            entry.set_name(name)?;
+            entries[written] = entry;
+            written += 1;
+            index += 1;
+            Ok(false)
+        })?;
+        Ok(written)
+    }
+
 }
 
 fn read_bytes(cache: &BlockCache<'_>, offset: u64, buf: &mut [u8]) -> VfsResult<()> {
@@ -616,7 +617,7 @@ mod tests {
 
     #[test]
     fn lookup_and_read_init_extent_tree() {
-        let mut data = [0u8; 64 * 1024];
+        let mut data = [0u8; 32 * 1024];
         let file_data = b"extent-tree";
         build_ext4_with_extent_tree(&mut data, file_data);
         let dev = TestBlockDevice {
@@ -633,7 +634,7 @@ mod tests {
 
     #[test]
     fn read_indirect_block() {
-        let mut data = [0u8; 96 * 1024];
+        let mut data = [0u8; 32 * 1024];
         let file_data = b"indirect";
         build_ext4_with_indirect(&mut data, file_data);
         let dev = TestBlockDevice {
@@ -643,9 +644,10 @@ mod tests {
         let fs = Ext4Fs::new(&dev).unwrap();
         let root = fs.root().unwrap();
         let inode = fs.lookup(root, "init").unwrap().unwrap();
-        let mut buf = [0u8; 16];
+        let mut buf = [0u8; 8];
         let offset = (1024 * 12) as u64;
         let read = fs.read_at(inode, offset, &mut buf).unwrap();
+        assert_eq!(read, file_data.len());
         assert_eq!(&buf[..read], file_data);
     }
 
