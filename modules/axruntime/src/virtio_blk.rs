@@ -9,6 +9,8 @@ use axfs::{VfsError, VfsResult};
 use crate::dtb::VirtioMmioDevice;
 use crate::mm;
 use crate::plic;
+use crate::wait::WaitResult;
+use crate::wait_queue::WaitQueue;
 
 const VIRTIO_MMIO_MAGIC: u32 = 0x7472_6976;
 const VIRTIO_MMIO_VERSION: u32 = 2;
@@ -45,6 +47,7 @@ const STATUS_FAILED: u32 = 128;
 
 const QUEUE_SIZE: usize = 8;
 const SECTOR_SIZE: usize = 512;
+const VIRTIO_BLK_WAIT_TIMEOUT_MS: u64 = 20;
 
 const DESC_F_NEXT: u16 = 1;
 const DESC_F_WRITE: u16 = 2;
@@ -57,6 +60,9 @@ static VIRTIO_BLK_BASE: AtomicUsize = AtomicUsize::new(0);
 static VIRTIO_BLK_QUEUE_SIZE: AtomicUsize = AtomicUsize::new(0);
 static VIRTIO_BLK_USED_IDX: AtomicUsize = AtomicUsize::new(0);
 static VIRTIO_BLK_IRQ: AtomicUsize = AtomicUsize::new(0);
+// 单队列同步 I/O：inflight 保障互斥，waiters 用于 IRQ 唤醒阻塞等待者。
+static VIRTIO_BLK_INFLIGHT: AtomicBool = AtomicBool::new(false);
+static VIRTIO_BLK_WAITERS: WaitQueue = WaitQueue::new();
 static VIRTIO_QUEUE_LOCK: SpinLock = SpinLock::new();
 static VIRTIO_BLK_DEVICE: VirtioBlkDevice = VirtioBlkDevice;
 static VIRTIO_QUEUE: QueueCell = QueueCell::new();
@@ -182,76 +188,86 @@ fn submit_request(req_type: u32, block_id: BlockId, buf: &mut [u8]) -> VfsResult
     if !VIRTIO_BLK_READY.load(Ordering::Acquire) {
         return Err(VfsError::NotSupported);
     }
-    let _guard = VIRTIO_QUEUE_LOCK.lock();
     let base = VIRTIO_BLK_BASE.load(Ordering::Acquire);
     let queue_size = VIRTIO_BLK_QUEUE_SIZE.load(Ordering::Acquire);
     if base == 0 || queue_size == 0 {
         return Err(VfsError::NotSupported);
     }
-    let queue = VIRTIO_QUEUE.get();
-    let req = VirtioBlkReq {
-        type_: req_type,
-        reserved: 0,
-        sector: block_id,
-    };
-    queue.req = req;
-    queue.status = 0xff;
 
-    let req_addr = mm::kernel_virt_to_phys(queue.req_addr()) as u64;
-    let buf_addr = mm::kernel_virt_to_phys(buf.as_ptr() as usize) as u64;
-    let status_addr = mm::kernel_virt_to_phys(queue.status_addr()) as u64;
-
-    queue.desc[0] = VirtqDesc {
-        addr: req_addr,
-        len: core::mem::size_of::<VirtioBlkReq>() as u32,
-        flags: DESC_F_NEXT,
-        next: 1,
-    };
-    queue.desc[1] = VirtqDesc {
-        addr: buf_addr,
-        len: buf.len() as u32,
-        flags: if req_type == VIRTIO_BLK_T_IN {
-            DESC_F_WRITE | DESC_F_NEXT
-        } else {
-            DESC_F_NEXT
-        },
-        next: 2,
-    };
-    queue.desc[2] = VirtqDesc {
-        addr: status_addr,
-        len: 1,
-        flags: DESC_F_WRITE,
-        next: 0,
-    };
-
-    let avail_idx = queue.avail.idx;
-    queue.avail.ring[(avail_idx as usize) % queue_size] = 0;
-    fence(Ordering::SeqCst);
-    queue.avail.idx = avail_idx.wrapping_add(1);
-
-    fence(Ordering::SeqCst);
-    mmio_write32(base, MMIO_QUEUE_NOTIFY, 0);
-
-    let mut last_used = VIRTIO_BLK_USED_IDX.load(Ordering::Acquire) as u16;
     loop {
-        let used_idx = unsafe { ptr::read_volatile(&queue.used.idx) };
-        if used_idx != last_used {
-            last_used = used_idx;
-            VIRTIO_BLK_USED_IDX.store(last_used as usize, Ordering::Release);
-            break;
+        if VIRTIO_BLK_INFLIGHT.load(Ordering::Acquire) {
+            wait_for_queue_event();
+            continue;
         }
-        if VIRTIO_BLK_IRQ.load(Ordering::Acquire) != 0 {
-            crate::cpu::wait_for_interrupt();
-        } else {
-            spin_loop();
-        }
-    }
 
-    let status = unsafe { ptr::read_volatile(&queue.status) };
-    if status != 0 {
-        return Err(VfsError::Io);
+        let _guard = VIRTIO_QUEUE_LOCK.lock();
+        if VIRTIO_BLK_INFLIGHT.load(Ordering::Acquire) {
+            drop(_guard);
+            wait_for_queue_event();
+            continue;
+        }
+        VIRTIO_BLK_INFLIGHT.store(true, Ordering::Release);
+
+        let status = {
+            let queue = VIRTIO_QUEUE.get();
+            let req = VirtioBlkReq {
+                type_: req_type,
+                reserved: 0,
+                sector: block_id,
+            };
+            queue.req = req;
+            queue.status = 0xff;
+
+            let req_addr = mm::kernel_virt_to_phys(queue.req_addr()) as u64;
+            let buf_addr = mm::kernel_virt_to_phys(buf.as_ptr() as usize) as u64;
+            let status_addr = mm::kernel_virt_to_phys(queue.status_addr()) as u64;
+
+            queue.desc[0] = VirtqDesc {
+                addr: req_addr,
+                len: core::mem::size_of::<VirtioBlkReq>() as u32,
+                flags: DESC_F_NEXT,
+                next: 1,
+            };
+            queue.desc[1] = VirtqDesc {
+                addr: buf_addr,
+                len: buf.len() as u32,
+                flags: if req_type == VIRTIO_BLK_T_IN {
+                    DESC_F_WRITE | DESC_F_NEXT
+                } else {
+                    DESC_F_NEXT
+                },
+                next: 2,
+            };
+            queue.desc[2] = VirtqDesc {
+                addr: status_addr,
+                len: 1,
+                flags: DESC_F_WRITE,
+                next: 0,
+            };
+
+            let avail_idx = queue.avail.idx;
+            queue.avail.ring[(avail_idx as usize) % queue_size] = 0;
+            fence(Ordering::SeqCst);
+            queue.avail.idx = avail_idx.wrapping_add(1);
+
+            fence(Ordering::SeqCst);
+            mmio_write32(base, MMIO_QUEUE_NOTIFY, 0);
+
+            let mut last_used = VIRTIO_BLK_USED_IDX.load(Ordering::Acquire) as u16;
+            drop(_guard);
+            wait_for_completion(queue, &mut last_used);
+
+            unsafe { ptr::read_volatile(&queue.status) }
+        };
+
+        VIRTIO_BLK_INFLIGHT.store(false, Ordering::Release);
+        let _ = VIRTIO_BLK_WAITERS.notify_all();
+
+        if status != 0 {
+            return Err(VfsError::Io);
+        }
+        return Ok(());
     }
-    Ok(())
 }
 
 pub fn handle_irq(irq: u32) -> bool {
@@ -268,6 +284,7 @@ pub fn handle_irq(irq: u32) -> bool {
         mmio_write32(base, MMIO_INTERRUPT_ACK, status);
         fence(Ordering::SeqCst);
     }
+    let _ = VIRTIO_BLK_WAITERS.notify_all();
     true
 }
 
@@ -420,6 +437,29 @@ fn write_driver_features(base: usize, features: u64) {
     mmio_write32(base, MMIO_DRIVER_FEATURES, features as u32);
     mmio_write32(base, MMIO_DRIVER_FEATURES_SEL, 1);
     mmio_write32(base, MMIO_DRIVER_FEATURES, (features >> 32) as u32);
+}
+
+fn wait_for_queue_event() {
+    if VIRTIO_BLK_IRQ.load(Ordering::Acquire) != 0 {
+        let result = VIRTIO_BLK_WAITERS.wait_timeout_ms(VIRTIO_BLK_WAIT_TIMEOUT_MS);
+        if result == WaitResult::Timeout {
+            crate::cpu::wait_for_interrupt();
+        }
+    } else {
+        spin_loop();
+    }
+}
+
+fn wait_for_completion(queue: &VirtioBlkQueue, last_used: &mut u16) {
+    loop {
+        let used_idx = unsafe { ptr::read_volatile(&queue.used.idx) };
+        if used_idx != *last_used {
+            *last_used = used_idx;
+            VIRTIO_BLK_USED_IDX.store(used_idx as usize, Ordering::Release);
+            break;
+        }
+        wait_for_queue_event();
+    }
 }
 
 impl VirtioBlkQueue {

@@ -31,6 +31,7 @@
 - fd 表改为记录通用 VFS 句柄，open/read/write/stat/getdents64 统一走 VFS。
 - 新增 DTB virtio-mmio 枚举与 MMIO 映射，初始化 virtio-blk 驱动作为 BlockDevice。
 - rootfs 支持 virtio-blk 外部镜像挂载 ext4/FAT32，失败回退到 ramdisk。
+- virtio-blk 请求等待改为 IRQ 唤醒 + wait queue 阻塞；无 IRQ 时回退轮询。
 - 新增 `tools/build_init_elf.py` 与 `scripts/mkfs_ext4.sh` 生成最小 ext4 镜像用于 QEMU 测试。
 - ext4 读路径扩展到 extent 树深度>0 与间接块（single/double/triple）。
 - 增加 extent 树与间接块覆盖的单元测试。
