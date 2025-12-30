@@ -1,4 +1,27 @@
-* commit 57ae05a3ff1633f85be8d185e18e82000195fbbe (HEAD -> bootstrap-riscv64)
+* commit 99f411d233042a81c9dee7afb480d9e3a3d0da48 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 15:25:00 +0800
+| 
+|     feat(fs): add /etc/issue to ext4 selftest
+| 
+|  CHANGELOG.md                        | 2 +-
+|  docs/design/10_testing_benchmark.md | 2 +-
+|  docs/process/phase_4_fs.md          | 2 +-
+|  modules/axfs/src/ext4.rs            | 8 ++++++++
+|  scripts/mkfs_ext4.sh                | 2 ++
+|  tests/self/README.md                | 2 +-
+|  6 files changed, 14 insertions(+), 4 deletions(-)
+| 
+* commit d6504f40c068d924a2e3d56d6d0f0cd5ba1a498f
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 15:20:27 +0800
+| 
+|     chore(process): update git log
+| 
+|  docs/process/git-log.txt | 20 +++++++++++++++++++-
+|  1 file changed, 19 insertions(+), 1 deletion(-)
+| 
+* commit 57ae05a3ff1633f85be8d185e18e82000195fbbe
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-30 15:20:14 +0800
 | 
