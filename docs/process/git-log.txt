@@ -1,4 +1,41 @@
-* commit 99f411d233042a81c9dee7afb480d9e3a3d0da48 (HEAD -> bootstrap-riscv64)
+* commit 3e2ae9bbac95a8f908fc459acba754c2873c8652 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 16:19:05 +0800
+| 
+|     test(fs): enumerate ext4 dirs in host check
+| 
+|  docs/design/10_testing_benchmark.md |  2 +-
+|  docs/process/phase_4_fs.md          |  2 +-
+|  modules/axfs/src/ext4.rs            | 37 ++++++++++++++++++++++++++++++++---
+|  tests/self/README.md                |  2 +-
+|  4 files changed, 37 insertions(+), 6 deletions(-)
+| 
+* commit d0fcd48f455c391c340dda2f6b924074944af808
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 16:13:37 +0800
+| 
+|     feat(fs): add init issue check and ext4 scratch
+| 
+|  CHANGELOG.md                        |  2 ++
+|  docs/design/10_testing_benchmark.md |  2 +-
+|  docs/process/phase_4_fs.md          |  2 ++
+|  modules/axfs/src/ext4.rs            | 62 +++++++++++++++++++++++++++++++----
+|  modules/axruntime/src/user.rs       | 46 +++++++++++++++++++++++---
+|  scripts/test_qemu_smoke.sh          |  8 +++++
+|  tests/self/README.md                |  1 +
+|  tools/build_init_elf.py             | 41 ++++++++++++++++++++---
+|  8 files changed, 147 insertions(+), 17 deletions(-)
+| 
+* commit 3b6af11b48d8131c10bc717e6cf0d47a3a15938d
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 15:25:13 +0800
+| 
+|     chore(process): update git log
+| 
+|  docs/process/git-log.txt | 25 ++++++++++++++++++++++++-
+|  1 file changed, 24 insertions(+), 1 deletion(-)
+| 
+* commit 99f411d233042a81c9dee7afb480d9e3a3d0da48
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-30 15:25:00 +0800
 | 
