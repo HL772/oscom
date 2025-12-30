@@ -32,9 +32,11 @@
 - 新增 DTB virtio-mmio 枚举与 MMIO 映射，初始化 virtio-blk 驱动作为 BlockDevice。
 - rootfs 支持 virtio-blk 外部镜像挂载 ext4/FAT32，失败回退到 ramdisk。
 - 新增 `tools/build_init_elf.py` 与 `scripts/mkfs_ext4.sh` 生成最小 ext4 镜像用于 QEMU 测试。
+- ext4 读路径扩展到 extent 树深度>0 与间接块（single/double/triple）。
+- 增加 extent 树与间接块覆盖的单元测试。
 
 ## 问题与定位
-- ext4 仅覆盖 extents 深度为 0 的直读路径，复杂目录需要后续补齐。
+- ext4 extent 深度>0 与间接块读路径已经补齐，后续仍需覆盖写路径。
 
 ## 解决与验证
 - `cargo test -p axfs`

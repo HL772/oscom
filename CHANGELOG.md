@@ -104,6 +104,7 @@
 - Add frame refcounting and release of user address spaces on waitpid/execve.
 - Extend user-mode smoke to cover clone/wait4 and CoW write path validation.
 - Add virtio-blk MMIO support and prefer external rootfs images over the ramdisk.
+- Extend ext4 read path to handle extent trees and indirect blocks.
 - Re-enable interrupts in idle so blocking syscalls can sleep and resume.
 - Extend user-mode smoke to cover multi-fd ppoll timeout path.
 - Track O_NONBLOCK via fcntl and honor it for pipe reads/writes.
