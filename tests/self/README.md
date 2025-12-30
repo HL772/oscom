@@ -5,7 +5,7 @@ This directory contains the minimal self-test cases used by `make test-oscomp`.
 Cases:
 - ramdisk: boot from the built-in FAT32 rootfs and run the user-mode smoke path.
 - ext4: boot from an ext4 image created by `scripts/mkfs_ext4.sh` and exec `/init`.
-- ext4-init: host-side ext4 image check that opens `/init` via VFS, validates ELF magic, and reads `/etc/issue`.
+- ext4-init: host-side ext4 image check that enumerates root and `/etc` via `read_dir` offsets, opens `/init`, validates ELF magic, and reads `/etc/issue`.
 
 Notes:
 - ext4-init reads the image path from `AXFS_EXT4_IMAGE` (set by `scripts/test_oscomp.sh`).

@@ -742,9 +742,24 @@ mod tests {
         };
         let fs = Ext4Fs::new(&dev).expect("open ext4 image");
         let root = fs.root().expect("root inode");
-        let mut entries = [DirEntry::empty(); 16];
-        let count = fs.read_dir(root, 0, &mut entries).expect("read root dir");
-        assert!(entries[..count].iter().any(|e| e.name() == b"init"));
+        let mut entries = [DirEntry::empty(); 2];
+        let mut root_names: Vec<Vec<u8>> = Vec::new();
+        let mut offset = 0usize;
+        loop {
+            let count = fs.read_dir(root, offset, &mut entries).expect("read root dir");
+            if count == 0 {
+                break;
+            }
+            for entry in &entries[..count] {
+                let name = entry.name();
+                if name != b"." && name != b".." {
+                    root_names.push(name.to_vec());
+                }
+            }
+            offset += count;
+        }
+        assert!(root_names.iter().any(|name| name == b"init"));
+        assert!(root_names.iter().any(|name| name == b"etc"));
         let inode = fs.lookup(root, "init").expect("lookup init").expect("init inode");
         let meta = fs.metadata(inode).expect("init metadata");
         let mut buf = vec![0u8; 8192];
@@ -758,6 +773,22 @@ mod tests {
         }
 
         let etc_inode = fs.lookup(root, "etc").expect("lookup etc").expect("etc inode");
+        let mut etc_names: Vec<Vec<u8>> = Vec::new();
+        let mut etc_offset = 0usize;
+        loop {
+            let count = fs.read_dir(etc_inode, etc_offset, &mut entries).expect("read /etc");
+            if count == 0 {
+                break;
+            }
+            for entry in &entries[..count] {
+                let name = entry.name();
+                if name != b"." && name != b".." {
+                    etc_names.push(name.to_vec());
+                }
+            }
+            etc_offset += count;
+        }
+        assert!(etc_names.iter().any(|name| name == b"issue"));
         let issue_inode = fs.lookup(etc_inode, "issue").expect("lookup issue").expect("issue inode");
         let expected_issue = b"Aurora ext4 test\n";
         let mut issue_buf = vec![0u8; expected_issue.len()];
