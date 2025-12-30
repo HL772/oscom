@@ -658,10 +658,18 @@ pub fn alloc_user_root() -> Option<usize> {
     if kernel_root_pa == 0 {
         return None;
     }
+    // 复制内核映射前先切换到内核根表，避免依赖旧用户页表内容。
+    let current_root = current_root_pa();
+    if current_root != kernel_root_pa {
+        switch_root(kernel_root_pa);
+    }
     // SAFETY: allocate a fresh root page table and copy kernel mappings.
     let root = unsafe { alloc_page_table()? };
     let kernel_root = unsafe { &*(kernel_root_pa as *const PageTable) };
     root.entries = kernel_root.entries;
+    if current_root != kernel_root_pa {
+        switch_root(current_root);
+    }
     Some(virt_to_phys(root as *const _ as usize))
 }
 

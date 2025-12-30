@@ -52,6 +52,8 @@
 - 增加最小进程表（state/ppid/exit_code），以 TaskId+1 作为早期 PID 占位。
 - 增加 wait4/waitpid：父进程阻塞等待队列、WNOHANG 支持、Zombie 回收与 exit_code 回写。
 - waitpid 等待改为循环阻塞重试，避免递归栈增长。
+- waitpid 等待改为短超时重试，避免错过唤醒导致永久阻塞。
+- 调度切换前切换到目标任务页表，保证用户态访问上下文一致。
 - sys_exit 退出时标记 Zombie 并唤醒父进程等待队列。
 - 用户任务保存 user root/entry/sp 与 trapframe 指针，支持调度后从 __trap_return 恢复回用户态。
 - 增加 clone：复制 trapframe 并创建子任务，结合 CoW 页表返回子 PID。

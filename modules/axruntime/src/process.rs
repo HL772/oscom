@@ -143,6 +143,7 @@ pub fn set_clear_tid(pid: usize, tidptr: usize) -> bool {
 
 pub fn waitpid(target: isize, status: usize, options: usize) -> Result<usize, Errno> {
     const WNOHANG: usize = 1;
+    const WAITPID_RETRY_MS: u64 = 10;
     let Some(parent_pid) = current_pid() else {
         return Err(Errno::Child);
     };
@@ -208,6 +209,7 @@ pub fn waitpid(target: isize, status: usize, options: usize) -> Result<usize, Er
         if (options & WNOHANG) != 0 || !crate::syscall::can_block_current() {
             return Ok(0);
         }
-        crate::runtime::block_current(&PROC_WAITERS[parent_idx]);
+        // 使用超时重试避免错过 wakeup 导致永久阻塞。
+        let _ = crate::runtime::wait_timeout_ms(&PROC_WAITERS[parent_idx], WAITPID_RETRY_MS);
     }
 }

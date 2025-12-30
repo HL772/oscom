@@ -150,11 +150,14 @@ const USER_CODE: [u8; 712] = [
 ];
 
 pub fn prepare_user_test() -> Option<UserContext> {
-    let root_pa = mm::kernel_root_pa();
-    if root_pa == 0 {
-        return None;
+    let root_pa = mm::alloc_user_root()?;
+    match load_user_image(root_pa) {
+        Some(ctx) => Some(ctx),
+        None => {
+            mm::release_user_root(root_pa);
+            None
+        }
     }
-    load_user_image(root_pa)
 }
 
 pub fn load_user_image(root_pa: usize) -> Option<UserContext> {

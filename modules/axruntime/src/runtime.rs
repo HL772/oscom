@@ -209,7 +209,9 @@ pub fn spawn_forked_user(
     let _ = task::set_trap_frame(task_id, trap_frame_ptr);
     let _ = task::set_user_context(task_id, child_root_pa, parent_tf.sepc.wrapping_add(4), user_sp);
     let _ = task::set_user_sp(task_id, user_sp);
-    let parent_pid = crate::process::current_pid().unwrap_or(1);
+    let parent_pid = crate::process::current_pid()
+        .or_else(|| current_task_id().map(|id| id + 1))
+        .unwrap_or(1);
     let pid = crate::process::init_process(task_id, parent_pid, child_root_pa);
     let _ = RUN_QUEUE.push(task_id);
     NEED_RESCHED.store(true, Ordering::Relaxed);
@@ -262,6 +264,13 @@ pub fn schedule_once() {
         Some(ptr) => ptr,
         None => return,
     };
+    // 切换到目标任务地址空间，保证后续用户态访存/恢复路径一致。
+    let next_root = task::user_root_pa(next_id).unwrap_or(0);
+    if next_root != 0 {
+        mm::switch_root(next_root);
+    } else {
+        mm::switch_root(mm::kernel_root_pa());
+    }
 
     // SAFETY: single-hart early use; only switching between idle and one task.
     unsafe {
@@ -512,6 +521,7 @@ pub fn wake_one(queue: &TaskWaitQueue) -> bool {
         }
         if RUN_QUEUE.push(task_id) {
             let _ = task::set_wait_reason(task_id, WaitReason::Notified);
+            NEED_RESCHED.store(true, Ordering::Relaxed);
             return true;
         }
         let _ = task::transition_state(task_id, TaskState::Ready, TaskState::Blocked);
@@ -537,6 +547,7 @@ pub fn wake_all(queue: &TaskWaitQueue) -> usize {
         if RUN_QUEUE.push(task_id) {
             let _ = task::set_wait_reason(task_id, WaitReason::Notified);
             woke += 1;
+            NEED_RESCHED.store(true, Ordering::Relaxed);
             continue;
         }
         let _ = task::transition_state(task_id, TaskState::Ready, TaskState::Blocked);

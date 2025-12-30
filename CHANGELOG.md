@@ -118,7 +118,7 @@
 - Add chdir/fchdir stubs allowing root only.
 - Add close stub for stdio fds.
 - Add getrlimit/prlimit64 stubs with default limits.
-- Replace external OSComp runner with internal self-test cases (ramdisk/ext4) and log to build/selftest.
+- Switch test-oscomp to internal self-test cases (ramdisk/ext4) and log to build/selftest.
 - Add ioctl stubs for TIOCGWINSZ/TIOCSWINSZ/TIOCGPGRP/TIOCSPGRP/TIOCSCTTY/TCGETS/TCSETS.
 - Add nanosleep stub using scheduler sleep when available.
 - Add sysinfo stub for uptime and memory size.
@@ -139,5 +139,5 @@
 - Add getrusage stub returning monotonic user time.
 - Add setpgid/getpgid/getsid/setsid/getpgrp/setpgrp stubs (TaskId+1 when available).
 - Add getgroups/setgroups stubs returning empty groups.
-- Add OSComp test runner script with external harness integration and log summaries.
+- Add test runner script for internal self-test cases and log summaries.
 - Add PLIC-backed external IRQ handling and virtio-blk interrupt-driven completion.
