@@ -1,4 +1,29 @@
-* commit b35d4d1c7ba14b2b058e373cde0bf8a49aa97b8e (HEAD -> bootstrap-riscv64)
+* commit e4153cde655c1922e7a3f0f2449d3328f2b4f40e (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 15:16:15 +0800
+| 
+|     feat(fs): log ext4 mount and extend tests
+| 
+|  CHANGELOG.md                        |  2 ++
+|  docs/design/10_testing_benchmark.md |  2 +-
+|  docs/process/phase_4_fs.md          |  5 +++--
+|  modules/axfs/src/ext4.rs            | 15 ++++++++++++---
+|  modules/axruntime/src/syscall.rs    | 18 +++++++++++++++++-
+|  scripts/test_oscomp.sh              |  4 +++-
+|  scripts/test_qemu_smoke.sh          |  9 +++++++++
+|  tests/self/README.md                |  1 +
+|  8 files changed, 48 insertions(+), 8 deletions(-)
+| 
+* commit 5cf1a2ee84375a53e1e51f6fd8bc67be149bb57c
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 14:56:20 +0800
+| 
+|     chore(process): refresh git log
+| 
+|  docs/process/git-log.txt | 30 +++++++++++++++++++++++++++++-
+|  1 file changed, 29 insertions(+), 1 deletion(-)
+| 
+* commit b35d4d1c7ba14b2b058e373cde0bf8a49aa97b8e
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-30 14:55:54 +0800
 | 
