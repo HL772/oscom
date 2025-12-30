@@ -1,4 +1,25 @@
-* commit 63bc23c2121eb653cb8d25b6257a6e2abc24c55a (HEAD -> bootstrap-riscv64)
+* commit ef9b69907def5ad4da24f55d847cb0b028ad4e4a (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 16:47:02 +0800
+| 
+|     test(syscall): cover devfs write in user test
+| 
+|  CHANGELOG.md                            |  1 +
+|  docs/design/10_testing_benchmark.md     |  2 +-
+|  docs/process/phase_3_process_syscall.md |  2 +-
+|  modules/axruntime/src/user.rs           | 33 +++++++++++++++++++++++++++----
+|  4 files changed, 32 insertions(+), 6 deletions(-)
+| 
+* commit 51553311095870116511372790dc76c698465b6a
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 16:38:37 +0800
+| 
+|     chore(process): update git log
+| 
+|  docs/process/git-log.txt | 24 +++++++++++++++++++++++-
+|  1 file changed, 23 insertions(+), 1 deletion(-)
+| 
+* commit 63bc23c2121eb653cb8d25b6257a6e2abc24c55a
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-30 16:38:17 +0800
 | 
