@@ -99,6 +99,7 @@
 - Load execve images from VFS-backed /init instead of the memfile path.
 - Allow opening /proc as a directory and return minimal entries via getdents64.
 - Extend USER_TEST to cover getdents64 on / and /dev.
+- Extend USER_TEST to write /dev/null via VFS.
 - Extend USER_TEST to cover clone tid writeback validation.
 - Build clone_user_root from kernel mappings to avoid sharing parent page tables.
 - Add PTE_COW and page-fault handling to copy pages on first write.
