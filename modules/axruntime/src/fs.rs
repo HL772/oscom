@@ -16,14 +16,13 @@ static mut ROOTFS_IMAGE: [u8; ROOTFS_IMAGE_MAX] = [0; ROOTFS_IMAGE_MAX];
 
 #[derive(Clone, Copy)]
 pub struct RootFsDevice {
-    image: &'static [u8],
+    size: usize,
 }
 
 impl RootFsDevice {
     pub fn new() -> Self {
-        Self {
-            image: rootfs_image(),
-        }
+        let image = rootfs_image();
+        Self { size: image.len() }
     }
 }
 
@@ -34,16 +33,28 @@ impl BlockDevice for RootFsDevice {
 
     fn read_block(&self, block_id: BlockId, buf: &mut [u8]) -> VfsResult<()> {
         let offset = block_id as usize * ROOTFS_BLOCK_SIZE;
-        if offset + ROOTFS_BLOCK_SIZE > self.image.len() || buf.len() < ROOTFS_BLOCK_SIZE {
+        if offset + ROOTFS_BLOCK_SIZE > self.size || buf.len() < ROOTFS_BLOCK_SIZE {
             return Err(VfsError::NotFound);
         }
-        buf[..ROOTFS_BLOCK_SIZE]
-            .copy_from_slice(&self.image[offset..offset + ROOTFS_BLOCK_SIZE]);
+        // SAFETY: rootfs image is initialized once at boot and resides in static memory.
+        unsafe {
+            buf[..ROOTFS_BLOCK_SIZE]
+                .copy_from_slice(&ROOTFS_IMAGE[offset..offset + ROOTFS_BLOCK_SIZE]);
+        }
         Ok(())
     }
 
-    fn write_block(&self, _block_id: BlockId, _buf: &[u8]) -> VfsResult<()> {
-        Err(VfsError::NotSupported)
+    fn write_block(&self, block_id: BlockId, buf: &[u8]) -> VfsResult<()> {
+        let offset = block_id as usize * ROOTFS_BLOCK_SIZE;
+        if offset + ROOTFS_BLOCK_SIZE > self.size || buf.len() < ROOTFS_BLOCK_SIZE {
+            return Err(VfsError::NotFound);
+        }
+        // SAFETY: rootfs image is mutable in the single-core early stage.
+        unsafe {
+            ROOTFS_IMAGE[offset..offset + ROOTFS_BLOCK_SIZE]
+                .copy_from_slice(&buf[..ROOTFS_BLOCK_SIZE]);
+        }
+        Ok(())
     }
 
     fn flush(&self) -> VfsResult<()> {

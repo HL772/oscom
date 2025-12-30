@@ -33,6 +33,7 @@
 - fd 表改为记录通用 VFS 句柄，open/read/write/stat/getdents64 统一走 VFS。
 - 新增 DTB virtio-mmio 枚举与 MMIO 映射，初始化 virtio-blk 驱动作为 BlockDevice。
 - rootfs 支持 virtio-blk 外部镜像挂载 ext4/FAT32，失败回退到 ramdisk。
+- ramdisk rootfs 允许写回到内存镜像，支持 FAT32 写入回读验证。
 - virtio-blk 请求等待改为 IRQ 唤醒 + wait queue 阻塞；无 IRQ 时回退轮询。
 - 新增 `tools/build_init_elf.py` 与 `scripts/mkfs_ext4.sh` 生成最小 ext4 镜像用于 QEMU 测试。
 - ext4 读路径扩展到 extent 树深度>0 与间接块（single/double/triple）。
@@ -40,7 +41,7 @@
 - 新增 ext4 `/init` VFS 读取自测用例，覆盖根目录与 `/etc` 的 read_dir offset 枚举、多块读路径与 `/etc/issue`/`/etc/large` 读取。
 - QEMU 启动时输出 `vfs: mounted ext4 rootfs`，ext4 冒烟用例强制检查该标记。
 - `/init` 用户态程序增加 `/etc/issue` 读取并在 ext4 冒烟中检查输出。
-- 用户态自测增加 FAT32 文件写入路径，ramdisk 用例验证写入日志。
+- 用户态自测增加 FAT32 文件写入回读路径，ramdisk 用例验证写入回读日志。
 - ext4 读路径将块读取 scratch 缓冲迁移到共享区，避免内核栈溢出。
 
 ## 问题与定位

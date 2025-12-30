@@ -152,4 +152,5 @@
 - Extend /init to read `/etc/issue` and verify it in ext4 QEMU smoke runs.
 - Reduce ext4 read-path stack pressure by reusing a shared scratch buffer.
 - Extend FAT32 write_at to update directory entries and grow cluster chains, plus add a fatlog.txt rootfs fixture and host growth test.
-- Extend USER_TEST to write `/fatlog.txt` and add a FAT32 write marker check in ramdisk self-tests.
+- Extend USER_TEST to write/read `/fatlog.txt` and add a FAT32 write/read marker check in ramdisk self-tests.
+- Allow the FAT32 ramdisk block device to write back to the in-memory rootfs image for self-tests.
