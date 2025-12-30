@@ -4,7 +4,7 @@ use core::cmp::min;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use axfs::{devfs, fat32, memfs, procfs, DirEntry, FileType, InodeId, VfsError, VfsOps};
+use axfs::{devfs, ext4, fat32, memfs, procfs, DirEntry, FileType, InodeId, VfsError, VfsOps};
 use axfs::mount::{MountId, MountPoint, MountTable};
 use crate::futex;
 use crate::mm::{self, UserAccess, UserPtr, UserSlice};
@@ -2332,8 +2332,16 @@ fn read_user_path_str<'a>(root_pa: usize, path: usize, buf: &'a mut [u8]) -> Res
 fn with_mounts<R>(f: impl FnOnce(&MountTable<'_, VFS_MOUNT_COUNT>) -> R) -> R {
     let devfs = devfs::DevFs::new();
     let procfs = procfs::ProcFs::new();
-    let root_dev = crate::fs::RootFsDevice::new();
-    if let Ok(rootfs) = fat32::Fat32Fs::new(&root_dev) {
+    let root_dev = crate::fs::root_device();
+    let root_block = root_dev.as_block_device();
+    if let Ok(rootfs) = ext4::Ext4Fs::new(root_block) {
+        let mounts = MountTable::new([
+            MountPoint::new(MountId::Root, "/", &rootfs),
+            MountPoint::new(MountId::Dev, "/dev", &devfs),
+            MountPoint::new(MountId::Proc, "/proc", &procfs),
+        ]);
+        f(&mounts)
+    } else if let Ok(rootfs) = fat32::Fat32Fs::new(root_block) {
         let mounts = MountTable::new([
             MountPoint::new(MountId::Root, "/", &rootfs),
             MountPoint::new(MountId::Dev, "/dev", &devfs),

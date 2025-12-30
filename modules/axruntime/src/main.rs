@@ -16,6 +16,7 @@ mod futex;
 mod syscall;
 mod user;
 mod fs;
+mod virtio_blk;
 mod task_wait_queue;
 mod task;
 mod scheduler;
@@ -56,7 +57,16 @@ pub extern "C" fn rust_main(hart_id: usize, dtb_addr: usize) -> ! {
         crate::println!("dtb: timebase-frequency={}Hz", freq);
     }
 
-    mm::init(dtb_info.memory);
+    for region in dtb_info.virtio_mmio_regions() {
+        crate::println!(
+            "dtb: virtio-mmio base={:#x} size={:#x}",
+            region.base,
+            region.size
+        );
+    }
+
+    mm::init(dtb_info.memory, dtb_info.virtio_mmio_regions());
+    fs::init(dtb_info.virtio_mmio_regions());
 
     let timebase = dtb_info.timebase_frequency.unwrap_or(10_000_000);
     let tick_hz = config::DEFAULT_TICK_HZ;

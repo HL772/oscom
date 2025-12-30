@@ -14,11 +14,33 @@ const FDT_END: u32 = 9;
 
 const MAX_DEPTH: usize = 16;
 
-#[derive(Copy, Clone, Debug, Default)]
+const MAX_VIRTIO_MMIO: usize = 4;
+
+#[derive(Copy, Clone, Debug)]
 pub struct DtbInfo {
     pub memory: Option<MemoryRegion>,
     pub uart: Option<MemoryRegion>,
     pub timebase_frequency: Option<u64>,
+    pub virtio_mmio: [MemoryRegion; MAX_VIRTIO_MMIO],
+    pub virtio_mmio_len: usize,
+}
+
+impl Default for DtbInfo {
+    fn default() -> Self {
+        Self {
+            memory: None,
+            uart: None,
+            timebase_frequency: None,
+            virtio_mmio: [MemoryRegion::default(); MAX_VIRTIO_MMIO],
+            virtio_mmio_len: 0,
+        }
+    }
+}
+
+impl DtbInfo {
+    pub fn virtio_mmio_regions(&self) -> &[MemoryRegion] {
+        &self.virtio_mmio[..self.virtio_mmio_len]
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -33,6 +55,7 @@ pub enum DtbError {
 struct NodeState {
     is_memory: bool,
     is_uart: bool,
+    is_virtio_mmio: bool,
 }
 
 #[repr(C)]
@@ -121,6 +144,9 @@ pub fn parse(dtb_addr: usize) -> Result<DtbInfo, DtbError> {
                     if node_name.starts_with("uart@") || node_name.starts_with("serial@") {
                         state.is_uart = true;
                     }
+                    if node_name.starts_with("virtio_mmio@") || node_name.starts_with("virtio@") {
+                        state.is_virtio_mmio = true;
+                    }
                 }
                 stack[depth] = state;
                 depth += 1;
@@ -180,6 +206,9 @@ pub fn parse(dtb_addr: usize) -> Result<DtbInfo, DtbError> {
                         if has_uart_compat(value, len) {
                             state.is_uart = true;
                         }
+                        if has_virtio_mmio_compat(value, len) {
+                            state.is_virtio_mmio = true;
+                        }
                     }
                     Some("reg") => {
                         if state.is_memory && info.memory.is_none() {
@@ -189,6 +218,13 @@ pub fn parse(dtb_addr: usize) -> Result<DtbInfo, DtbError> {
                         } else if state.is_uart && info.uart.is_none() {
                             if let Some(region) = parse_reg(value, len, addr_cells, size_cells) {
                                 info.uart = Some(region);
+                            }
+                        } else if state.is_virtio_mmio {
+                            if let Some(region) = parse_reg(value, len, addr_cells, size_cells) {
+                                if info.virtio_mmio_len < MAX_VIRTIO_MMIO {
+                                    info.virtio_mmio[info.virtio_mmio_len] = region;
+                                    info.virtio_mmio_len += 1;
+                                }
                             }
                         }
                     }
@@ -241,6 +277,24 @@ fn has_uart_compat(value: *const u8, len: usize) -> bool {
         }
         let s = unsafe { read_str(ptr, part_len) };
         if matches!(s, Some("ns16550a") | Some("ns16550") | Some("uart8250")) {
+            return true;
+        }
+        offset += part_len + 1;
+    }
+    false
+}
+
+fn has_virtio_mmio_compat(value: *const u8, len: usize) -> bool {
+    let mut offset = 0usize;
+    while offset < len {
+        let ptr = unsafe { value.add(offset) };
+        let part_len = unsafe { cstr_len(ptr, value.add(len)) };
+        if part_len == 0 {
+            offset += 1;
+            continue;
+        }
+        let s = unsafe { read_str(ptr, part_len) };
+        if matches!(s, Some("virtio,mmio")) {
             return true;
         }
         offset += part_len + 1;

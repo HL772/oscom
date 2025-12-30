@@ -29,6 +29,9 @@
 - 使用内存块设备构建 FAT32 ramdisk 挂载为 rootfs，`/init` 通过 VFS 读取。
 - ext4 增加组描述符 + inode 表读取，目录查找与只读读路径打通。
 - fd 表改为记录通用 VFS 句柄，open/read/write/stat/getdents64 统一走 VFS。
+- 新增 DTB virtio-mmio 枚举与 MMIO 映射，初始化 virtio-blk 驱动作为 BlockDevice。
+- rootfs 支持 virtio-blk 外部镜像挂载 ext4/FAT32，失败回退到 ramdisk。
+- 新增 `tools/build_init_elf.py` 与 `scripts/mkfs_ext4.sh` 生成最小 ext4 镜像用于 QEMU 测试。
 
 ## 问题与定位
 - ext4 仅覆盖 extents 深度为 0 的直读路径，复杂目录需要后续补齐。

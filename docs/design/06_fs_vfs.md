@@ -15,7 +15,8 @@
 - memfs 对 `/dev/null`/`/dev/zero` 提供最小 read/write 行为，作为 VFS 设备节点接入示例。
 - 挂载点采用 `MountTable` 管理，根文件系统可切换 FAT32/ext4。
 - `MountTable` 预留 `/`、`/dev`、`/proc` 挂载点：/dev 使用 devfs 占位，/proc 使用 procfs 占位，路径解析按最长前缀匹配并剥离挂载前缀。
-- rootfs 使用内存块设备构建 FAT32 镜像挂载，`/init` 由 VFS 读取。
+- rootfs 优先使用 virtio-blk 外部镜像挂载 ext4/FAT32，失败时回退到内存 FAT32 ramdisk。
+- 提供 `tools/build_init_elf.py` 与 `scripts/mkfs_ext4.sh` 生成最小 `/init` 与 ext4 镜像，便于 QEMU 测试。
 - 路径解析走 dentry 缓存，减少重复 lookup。
 - 页缓存以页为单位缓存文件数据，写入采用 write-back + 定期刷盘。
 - 块设备通过 `BlockDevice` 抽象接入 virtio-block，早期以 BlockCache 直通占位。

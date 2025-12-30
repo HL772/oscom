@@ -33,6 +33,7 @@ const PPN_MASK: usize = (1usize << PPN_WIDTH) - 1;
 
 const SATP_MODE_SV39: usize = 8 << 60;
 const PTE_FLAGS_KERNEL: usize = PTE_V | PTE_R | PTE_W | PTE_X | PTE_G | PTE_A | PTE_D;
+const PTE_FLAGS_DEVICE: usize = PTE_V | PTE_R | PTE_W | PTE_G | PTE_A | PTE_D;
 const PTE_FLAGS_USER_CODE: usize = PTE_V | PTE_R | PTE_X | PTE_U | PTE_A;
 const PTE_FLAGS_USER_DATA: usize = PTE_V | PTE_R | PTE_W | PTE_U | PTE_A | PTE_D;
 const MAX_FRAMES: usize = IDENTITY_MAP_SIZE / PAGE_SIZE;
@@ -97,7 +98,7 @@ extern "C" {
     static ekernel: u8;
 }
 
-pub fn init(memory: Option<MemoryRegion>) {
+pub fn init(memory: Option<MemoryRegion>, devices: &[MemoryRegion]) {
     if let Some(region) = memory {
         MEM_BASE.store(region.base as usize, Ordering::Relaxed);
         MEM_SIZE.store(region.size as usize, Ordering::Relaxed);
@@ -114,6 +115,7 @@ pub fn init(memory: Option<MemoryRegion>) {
         init_frame_allocator(region);
         unsafe {
             if let Some(root_pa) = setup_kernel_page_table(region) {
+                map_device_regions(root_pa, devices);
                 enable_paging(root_pa);
                 KERNEL_ROOT_PA.store(root_pa, Ordering::Relaxed);
                 crate::println!("mm: paging enabled (sv39 identity map)");
@@ -413,6 +415,11 @@ impl UserSlice {
 
 pub fn kernel_root_pa() -> usize {
     KERNEL_ROOT_PA.load(Ordering::Relaxed)
+}
+
+pub fn kernel_virt_to_phys(addr: usize) -> usize {
+    // 内核页表保持恒等映射，虚拟地址即物理地址。
+    virt_to_phys(addr)
 }
 
 pub fn memory_size() -> usize {
@@ -962,6 +969,23 @@ fn map_page(root_pa: usize, va: usize, pa: usize, flags: usize) -> bool {
     }
     *entry = PageTableEntry::new(PhysPageNum::new(pa >> PAGE_SHIFT), flags);
     true
+}
+
+fn map_device_regions(root_pa: usize, regions: &[MemoryRegion]) {
+    for region in regions {
+        if region.size == 0 {
+            continue;
+        }
+        let base = region.base as usize;
+        let end = base.saturating_add(region.size as usize);
+        let start = align_down(base, PAGE_SIZE);
+        let end = align_up(end, PAGE_SIZE);
+        let mut addr = start;
+        while addr < end {
+            let _ = map_page(root_pa, addr, addr, PTE_FLAGS_DEVICE);
+            addr += PAGE_SIZE;
+        }
+    }
 }
 
 fn init_frame_allocator(region: MemoryRegion) {

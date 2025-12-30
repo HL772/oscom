@@ -12,6 +12,8 @@
 - DMA 抽象放在 HAL 层：提供物理页分配、缓存同步、地址转换接口。
 - 中断注册通过平台层统一映射（如 PLIC/CLINT），驱动只关心 IRQ 号。
 - I/O 访问尽量走安全封装（MMIO 访问封装 + volatile 读写）。
+- 当前阶段先落地 virtio-blk(mmio) 最小驱动：DTB 枚举、MMIO 映射、单队列轮询完成同步读写。
+- virtio-blk 仅实现 read/write 请求，暂不启用中断与多队列。
 
 ## 关键数据结构
 - `DeviceInfo`：设备类型、MMIO 基址、IRQ 号、设备树节点信息。
@@ -19,6 +21,7 @@
 - `DriverRegistry`：驱动注册表与匹配逻辑。
 - `Bus`：设备枚举与资源映射抽象（DTB/Virtio-MMIO）。
 - `DmaBuf`：DMA 缓冲区描述（物理地址、长度、缓存一致性标志）。
+- `VirtioBlkQueue`：virtio-blk 描述符/avail/used 环队列布局。
 
 ## 关键流程图或伪代码
 ```text
@@ -46,3 +49,4 @@ irq_handler(irq)
 - QEMU virtio-net：收发包、自环测试、基础 ping/UDP。
 - console：串口输出与输入回显。
 - 时钟/中断：定时器中断触发与 IRQ 路径正确性。
+- virtio-blk：外部 ext4 镜像挂载后读取 `/init`。

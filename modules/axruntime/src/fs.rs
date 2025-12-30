@@ -3,6 +3,9 @@ use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use axfs::block::{BlockDevice, BlockId};
 use axfs::{fat32, VfsError, VfsResult};
 
+use crate::mm::MemoryRegion;
+use crate::virtio_blk;
+
 const ROOTFS_BLOCK_SIZE: usize = 512;
 const ROOTFS_IMAGE_MAX: usize = 16 * 1024;
 
@@ -45,6 +48,32 @@ impl BlockDevice for RootFsDevice {
 
     fn flush(&self) -> VfsResult<()> {
         Ok(())
+    }
+}
+
+pub enum RootBlockDevice {
+    Virtio(&'static virtio_blk::VirtioBlkDevice),
+    Ramdisk(RootFsDevice),
+}
+
+impl RootBlockDevice {
+    pub fn as_block_device(&self) -> &dyn BlockDevice {
+        match self {
+            Self::Virtio(dev) => *dev,
+            Self::Ramdisk(dev) => dev,
+        }
+    }
+}
+
+pub fn init(virtio_mmio: &[MemoryRegion]) {
+    virtio_blk::init(virtio_mmio);
+}
+
+pub fn root_device() -> RootBlockDevice {
+    if let Some(dev) = virtio_blk::device() {
+        RootBlockDevice::Virtio(dev)
+    } else {
+        RootBlockDevice::Ramdisk(RootFsDevice::new())
     }
 }
 

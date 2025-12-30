@@ -103,6 +103,7 @@
 - Add PTE_COW and page-fault handling to copy pages on first write.
 - Add frame refcounting and release of user address spaces on waitpid/execve.
 - Extend user-mode smoke to cover clone/wait4 and CoW write path validation.
+- Add virtio-blk MMIO support and prefer external rootfs images over the ramdisk.
 - Re-enable interrupts in idle so blocking syscalls can sleep and resume.
 - Extend user-mode smoke to cover multi-fd ppoll timeout path.
 - Track O_NONBLOCK via fcntl and honor it for pipe reads/writes.
