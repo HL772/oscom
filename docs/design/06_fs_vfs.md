@@ -16,13 +16,13 @@
 - memfs 提供 `/tmp/log` 可写文件，占位覆盖最小 write_at 路径。
 - 挂载点采用 `MountTable` 管理，根文件系统可切换 FAT32/ext4。
 - `MountTable` 预留 `/`、`/dev`、`/proc` 挂载点：/dev 使用 devfs 占位，/proc 使用 procfs 占位，路径解析按最长前缀匹配并剥离挂载前缀。
-- rootfs 优先使用 virtio-blk 外部镜像挂载 ext4/FAT32，失败时回退到内存 FAT32 ramdisk。
+- rootfs 优先使用 virtio-blk 外部镜像挂载 ext4/FAT32，失败时回退到内存 FAT32 ramdisk（内置 fatlog.txt 便于写路径自测）。
 - 提供 `tools/build_init_elf.py` 与 `scripts/mkfs_ext4.sh` 生成最小 `/init` 与 ext4 镜像，便于 QEMU 测试。
 - 路径解析走 dentry 缓存，减少重复 lookup。
 - 页缓存以页为单位缓存文件数据，写入采用 write-back + 定期刷盘。
 - 块设备通过 `BlockDevice` 抽象接入 virtio-block，早期以 BlockCache 直通占位。
 - FAT32 完成 BPB 解析、簇链遍历与目录项解析，实现只读文件读取与根目录枚举。
-- FAT32 增加最小 write_at：仅支持已有文件的簇内写入，作为写路径起点。
+- FAT32 支持写路径更新目录项大小与扩展簇链，覆盖文件增长与多簇写入。
 - ext4 完成 superblock + 组描述符 + inode 表读取，支持目录查找与只读文件读取（含 extent 树与间接块读路径）。
 - 权限与时间戳语义对齐 Linux，错误码通过 errno 映射返回。
 

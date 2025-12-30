@@ -210,6 +210,13 @@ struct FatDirEntry {
     size: u32,
 }
 
+struct DirEntryLocation {
+    sector: u32,
+    offset: usize,
+    cluster: u32,
+    size: u32,
+}
+
 struct LfnState {
     buf: [u16; 260],
     expected: u8,
@@ -363,6 +370,81 @@ impl<'a> Fat32Fs<'a> {
         }
     }
 
+    fn write_fat_entry(&self, cluster: u32, value: u32) -> VfsResult<()> {
+        let bytes_per_sector = self.bytes_per_sector();
+        if bytes_per_sector == 0 || bytes_per_sector > FAT_SCRATCH_SIZE {
+            return Err(VfsError::Invalid);
+        }
+        let value = value & 0x0fff_ffff;
+        let fat_offset = cluster as usize * FAT_ENTRY_SIZE;
+        let in_sector = fat_offset % bytes_per_sector;
+        let fat_sector_offset = (fat_offset / bytes_per_sector) as u32;
+        let guard = FAT_SCRATCH.lock();
+        let scratch = guard.get_mut();
+        for fat_index in 0..self.bpb.num_fats {
+            let fat_start =
+                self.bpb.fat_start_sector() + fat_index as u32 * self.bpb.sectors_per_fat;
+            let sector = fat_start + fat_sector_offset;
+            if in_sector + FAT_ENTRY_SIZE <= bytes_per_sector {
+                self.read_sector(sector as BlockId, &mut scratch[..bytes_per_sector])?;
+                scratch[in_sector..in_sector + FAT_ENTRY_SIZE]
+                    .copy_from_slice(&value.to_le_bytes());
+                self.write_sector(sector as BlockId, &scratch[..bytes_per_sector])?;
+            } else {
+                let first = bytes_per_sector - in_sector;
+                self.read_sector(sector as BlockId, &mut scratch[..bytes_per_sector])?;
+                scratch[in_sector..bytes_per_sector]
+                    .copy_from_slice(&value.to_le_bytes()[..first]);
+                self.write_sector(sector as BlockId, &scratch[..bytes_per_sector])?;
+                self.read_sector((sector + 1) as BlockId, &mut scratch[..bytes_per_sector])?;
+                scratch[..FAT_ENTRY_SIZE - first]
+                    .copy_from_slice(&value.to_le_bytes()[first..]);
+                self.write_sector((sector + 1) as BlockId, &scratch[..bytes_per_sector])?;
+            }
+        }
+        Ok(())
+    }
+
+    fn zero_cluster(&self, cluster: u32) -> VfsResult<()> {
+        let bytes_per_sector = self.bytes_per_sector();
+        if bytes_per_sector == 0 || bytes_per_sector > FAT_SCRATCH_SIZE {
+            return Err(VfsError::Invalid);
+        }
+        let guard = FAT_SCRATCH.lock();
+        let scratch = guard.get_mut();
+        scratch[..bytes_per_sector].fill(0);
+        for sector_index in 0..self.bpb.sectors_per_cluster {
+            let sector = self.cluster_to_sector(cluster) + sector_index as u32;
+            self.write_sector(sector as BlockId, &scratch[..bytes_per_sector])?;
+        }
+        Ok(())
+    }
+
+    fn max_cluster(&self) -> u32 {
+        let data_sectors = self
+            .bpb
+            .total_sectors
+            .saturating_sub(self.bpb.data_start_sector());
+        let clusters = data_sectors / self.bpb.sectors_per_cluster as u32;
+        if clusters == 0 {
+            self.bpb.root_cluster
+        } else {
+            self.bpb.root_cluster + clusters - 1
+        }
+    }
+
+    fn alloc_cluster(&self) -> VfsResult<u32> {
+        let max_cluster = self.max_cluster();
+        for cluster in 2..=max_cluster {
+            if self.read_fat_entry(cluster)? == 0 {
+                self.write_fat_entry(cluster, 0x0fff_ffff)?;
+                self.zero_cluster(cluster)?;
+                return Ok(cluster);
+            }
+        }
+        Err(VfsError::NoMem)
+    }
+
     fn write_cluster_bytes(&self, cluster: u32, offset: usize, buf: &[u8]) -> VfsResult<usize> {
         let cluster_size = self.cluster_size();
         if offset >= cluster_size || buf.is_empty() {
@@ -507,6 +589,93 @@ impl<'a> Fat32Fs<'a> {
         }
         Ok(())
     }
+
+    // Root directory scan is enough for the minimal ramdisk image; update in-place metadata there.
+    fn find_root_entry_by_cluster(&self, target: u32) -> VfsResult<Option<DirEntryLocation>> {
+        if target < 2 {
+            return Ok(None);
+        }
+        let bytes_per_sector = self.bytes_per_sector();
+        if bytes_per_sector == 0 || bytes_per_sector > FAT_SCRATCH_SIZE {
+            return Err(VfsError::Invalid);
+        }
+        let mut current = self.bpb.root_cluster;
+        let guard = FAT_SCRATCH.lock();
+        let scratch = guard.get_mut();
+        loop {
+            for sector_index in 0..self.bpb.sectors_per_cluster {
+                let sector = self.cluster_to_sector(current) + sector_index as u32;
+                self.read_sector(sector as BlockId, &mut scratch[..bytes_per_sector])?;
+                let mut offset = 0usize;
+                while offset + DIR_ENTRY_SIZE <= bytes_per_sector {
+                    let entry = &scratch[offset..offset + DIR_ENTRY_SIZE];
+                    let first = entry[0];
+                    if first == 0x00 {
+                        return Ok(None);
+                    }
+                    if first == 0xe5 {
+                        offset += DIR_ENTRY_SIZE;
+                        continue;
+                    }
+                    let attr = entry[11];
+                    if attr == ATTR_LONG_NAME || (attr & ATTR_VOLUME_ID) != 0 {
+                        offset += DIR_ENTRY_SIZE;
+                        continue;
+                    }
+                    let cluster_high = read_u16(entry, 20) as u32;
+                    let cluster_low = read_u16(entry, 26) as u32;
+                    let start_cluster = (cluster_high << 16) | cluster_low;
+                    if start_cluster == target {
+                        let size = read_u32(entry, 28);
+                        return Ok(Some(DirEntryLocation {
+                            sector,
+                            offset,
+                            cluster: start_cluster,
+                            size,
+                        }));
+                    }
+                    offset += DIR_ENTRY_SIZE;
+                }
+            }
+            match self.next_cluster(current)? {
+                Some(next) => current = next,
+                None => break,
+            }
+        }
+        Ok(None)
+    }
+
+    fn update_root_entry(
+        &self,
+        entry: &DirEntryLocation,
+        new_cluster: u32,
+        new_size: u32,
+    ) -> VfsResult<()> {
+        let bytes_per_sector = self.bytes_per_sector();
+        if bytes_per_sector == 0 || bytes_per_sector > FAT_SCRATCH_SIZE {
+            return Err(VfsError::Invalid);
+        }
+        let guard = FAT_SCRATCH.lock();
+        let scratch = guard.get_mut();
+        self.read_sector(entry.sector as BlockId, &mut scratch[..bytes_per_sector])?;
+        let slot = &mut scratch[entry.offset..entry.offset + DIR_ENTRY_SIZE];
+        write_u16(slot, 20, (new_cluster >> 16) as u16);
+        write_u16(slot, 26, (new_cluster & 0xffff) as u16);
+        write_u32(slot, 28, new_size);
+        self.write_sector(entry.sector as BlockId, &scratch[..bytes_per_sector])?;
+        Ok(())
+    }
+
+    fn inode_actual_size(&self, inode: InodeId) -> VfsResult<u32> {
+        let cluster = inode_cluster(inode);
+        if cluster < 2 {
+            return Ok(0);
+        }
+        if let Some(entry) = self.find_root_entry_by_cluster(cluster)? {
+            return Ok(entry.size);
+        }
+        Ok(inode_size(inode))
+    }
 }
 
 fn short_name(entry: &[u8]) -> ([u8; MAX_NAME_LEN], usize) {
@@ -565,33 +734,26 @@ fn eq_ignore_ascii_case(left: &[u8], right: &[u8]) -> bool {
 }
 
 pub fn build_minimal_image(buf: &mut [u8], file_name: &str, file_data: &[u8]) -> VfsResult<usize> {
+    let extra_name = "fatlog.txt";
     let bytes_per_sector = 512usize;
     let sectors_per_cluster = 1usize;
     let reserved_sectors = 1usize;
     let num_fats = 1usize;
     let root_cluster = 2u32;
     let cluster_size = bytes_per_sector * sectors_per_cluster;
-    let data_clusters = if file_data.is_empty() {
-        0usize
-    } else {
-        (file_data.len() + cluster_size - 1) / cluster_size
-    };
-    let file_start_cluster = if data_clusters == 0 {
-        0u32
-    } else {
-        root_cluster + 1
-    };
-    let last_cluster = if data_clusters == 0 {
-        root_cluster
-    } else {
-        root_cluster + data_clusters as u32
-    };
+    let file_clusters = core::cmp::max(1, (file_data.len() + cluster_size - 1) / cluster_size);
+    let extra_clusters = 1usize;
+    let free_clusters = 8usize;
+    let data_clusters = 1 + file_clusters + extra_clusters + free_clusters;
+    let file_start_cluster = root_cluster + 1;
+    let extra_start_cluster = file_start_cluster + file_clusters as u32;
+    let last_cluster = root_cluster + data_clusters as u32 - 1;
     let fat_entries = (last_cluster + 1) as usize;
     let fat_bytes = fat_entries * FAT_ENTRY_SIZE;
     let sectors_per_fat = (fat_bytes + bytes_per_sector - 1) / bytes_per_sector;
     let total_sectors = reserved_sectors
         + num_fats * sectors_per_fat
-        + (1 + data_clusters) * sectors_per_cluster;
+        + data_clusters * sectors_per_cluster;
     let total_bytes = total_sectors * bytes_per_sector;
     if buf.len() < total_bytes {
         return Err(VfsError::NoMem);
@@ -616,16 +778,23 @@ pub fn build_minimal_image(buf: &mut [u8], file_name: &str, file_data: &[u8]) ->
     write_fat_entry(fat, 0, 0x0fff_fff8);
     write_fat_entry(fat, 1, 0x0fff_ffff);
     write_fat_entry(fat, root_cluster as usize, 0x0fff_ffff);
-    if data_clusters > 0 {
-        for idx in 0..data_clusters {
-            let cluster = file_start_cluster + idx as u32;
-            let next = if idx + 1 == data_clusters {
-                0x0fff_ffff
-            } else {
-                cluster + 1
-            };
-            write_fat_entry(fat, cluster as usize, next);
-        }
+    for idx in 0..file_clusters {
+        let cluster = file_start_cluster + idx as u32;
+        let next = if idx + 1 == file_clusters {
+            0x0fff_ffff
+        } else {
+            cluster + 1
+        };
+        write_fat_entry(fat, cluster as usize, next);
+    }
+    for idx in 0..extra_clusters {
+        let cluster = extra_start_cluster + idx as u32;
+        let next = if idx + 1 == extra_clusters {
+            0x0fff_ffff
+        } else {
+            cluster + 1
+        };
+        write_fat_entry(fat, cluster as usize, next);
     }
 
     let data_start = (reserved_sectors + num_fats * sectors_per_fat) * bytes_per_sector;
@@ -635,17 +804,17 @@ pub fn build_minimal_image(buf: &mut [u8], file_name: &str, file_data: &[u8]) ->
     write_dir_entry(root_dir, 1, b"..", ATTR_DIRECTORY, root_cluster, 0);
     let short = encode_short_name(file_name)?;
     write_dir_entry(root_dir, 2, &short, 0x20, file_start_cluster, file_data.len() as u32);
+    let extra_short = encode_short_name(extra_name)?;
+    write_dir_entry(root_dir, 3, &extra_short, 0x20, extra_start_cluster, 0);
 
-    if data_clusters > 0 {
-        let mut remaining = file_data;
-        let mut cluster = file_start_cluster;
-        while !remaining.is_empty() {
-            let offset = data_start + (cluster - root_cluster) as usize * cluster_size;
-            let chunk = core::cmp::min(cluster_size, remaining.len());
-            buf[offset..offset + chunk].copy_from_slice(&remaining[..chunk]);
-            remaining = &remaining[chunk..];
-            cluster += 1;
-        }
+    let mut remaining = file_data;
+    let mut cluster = file_start_cluster;
+    while !remaining.is_empty() {
+        let offset = data_start + (cluster - root_cluster) as usize * cluster_size;
+        let chunk = core::cmp::min(cluster_size, remaining.len());
+        buf[offset..offset + chunk].copy_from_slice(&remaining[..chunk]);
+        remaining = &remaining[chunk..];
+        cluster += 1;
     }
 
     Ok(total_bytes)
@@ -754,7 +923,7 @@ impl VfsOps for Fat32Fs<'_> {
         } else {
             FileType::File
         };
-        let size = inode_size(inode) as u64;
+        let size = self.inode_actual_size(inode)? as u64;
         let mode = if file_type == FileType::Dir { 0o755 } else { 0o644 };
         Ok(Metadata::new(file_type, size, mode))
     }
@@ -763,7 +932,7 @@ impl VfsOps for Fat32Fs<'_> {
         if inode_is_dir(inode) {
             return Err(VfsError::NotDir);
         }
-        let size = inode_size(inode) as usize;
+        let size = self.inode_actual_size(inode)? as usize;
         let offset = offset as usize;
         if offset >= size {
             return Ok(0);
@@ -806,19 +975,46 @@ impl VfsOps for Fat32Fs<'_> {
         if inode_is_dir(_inode) {
             return Err(VfsError::NotDir);
         }
-        let size = inode_size(_inode) as usize;
-        let offset = _offset as usize;
-        if size == 0 || offset >= size {
+        if _buf.is_empty() {
             return Ok(0);
         }
-        let to_write = core::cmp::min(_buf.len(), size - offset);
-        if to_write == 0 {
-            return Ok(0);
+        let offset = _offset as usize;
+        let mut entry = match self.find_root_entry_by_cluster(inode_cluster(_inode))? {
+            Some(entry) => entry,
+            None => return Err(VfsError::NotFound),
+        };
+        let mut size = entry.size as usize;
+        if offset > size {
+            return Err(VfsError::Invalid);
         }
         let cluster_size = self.cluster_size();
-        let mut cluster = inode_cluster(_inode);
+        let mut cluster = entry.cluster;
         if cluster < 2 {
             return Ok(0);
+        }
+        let new_end = offset + _buf.len();
+        let new_size = core::cmp::max(size, new_end);
+        let required_clusters = if new_size == 0 {
+            0
+        } else {
+            (new_size + cluster_size - 1) / cluster_size
+        };
+        let mut chain_len = 1usize;
+        let mut last_cluster = cluster;
+        loop {
+            match self.next_cluster(last_cluster)? {
+                Some(next) => {
+                    last_cluster = next;
+                    chain_len += 1;
+                }
+                None => break,
+            }
+        }
+        while chain_len < required_clusters {
+            let next = self.alloc_cluster()?;
+            self.write_fat_entry(last_cluster, next)?;
+            last_cluster = next;
+            chain_len += 1;
         }
         let mut skip = offset / cluster_size;
         let mut in_cluster = offset % cluster_size;
@@ -829,7 +1025,7 @@ impl VfsOps for Fat32Fs<'_> {
             }
             skip -= 1;
         }
-        let mut remaining = to_write;
+        let mut remaining = _buf.len();
         let mut total = 0usize;
         while remaining > 0 {
             let chunk = core::cmp::min(remaining, cluster_size - in_cluster);
@@ -844,6 +1040,12 @@ impl VfsOps for Fat32Fs<'_> {
                 Some(next) => cluster = next,
                 None => break,
             }
+        }
+        let written_end = offset + total;
+        if written_end > size {
+            size = written_end;
+            entry.size = size as u32;
+            self.update_root_entry(&entry, entry.cluster, entry.size)?;
         }
         Ok(total)
     }
@@ -983,5 +1185,28 @@ mod tests {
         let read = fs.read_at(inode, 0, &mut buf).unwrap();
         assert_eq!(read, file_data.len());
         assert_eq!(&buf[..read], b"hello-FATld");
+    }
+
+    #[test]
+    fn write_grow_file() {
+        let mut data = [0u8; IMAGE_SIZE];
+        let file_data = b"init-data";
+        build_minimal_image(&mut data, "init", file_data).unwrap();
+        let dev = TestBlockDevice {
+            block_size: 512,
+            data: RefCell::new(data),
+        };
+        let fs = Fat32Fs::new(&dev).unwrap();
+        let root = fs.root().unwrap();
+        let inode = fs.lookup(root, "fatlog.txt").unwrap().unwrap();
+        let payload = [0x5a_u8; 1024];
+        let written = fs.write_at(inode, 0, &payload).unwrap();
+        assert_eq!(written, payload.len());
+        let mut buf = [0u8; 1024];
+        let read = fs.read_at(inode, 0, &mut buf).unwrap();
+        assert_eq!(read, payload.len());
+        assert_eq!(&buf[..read], &payload);
+        let meta = fs.metadata(inode).unwrap();
+        assert_eq!(meta.size as usize, payload.len());
     }
 }

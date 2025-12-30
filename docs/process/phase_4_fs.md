@@ -27,7 +27,7 @@
 - 增加 /proc 挂载点的目录句柄占位，getdents64 返回最小 `.`/`..` 项。
 - VFS trait 增加 `read_dir` 目录枚举接口，`getdents64` 走统一目录遍历返回。
 - FAT32 完成目录项解析 + 簇链读取，支持 `/init` 文件读取与根目录枚举。
-- FAT32 增加最小 write_at：仅支持已有文件的簇内写入，host 测试覆盖写回路径。
+- FAT32 写路径支持更新目录项大小与扩展簇链，覆盖文件增长与多簇写入。
 - 使用内存块设备构建 FAT32 ramdisk 挂载为 rootfs，`/init` 通过 VFS 读取。
 - ext4 增加组描述符 + inode 表读取，目录查找与只读读路径打通。
 - fd 表改为记录通用 VFS 句柄，open/read/write/stat/getdents64 统一走 VFS。
@@ -40,6 +40,7 @@
 - 新增 ext4 `/init` VFS 读取自测用例，覆盖根目录与 `/etc` 的 read_dir offset 枚举、多块读路径与 `/etc/issue`/`/etc/large` 读取。
 - QEMU 启动时输出 `vfs: mounted ext4 rootfs`，ext4 冒烟用例强制检查该标记。
 - `/init` 用户态程序增加 `/etc/issue` 读取并在 ext4 冒烟中检查输出。
+- 用户态自测增加 FAT32 文件写入路径，ramdisk 用例验证写入日志。
 - ext4 读路径将块读取 scratch 缓冲迁移到共享区，避免内核栈溢出。
 
 ## 问题与定位
@@ -52,6 +53,8 @@
 - `make rootfs-ext4`
 - `EXPECT_EXT4=1 USER_TEST=1 make test-qemu-smoke ARCH=riscv64 PLATFORM=qemu FS=build/rootfs.ext4`
 - `make test-oscomp ARCH=riscv64 PLATFORM=qemu`（自研测例覆盖 ramdisk/ext4 启动与 /init execve）
+- `cargo test -p axfs`
+- `EXPECT_FAT32=1 USER_TEST=1 make test-qemu-smoke ARCH=riscv64 PLATFORM=qemu`
 
 ## 下一步
 - 完成 VFS/FAT32/ext4 最小读写后进入网络阶段。

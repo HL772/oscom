@@ -9,6 +9,7 @@ MODE=${MODE:-debug}
 USER_TEST=${USER_TEST:-0}
 EXPECT_INIT=${EXPECT_INIT:-0}
 EXPECT_EXT4=${EXPECT_EXT4:-0}
+EXPECT_FAT32=${EXPECT_FAT32:-0}
 TARGET=riscv64gc-unknown-none-elf
 CRATE=axruntime
 QEMU_BIN=${QEMU_BIN:-qemu-system-riscv64}
@@ -83,6 +84,14 @@ fi
 if [[ "${USER_TEST}" == "1" ]]; then
   if ! grep -q "user: hello" "${LOG_FILE}"; then
     echo "Smoke test failed: user-mode banner not found." >&2
+    cat "${LOG_FILE}" >&2
+    exit 1
+  fi
+fi
+
+if [[ "${EXPECT_FAT32}" == "1" ]]; then
+  if ! grep -q "fat32: ok" "${LOG_FILE}"; then
+    echo "Smoke test failed: FAT32 write banner not found." >&2
     cat "${LOG_FILE}" >&2
     exit 1
   fi
