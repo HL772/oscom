@@ -40,7 +40,9 @@
 
 ## 解决与验证
 - `cargo test -p axfs`
-- `USER_TEST=1 make test-qemu-smoke ARCH=riscv64 PLATFORM=qemu`
+- `make rootfs-ext4`
+- `USER_TEST=1 make test-qemu-smoke ARCH=riscv64 PLATFORM=qemu FS=build/rootfs.ext4`
+- `make test-oscomp ARCH=riscv64 PLATFORM=qemu FS=build/rootfs.ext4`（脚本占位，返回 TODO）
 
 ## 下一步
 - 完成 VFS/FAT32/ext4 最小读写后进入网络阶段。
