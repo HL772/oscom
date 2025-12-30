@@ -1,4 +1,22 @@
-* commit fff3e1ab2fefbcc9246dac9bf0c79b5260e4154a (HEAD -> bootstrap-riscv64)
+* commit 75a68c691baaf0194fe8fa2ce8fe6bf8dbf2068f (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 10:00:28 +0800
+| 
+|     fix(fs): correct ext4 helper placement
+| 
+|  modules/axfs/src/ext4.rs | 162 +++++++++++++++++++++++----------------------
+|  1 file changed, 82 insertions(+), 80 deletions(-)
+| 
+* commit a8314f7fec97f997c7b65f3d2452398d22be31f6
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 09:57:58 +0800
+| 
+|     chore(process): refresh git log
+| 
+|  docs/process/git-log.txt | 23 ++++++++++++++++++++++-
+|  1 file changed, 22 insertions(+), 1 deletion(-)
+| 
+* commit fff3e1ab2fefbcc9246dac9bf0c79b5260e4154a
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-30 09:57:48 +0800
 | 
