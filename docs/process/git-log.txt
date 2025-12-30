@@ -1,4 +1,22 @@
-* commit 2970a09e2a1383b4a73eff41424fd3f6ac90499b (HEAD -> bootstrap-riscv64)
+* commit c0b363fbaf1826b9dda207ce36531b0e307f7ce5 (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 11:24:04 +0800
+| 
+|     chore: restore gitignore
+| 
+|  .gitignore | 16 ++++++++++++++++
+|  1 file changed, 16 insertions(+)
+| 
+* commit 0e7cbc85eeda7866cd6e80a0824da484b810d8af
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 10:19:58 +0800
+| 
+|     chore(process): refresh git log
+| 
+|  docs/process/git-log.txt | 31 ++++++++++++++++++++++++++++++-
+|  1 file changed, 30 insertions(+), 1 deletion(-)
+| 
+* commit 2970a09e2a1383b4a73eff41424fd3f6ac90499b
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-30 10:19:46 +0800
 | 
