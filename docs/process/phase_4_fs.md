@@ -30,6 +30,7 @@
 - FAT32 写路径支持更新目录项大小与扩展簇链，覆盖文件增长与多簇写入。
 - FAT32 目录项更新支持子目录查找，新增子目录写入回读的 host 测试。
 - FAT32 增加最小 create 支持（短文件名、预分配簇），新增根目录与子目录创建测试。
+- FAT32 create 已接入 openat 的 O_CREAT/O_EXCL 路径，便于用户态创建文件。
 - 使用内存块设备构建 FAT32 ramdisk 挂载为 rootfs，`/init` 通过 VFS 读取。
 - ext4 增加组描述符 + inode 表读取，目录查找与只读读路径打通。
 - fd 表改为记录通用 VFS 句柄，open/read/write/stat/getdents64 统一走 VFS。

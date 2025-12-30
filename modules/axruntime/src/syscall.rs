@@ -266,6 +266,8 @@ const S_IFDIR: u32 = 0o040000;
 const S_IFREG: u32 = 0o100000;
 const O_CLOEXEC: usize = 0x80000;
 const O_NONBLOCK: usize = 0x4000;
+const O_CREAT: usize = 0x40;
+const O_EXCL: usize = 0x80;
 const O_RDONLY: usize = 0;
 const O_WRONLY: usize = 1;
 const O_RDWR: usize = 2;
@@ -865,12 +867,31 @@ fn sys_openat(_dirfd: usize, pathname: usize, flags: usize, _mode: usize) -> Res
     if root_pa == 0 {
         return Err(Errno::Fault);
     }
-    let status_flags = (flags & O_ACCMODE) | (flags & O_NONBLOCK);
+    let status_flags = flags & (O_ACCMODE | O_NONBLOCK | O_CLOEXEC);
     let accmode = flags & O_ACCMODE;
     with_mounts(|mounts| {
         let mut path_buf = [0u8; MAX_PATH_LEN];
         let path = read_user_path_str(root_pa, pathname, &mut path_buf)?;
-        let (mount, inode) = mounts.resolve_path(path).map_err(map_vfs_err)?;
+        let mut created = false;
+        let (mount, inode) = match mounts.resolve_path(path) {
+            Ok((mount, inode)) => (mount, inode),
+            Err(VfsError::NotFound) => {
+                if (flags & O_CREAT) == 0 {
+                    return Err(Errno::NoEnt);
+                }
+                let (mount, parent, name) = mounts.resolve_parent(path).map_err(map_vfs_err)?;
+                let fs = mounts.fs_for(mount).ok_or(Errno::NoEnt)?;
+                let inode = fs
+                    .create(parent, name, FileType::File, _mode as u16)
+                    .map_err(map_vfs_err)?;
+                created = true;
+                (mount, inode)
+            }
+            Err(err) => return Err(map_vfs_err(err)),
+        };
+        if !created && (flags & (O_CREAT | O_EXCL)) == (O_CREAT | O_EXCL) {
+            return Err(Errno::Exist);
+        }
         let fs = mounts.fs_for(mount).ok_or(Errno::NoEnt)?;
         let meta = fs.metadata(inode).map_err(map_vfs_err)?;
         match meta.file_type {

@@ -41,6 +41,7 @@
 - 增加 readv/writev，占位支持分段缓冲区访问并允许 iovcnt=0。
 - 增加 open/openat/mkdirat/unlinkat/newfstatat/getdents64/faccessat/statx/readlinkat，占位走 VFS 解析 `/`、`/dev`、`/init`、`/dev/null`、`/dev/zero`，同时校验 getdents64 缓冲区。
 - openat 路径识别统一走 VFS 挂载解析，保持伪节点一致。
+- openat 增加最小 O_CREAT/O_EXCL 支持：不存在路径时走 VFS create，已存在且带 EXCL 返回 EEXIST。
 - 增加 mknodat/symlinkat/linkat/renameat/renameat2，占位校验 AT_FDCWD 与路径指针。
 - 增加 statfs/fstatfs，占位填充基本文件系统信息。
 - 增加 fchmodat/fchownat/utimensat，占位支持根目录与 `/dev` 伪节点。
