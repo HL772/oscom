@@ -1,0 +1,16 @@
+/target/
+/dist/
+/build/
+*.o
+*.a
+*.elf
+*.bin
+*.img
+*.iso
+*.log
+*.swp
+*.swo
+.DS_Store
+.gitignore
+local/
+AGENTS.md
