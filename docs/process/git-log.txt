@@ -1,4 +1,22 @@
-* commit 75a68c691baaf0194fe8fa2ce8fe6bf8dbf2068f (HEAD -> bootstrap-riscv64)
+* commit 7cd47d2b76885b808de6b2604a946b9b7e8a5dbe (HEAD -> bootstrap-riscv64)
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 10:01:34 +0800
+| 
+|     fix(driver): drop unnecessary unsafe in virtio-blk
+| 
+|  modules/axruntime/src/virtio_blk.rs | 62 ++++++++++++++++-------------------
+|  1 file changed, 29 insertions(+), 33 deletions(-)
+| 
+* commit 16230482da9bd62bc475c587766a503f0c0f4e34
+| Author: +3队 <t202519359997698@eduxiji.net>
+| Date:   2025-12-30 10:00:42 +0800
+| 
+|     chore(process): refresh git log
+| 
+|  docs/process/git-log.txt | 20 +++++++++++++++++++-
+|  1 file changed, 19 insertions(+), 1 deletion(-)
+| 
+* commit 75a68c691baaf0194fe8fa2ce8fe6bf8dbf2068f
 | Author: +3队 <t202519359997698@eduxiji.net>
 | Date:   2025-12-30 10:00:28 +0800
 | 
