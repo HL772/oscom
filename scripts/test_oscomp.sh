@@ -20,6 +20,19 @@ CASE_FILE=${CASE_FILE:-"${ROOT}/tests/self/cases.txt"}
 LOG_DIR=${LOG_DIR:-"${ROOT}/build/selftest"}
 SUMMARY_FILE="${LOG_DIR}/summary.txt"
 
+abs_path() {
+  local path="$1"
+  if command -v realpath >/dev/null 2>&1; then
+    realpath "$path"
+    return 0
+  fi
+  python3 - "$path" <<'PY'
+import os
+import sys
+print(os.path.abspath(sys.argv[1]))
+PY
+}
+
 if [[ "${ARCH}" != "riscv64" || "${PLATFORM}" != "qemu" ]]; then
   echo "Only ARCH=riscv64 PLATFORM=qemu is supported right now." >&2
   exit 1
@@ -88,6 +101,7 @@ for case_name in "${CASES[@]}"; do
   expect_ext4=0
   if [[ "${case_name}" == "ext4-init" ]]; then
     ensure_ext4_image
+    FS_EXT4="$(abs_path "${FS_EXT4}")"
     set +e
     (cd "${ROOT}" && AXFS_EXT4_IMAGE="${FS_EXT4}" cargo test -p axfs ext4_init_image) \
       >"${case_log}" 2>&1
@@ -102,6 +116,7 @@ for case_name in "${CASES[@]}"; do
 
   if [[ "${case_name}" == "ext4" ]]; then
     ensure_ext4_image
+    FS_EXT4="$(abs_path "${FS_EXT4}")"
     case_fs="${FS_EXT4}"
     expect_ext4=1
   fi
