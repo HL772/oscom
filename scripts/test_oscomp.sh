@@ -85,6 +85,7 @@ EOF
 for case_name in "${CASES[@]}"; do
   case_log="${LOG_DIR}/selftest-${case_name}.log"
   case_fs=""
+  expect_ext4=0
   if [[ "${case_name}" == "ext4-init" ]]; then
     ensure_ext4_image
     set +e
@@ -102,11 +103,12 @@ for case_name in "${CASES[@]}"; do
   if [[ "${case_name}" == "ext4" ]]; then
     ensure_ext4_image
     case_fs="${FS_EXT4}"
+    expect_ext4=1
   fi
 
   set +e
   ARCH="${ARCH}" PLATFORM="${PLATFORM}" FS="${case_fs}" MODE="${MODE}" \
-    USER_TEST=1 EXPECT_INIT="${EXPECT_INIT}" TIMEOUT="${TIMEOUT}" \
+    USER_TEST=1 EXPECT_INIT="${EXPECT_INIT}" EXPECT_EXT4="${expect_ext4}" TIMEOUT="${TIMEOUT}" \
     QEMU_BIN="${QEMU_BIN}" BIOS="${BIOS}" MEM="${MEM}" SMP="${SMP}" \
     LOG_DIR="${LOG_DIR}" LOG_FILE="${case_log}" \
     "${ROOT}/scripts/test_qemu_smoke.sh"

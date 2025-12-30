@@ -2,7 +2,7 @@
 
 use core::cmp::min;
 use core::mem::size_of;
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 
 use axfs::{devfs, ext4, fat32, memfs, procfs, DirEntry, FileType, InodeId, VfsError, VfsOps};
 use axfs::mount::{MountId, MountPoint, MountTable};
@@ -37,6 +37,13 @@ impl Errno {
         (-(self as isize)) as usize
     }
 }
+
+const ROOTFS_LOG_EXT4: u8 = 1 << 0;
+const ROOTFS_LOG_FAT32: u8 = 1 << 1;
+const ROOTFS_LOG_MEMFS: u8 = 1 << 2;
+
+// Avoid repeated rootfs log spam across per-syscall mount table creation.
+static ROOTFS_LOGGED: AtomicU8 = AtomicU8::new(0);
 
 #[derive(Clone, Copy)]
 struct SyscallContext {
@@ -2329,12 +2336,19 @@ fn read_user_path_str<'a>(root_pa: usize, path: usize, buf: &'a mut [u8]) -> Res
     Err(Errno::Range)
 }
 
+fn log_rootfs_once(kind: &str, bit: u8) {
+    if ROOTFS_LOGGED.fetch_or(bit, Ordering::AcqRel) & bit == 0 {
+        crate::println!("vfs: mounted {} rootfs", kind);
+    }
+}
+
 fn with_mounts<R>(f: impl FnOnce(&MountTable<'_, VFS_MOUNT_COUNT>) -> R) -> R {
     let devfs = devfs::DevFs::new();
     let procfs = procfs::ProcFs::new();
     let root_dev = crate::fs::root_device();
     let root_block = root_dev.as_block_device();
     if let Ok(rootfs) = ext4::Ext4Fs::new(root_block) {
+        log_rootfs_once("ext4", ROOTFS_LOG_EXT4);
         let mounts = MountTable::new([
             MountPoint::new(MountId::Root, "/", &rootfs),
             MountPoint::new(MountId::Dev, "/dev", &devfs),
@@ -2342,6 +2356,7 @@ fn with_mounts<R>(f: impl FnOnce(&MountTable<'_, VFS_MOUNT_COUNT>) -> R) -> R {
         ]);
         f(&mounts)
     } else if let Ok(rootfs) = fat32::Fat32Fs::new(root_block) {
+        log_rootfs_once("fat32", ROOTFS_LOG_FAT32);
         let mounts = MountTable::new([
             MountPoint::new(MountId::Root, "/", &rootfs),
             MountPoint::new(MountId::Dev, "/dev", &devfs),
@@ -2349,6 +2364,7 @@ fn with_mounts<R>(f: impl FnOnce(&MountTable<'_, VFS_MOUNT_COUNT>) -> R) -> R {
         ]);
         f(&mounts)
     } else {
+        log_rootfs_once("memfs", ROOTFS_LOG_MEMFS);
         let rootfs = memfs::MemFs::with_init_image(init_memfile_image());
         let mounts = MountTable::new([
             MountPoint::new(MountId::Root, "/", &rootfs),

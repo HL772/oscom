@@ -694,11 +694,20 @@ mod tests {
         };
         let fs = Ext4Fs::new(&dev).expect("open ext4 image");
         let root = fs.root().expect("root inode");
+        let mut entries = [DirEntry::empty(); 16];
+        let count = fs.read_dir(root, 0, &mut entries).expect("read root dir");
+        assert!(entries[..count].iter().any(|e| e.name() == b"init"));
         let inode = fs.lookup(root, "init").expect("lookup init").expect("init inode");
-        let mut buf = [0u8; 4];
+        let meta = fs.metadata(inode).expect("init metadata");
+        let mut buf = vec![0u8; 8192];
         let read = fs.read_at(inode, 0, &mut buf).expect("read init");
-        assert_eq!(read, buf.len());
-        assert_eq!(&buf, b"\x7fELF");
+        assert!(read >= 4);
+        assert_eq!(&buf[..4], b"\x7fELF");
+        if meta.size > 4096 {
+            let mut tail = [0u8; 64];
+            let read_tail = fs.read_at(inode, 4096, &mut tail).expect("read init tail");
+            assert!(read_tail > 0);
+        }
     }
 
     fn build_minimal_ext4(buf: &mut [u8], file_data: &[u8]) {

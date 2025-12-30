@@ -106,6 +106,7 @@
 - Add virtio-blk MMIO support and prefer external rootfs images over the ramdisk.
 - Use an IRQ-driven wait queue for virtio-blk completion and fall back to polling when needed.
 - Add an ext4-init host-side VFS check for reading `/init` from an ext4 image.
+- Extend ext4-init host test to validate root directory entries and larger reads.
 - Force QEMU virtio-mmio into modern mode in run/test scripts.
 - Extend ext4 read path to handle extent trees and indirect blocks.
 - Re-enable interrupts in idle so blocking syscalls can sleep and resume.
@@ -144,3 +145,4 @@
 - Add getgroups/setgroups stubs returning empty groups.
 - Add test runner script for internal self-test cases and log summaries.
 - Add PLIC-backed external IRQ handling and virtio-blk interrupt-driven completion.
+- Add an ext4 rootfs mount log marker and smoke-test check in QEMU runs.

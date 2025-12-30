@@ -8,6 +8,7 @@ FS=${FS:-}
 MODE=${MODE:-debug}
 USER_TEST=${USER_TEST:-0}
 EXPECT_INIT=${EXPECT_INIT:-0}
+EXPECT_EXT4=${EXPECT_EXT4:-0}
 TARGET=riscv64gc-unknown-none-elf
 CRATE=axruntime
 QEMU_BIN=${QEMU_BIN:-qemu-system-riscv64}
@@ -90,6 +91,14 @@ fi
 if [[ "${EXPECT_INIT}" == "1" ]]; then
   if ! grep -q "init: ok" "${LOG_FILE}"; then
     echo "Smoke test failed: init banner not found." >&2
+    cat "${LOG_FILE}" >&2
+    exit 1
+  fi
+fi
+
+if [[ "${EXPECT_EXT4}" == "1" ]]; then
+  if ! grep -q "vfs: mounted ext4 rootfs" "${LOG_FILE}"; then
+    echo "Smoke test failed: ext4 mount banner not found." >&2
     cat "${LOG_FILE}" >&2
     exit 1
   fi
