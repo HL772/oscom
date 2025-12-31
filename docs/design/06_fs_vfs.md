@@ -25,6 +25,7 @@
 - FAT32 完成 BPB 解析、簇链遍历与目录项解析，实现只读文件读取与根目录枚举。
 - FAT32 支持写路径更新目录项大小与扩展簇链，覆盖文件增长与多簇写入。
 - ext4 完成 superblock + 组描述符 + inode 表读取，支持目录查找与只读文件读取（含 extent 树与间接块读路径）。
+- ext4 提供最小写路径骨架（create/write/truncate），仅支持 direct blocks 与单组 bitmap 分配，不含 journaling/extent 扩展。
 - 权限与时间戳语义对齐 Linux，错误码通过 errno 映射返回。
 
 ## 关键数据结构
@@ -58,3 +59,4 @@ read(file, off, len)
 - 大文件读写与多目录层级路径解析。
 - git/vim/gcc/rustc 关键路径回归。
 - ext4 镜像挂载与一致性测试（读写后比对）。
+- ext4 写路径自测：create/write/truncate 的最小覆盖（host 侧）。

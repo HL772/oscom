@@ -15,6 +15,8 @@ const SUPERBLOCK_INODES_PER_GROUP_OFFSET: usize = 40;
 const SUPERBLOCK_MAGIC_OFFSET: usize = 56;
 const SUPERBLOCK_INODE_SIZE_OFFSET: usize = 88;
 const GROUP_DESC_SIZE: usize = 32;
+const GROUP_DESC_BLOCK_BITMAP_OFFSET: usize = 0;
+const GROUP_DESC_INODE_BITMAP_OFFSET: usize = 4;
 const GROUP_DESC_INODE_TABLE_OFFSET: usize = 8;
 const INODE_MODE_OFFSET: usize = 0;
 const INODE_SIZE_LO_OFFSET: usize = 4;
@@ -25,6 +27,17 @@ const INODE_SIZE_HIGH_OFFSET: usize = 108;
 const EXT4_EXTENTS_FLAG: u32 = 0x0008_0000;
 const EXTENT_HEADER_MAGIC: u16 = 0xf30a;
 const EXT4_SCRATCH_SIZE: usize = 4096;
+const EXT4_MODE_DIR: u16 = 0x4000;
+const EXT4_MODE_FILE: u16 = 0x8000;
+const EXT4_DIR_ENTRY_HEADER: usize = 8;
+const EXT4_DIR_ENTRY_FILE: u8 = 1;
+const EXT4_DIR_ENTRY_DIR: u8 = 2;
+const EXT4_DIR_ENTRY_CHAR: u8 = 3;
+const EXT4_DIR_ENTRY_BLOCK: u8 = 4;
+const EXT4_DIR_ENTRY_FIFO: u8 = 5;
+const EXT4_DIR_ENTRY_SOCKET: u8 = 6;
+const EXT4_DIR_ENTRY_SYMLINK: u8 = 7;
+const EXT4_DIRECT_BLOCKS: usize = 12;
 
 struct ScratchLock {
     locked: AtomicBool,
@@ -114,6 +127,8 @@ impl SuperBlock {
 
 #[derive(Clone, Copy, Debug)]
 struct GroupDesc {
+    block_bitmap: u32,
+    inode_bitmap: u32,
     inode_table: u32,
 }
 
@@ -122,11 +137,17 @@ impl GroupDesc {
         if buf.len() < GROUP_DESC_SIZE {
             return Err(VfsError::Invalid);
         }
+        let block_bitmap = read_u32(buf, GROUP_DESC_BLOCK_BITMAP_OFFSET);
+        let inode_bitmap = read_u32(buf, GROUP_DESC_INODE_BITMAP_OFFSET);
         let inode_table = read_u32(buf, GROUP_DESC_INODE_TABLE_OFFSET);
-        if inode_table == 0 {
+        if block_bitmap == 0 || inode_bitmap == 0 || inode_table == 0 {
             return Err(VfsError::Invalid);
         }
-        Ok(Self { inode_table })
+        Ok(Self {
+            block_bitmap,
+            inode_bitmap,
+            inode_table,
+        })
     }
 }
 
@@ -178,7 +199,7 @@ impl<'a> Ext4Fs<'a> {
         GroupDesc::parse(&buf)
     }
 
-    fn read_inode(&self, inode: InodeId) -> VfsResult<Ext4Inode> {
+    fn inode_location(&self, inode: InodeId) -> VfsResult<(u64, usize)> {
         if inode == 0 {
             return Err(VfsError::NotFound);
         }
@@ -197,6 +218,11 @@ impl<'a> Ext4Fs<'a> {
         let block_size = self.fs_block_size() as u64;
         let inode_table = desc.inode_table as u64;
         let offset = inode_table * block_size + index as u64 * inode_size as u64;
+        Ok((offset, inode_size))
+    }
+
+    fn read_inode(&self, inode: InodeId) -> VfsResult<Ext4Inode> {
+        let (offset, inode_size) = self.inode_location(inode)?;
         let mut buf = [0u8; 512];
         read_bytes(&self.cache, offset, &mut buf[..inode_size])?;
         let mode = read_u16(&buf, INODE_MODE_OFFSET);
@@ -222,6 +248,25 @@ impl<'a> Ext4Fs<'a> {
             flags,
             blocks,
         })
+    }
+
+    fn write_inode(&self, inode: InodeId, inode_meta: &Ext4Inode) -> VfsResult<()> {
+        let (offset, inode_size) = self.inode_location(inode)?;
+        let mut buf = [0u8; 512];
+        read_bytes(&self.cache, offset, &mut buf[..inode_size])?;
+        write_u16(&mut buf, INODE_MODE_OFFSET, inode_meta.mode);
+        write_u32(&mut buf, INODE_SIZE_LO_OFFSET, inode_meta.size as u32);
+        if inode_size >= INODE_SIZE_HIGH_OFFSET + 4 {
+            write_u32(&mut buf, INODE_SIZE_HIGH_OFFSET, (inode_meta.size >> 32) as u32);
+        }
+        write_u32(&mut buf, INODE_FLAGS_OFFSET, inode_meta.flags);
+        if INODE_BLOCK_OFFSET + INODE_BLOCK_LEN > inode_size {
+            return Err(VfsError::Invalid);
+        }
+        for (idx, block) in inode_meta.blocks.iter().enumerate() {
+            write_u32(&mut buf, INODE_BLOCK_OFFSET + idx * 4, *block);
+        }
+        write_bytes(&self.cache, offset, &buf[..inode_size])
     }
 
     fn map_block(&self, inode: &Ext4Inode, logical: u32) -> VfsResult<Option<u64>> {
@@ -335,7 +380,7 @@ impl<'a> Ext4Fs<'a> {
     }
 
     fn map_indirect_block(&self, inode: &Ext4Inode, logical: u32) -> VfsResult<Option<u64>> {
-        if logical < 12 {
+        if logical < EXT4_DIRECT_BLOCKS as u32 {
             let phys = inode.blocks[logical as usize];
             return Ok(if phys == 0 { None } else { Some(phys as u64) });
         }
@@ -346,7 +391,7 @@ impl<'a> Ext4Fs<'a> {
             return Err(VfsError::Invalid);
         }
 
-        let mut index = logical as u64 - 12;
+        let mut index = logical as u64 - EXT4_DIRECT_BLOCKS as u64;
         if index < ptrs_per_block {
             let phys = self.read_indirect_ptr(inode.blocks[12], index, block_size)?;
             return Ok(if phys == 0 { None } else { Some(phys as u64) });
@@ -405,6 +450,125 @@ impl<'a> Ext4Fs<'a> {
         let offset = block * block_size as u64;
         read_bytes(&self.cache, offset, &mut buf[..block_size])
     }
+
+    fn write_fs_block(&self, block: u64, buf: &[u8]) -> VfsResult<()> {
+        let block_size = self.fs_block_size() as usize;
+        if buf.len() < block_size {
+            return Err(VfsError::Invalid);
+        }
+        let offset = block * block_size as u64;
+        write_bytes(&self.cache, offset, &buf[..block_size])
+    }
+
+    fn alloc_from_bitmap(&self, bitmap_block: u32, total_bits: u32) -> VfsResult<u32> {
+        let block_size = self.fs_block_size() as usize;
+        let mut scratch = [0u8; EXT4_SCRATCH_SIZE];
+        self.read_fs_block(bitmap_block as u64, &mut scratch[..block_size])?;
+        let mut chosen: Option<u32> = None;
+        for (byte_idx, byte) in scratch[..block_size].iter_mut().enumerate() {
+            if *byte == 0xff {
+                continue;
+            }
+            for bit in 0..8u8 {
+                let index = byte_idx as u32 * 8 + bit as u32;
+                if index >= total_bits {
+                    break;
+                }
+                let mask = 1u8 << bit;
+                if (*byte & mask) == 0 {
+                    *byte |= mask;
+                    chosen = Some(index);
+                    break;
+                }
+            }
+            if chosen.is_some() {
+                break;
+            }
+        }
+        let index = chosen.ok_or(VfsError::NoMem)?;
+        self.write_fs_block(bitmap_block as u64, &scratch[..block_size])?;
+        Ok(index)
+    }
+
+    fn allocate_inode(&self) -> VfsResult<InodeId> {
+        let desc = self.read_group_desc(0)?;
+        let total = self.superblock.inodes_per_group;
+        if total == 0 {
+            return Err(VfsError::Invalid);
+        }
+        let index = self.alloc_from_bitmap(desc.inode_bitmap, total)?;
+        Ok(index as InodeId + 1)
+    }
+
+    fn allocate_block(&self) -> VfsResult<u32> {
+        let desc = self.read_group_desc(0)?;
+        let total = self.superblock.blocks_per_group;
+        if total == 0 {
+            return Err(VfsError::Invalid);
+        }
+        self.alloc_from_bitmap(desc.block_bitmap, total)
+    }
+
+    fn zero_fs_block(&self, block: u32) -> VfsResult<()> {
+        let block_size = self.fs_block_size() as usize;
+        let mut scratch = [0u8; EXT4_SCRATCH_SIZE];
+        scratch[..block_size].fill(0);
+        self.write_fs_block(block as u64, &scratch[..block_size])
+    }
+
+    fn insert_dir_entry(&self, dir_inode: InodeId, name: &str, inode: InodeId, kind: FileType) -> VfsResult<()> {
+        let name_bytes = name.as_bytes();
+        if name_bytes.is_empty() || name_bytes.len() > axvfs::MAX_NAME_LEN {
+            return Err(VfsError::Invalid);
+        }
+        let inode_meta = self.read_inode(dir_inode)?;
+        if inode_mode_type(inode_meta.mode) != FileType::Dir {
+            return Err(VfsError::NotDir);
+        }
+        let block_size = self.fs_block_size() as usize;
+        let mut scratch = [0u8; EXT4_SCRATCH_SIZE];
+        let Some(block) = self.map_block(&inode_meta, 0)? else {
+            return Err(VfsError::NotSupported);
+        };
+        self.read_fs_block(block, &mut scratch[..block_size])?;
+        let entry_len = dir_entry_size(name_bytes.len());
+
+        let mut pos = 0usize;
+        let mut last_entry: Option<(usize, usize, usize)> = None;
+        while pos + EXT4_DIR_ENTRY_HEADER <= block_size {
+            let inode_num = read_u32(&scratch, pos) as usize;
+            let rec_len = read_u16(&scratch, pos + 4) as usize;
+            if rec_len < EXT4_DIR_ENTRY_HEADER || pos + rec_len > block_size {
+                break;
+            }
+            let name_len = scratch[pos + 6] as usize;
+            if inode_num == 0 {
+                if rec_len >= entry_len {
+                    write_dir_entry(&mut scratch, pos, inode, name_bytes, kind, rec_len as u16)?;
+                    return self.write_fs_block(block, &scratch[..block_size]);
+                }
+                return Err(VfsError::NoMem);
+            }
+            let actual = dir_entry_size(name_len);
+            last_entry = Some((pos, rec_len, actual));
+            pos += rec_len;
+        }
+
+        let Some((last_pos, last_len, last_actual)) = last_entry else {
+            return Err(VfsError::Invalid);
+        };
+        if last_len < last_actual {
+            return Err(VfsError::Invalid);
+        }
+        let free = last_len - last_actual;
+        if free < entry_len {
+            return Err(VfsError::NoMem);
+        }
+        write_u16(&mut scratch, last_pos + 4, last_actual as u16);
+        let new_pos = last_pos + last_actual;
+        write_dir_entry(&mut scratch, new_pos, inode, name_bytes, kind, free as u16)?;
+        self.write_fs_block(block, &scratch[..block_size])
+    }
 }
 
 impl VfsOps for Ext4Fs<'_> {
@@ -429,8 +593,27 @@ impl VfsOps for Ext4Fs<'_> {
         Ok(found)
     }
 
-    fn create(&self, _parent: InodeId, _name: &str, _kind: FileType, _mode: u16) -> VfsResult<InodeId> {
-        Err(VfsError::NotSupported)
+    fn create(&self, parent: InodeId, name: &str, kind: FileType, mode: u16) -> VfsResult<InodeId> {
+        if kind != FileType::File {
+            return Err(VfsError::NotSupported);
+        }
+        if name.is_empty() || name.len() > axvfs::MAX_NAME_LEN {
+            return Err(VfsError::Invalid);
+        }
+        let parent_inode = self.read_inode(parent)?;
+        if inode_mode_type(parent_inode.mode) != FileType::Dir {
+            return Err(VfsError::NotDir);
+        }
+        let inode = self.allocate_inode()?;
+        let inode_meta = Ext4Inode {
+            mode: EXT4_MODE_FILE | (mode & 0o777),
+            size: 0,
+            flags: 0,
+            blocks: [0u32; 15],
+        };
+        self.write_inode(inode, &inode_meta)?;
+        self.insert_dir_entry(parent, name, inode, kind)?;
+        Ok(inode)
     }
 
     fn remove(&self, _parent: InodeId, _name: &str) -> VfsResult<()> {
@@ -452,8 +635,48 @@ impl VfsOps for Ext4Fs<'_> {
         self.read_from_inode(&inode_meta, offset, buf)
     }
 
-    fn write_at(&self, _inode: InodeId, _offset: u64, _buf: &[u8]) -> VfsResult<usize> {
-        Err(VfsError::NotSupported)
+    fn write_at(&self, inode: InodeId, offset: u64, buf: &[u8]) -> VfsResult<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        let mut inode_meta = self.read_inode(inode)?;
+        if inode_mode_type(inode_meta.mode) == FileType::Dir {
+            return Err(VfsError::NotDir);
+        }
+        // Minimal write path: only allocate direct blocks, no extent growth or journaling.
+        let block_size = self.fs_block_size() as u64;
+        let mut total = 0usize;
+        let mut cur_offset = offset;
+        while total < buf.len() {
+            let block_index = (cur_offset / block_size) as u32;
+            let in_block = (cur_offset % block_size) as usize;
+            let to_copy = core::cmp::min(buf.len() - total, block_size as usize - in_block);
+            let phys = match self.map_block(&inode_meta, block_index)? {
+                Some(block) => block,
+                None => {
+                    if (inode_meta.flags & EXT4_EXTENTS_FLAG) != 0 {
+                        return Err(VfsError::NotSupported);
+                    }
+                    if block_index as usize >= EXT4_DIRECT_BLOCKS {
+                        return Err(VfsError::NotSupported);
+                    }
+                    let new_block = self.allocate_block()?;
+                    inode_meta.blocks[block_index as usize] = new_block;
+                    self.zero_fs_block(new_block)?;
+                    new_block as u64
+                }
+            };
+            let block_offset = phys * block_size + in_block as u64;
+            write_bytes(&self.cache, block_offset, &buf[total..total + to_copy])?;
+            total += to_copy;
+            cur_offset += to_copy as u64;
+        }
+        let end = offset + total as u64;
+        if end > inode_meta.size {
+            inode_meta.size = end;
+        }
+        self.write_inode(inode, &inode_meta)?;
+        Ok(total)
     }
 
     fn read_dir(&self, inode: InodeId, offset: usize, entries: &mut [DirEntry]) -> VfsResult<usize> {
@@ -483,6 +706,35 @@ impl VfsOps for Ext4Fs<'_> {
         Ok(written)
     }
 
+    fn truncate(&self, inode: InodeId, size: u64) -> VfsResult<()> {
+        let mut inode_meta = self.read_inode(inode)?;
+        if inode_mode_type(inode_meta.mode) == FileType::Dir {
+            return Err(VfsError::NotDir);
+        }
+        if size <= inode_meta.size {
+            // Minimal truncate: shrink size without reclaiming blocks.
+            inode_meta.size = size;
+            return self.write_inode(inode, &inode_meta);
+        }
+        if (inode_meta.flags & EXT4_EXTENTS_FLAG) != 0 {
+            return Err(VfsError::NotSupported);
+        }
+        let block_size = self.fs_block_size() as u64;
+        let blocks_needed = (size + block_size - 1) / block_size;
+        for block_index in 0..blocks_needed {
+            let block_index = block_index as u32;
+            if self.map_block(&inode_meta, block_index)?.is_none() {
+                if block_index as usize >= EXT4_DIRECT_BLOCKS {
+                    return Err(VfsError::NotSupported);
+                }
+                let new_block = self.allocate_block()?;
+                inode_meta.blocks[block_index as usize] = new_block;
+                self.zero_fs_block(new_block)?;
+            }
+        }
+        inode_meta.size = size;
+        self.write_inode(inode, &inode_meta)
+    }
 }
 
 fn read_bytes(cache: &BlockCache<'_>, offset: u64, buf: &mut [u8]) -> VfsResult<()> {
@@ -510,6 +762,36 @@ fn read_bytes(cache: &BlockCache<'_>, offset: u64, buf: &mut [u8]) -> VfsResult<
     Ok(())
 }
 
+fn write_bytes(cache: &BlockCache<'_>, offset: u64, buf: &[u8]) -> VfsResult<()> {
+    let block_size = cache.block_size();
+    if block_size == 0 || block_size > EXT4_SCRATCH_SIZE {
+        return Err(VfsError::Invalid);
+    }
+    let block_size_u64 = block_size as u64;
+    let guard = EXT4_SCRATCH.lock();
+    let scratch = guard.get_mut();
+    let mut remaining = buf.len();
+    let mut buf_offset = 0usize;
+    let mut cur_offset = offset;
+    while remaining > 0 {
+        let block_id = cur_offset / block_size_u64;
+        let in_block = (cur_offset % block_size_u64) as usize;
+        let to_copy = core::cmp::min(remaining, block_size - in_block);
+        if in_block == 0 && to_copy == block_size {
+            cache.write_block(block_id, &buf[buf_offset..buf_offset + block_size])?;
+        } else {
+            cache.read_block(block_id, &mut scratch[..block_size])?;
+            scratch[in_block..in_block + to_copy]
+                .copy_from_slice(&buf[buf_offset..buf_offset + to_copy]);
+            cache.write_block(block_id, &scratch[..block_size])?;
+        }
+        remaining -= to_copy;
+        buf_offset += to_copy;
+        cur_offset += to_copy as u64;
+    }
+    Ok(())
+}
+
 fn read_u16(buf: &[u8], offset: usize) -> u16 {
     u16::from_le_bytes([buf[offset], buf[offset + 1]])
 }
@@ -518,10 +800,20 @@ fn read_u32(buf: &[u8], offset: usize) -> u32 {
     u32::from_le_bytes([buf[offset], buf[offset + 1], buf[offset + 2], buf[offset + 3]])
 }
 
+fn write_u16(buf: &mut [u8], offset: usize, value: u16) {
+    let bytes = value.to_le_bytes();
+    buf[offset..offset + 2].copy_from_slice(&bytes);
+}
+
+fn write_u32(buf: &mut [u8], offset: usize, value: u32) {
+    let bytes = value.to_le_bytes();
+    buf[offset..offset + 4].copy_from_slice(&bytes);
+}
+
 fn inode_mode_type(mode: u16) -> FileType {
     match mode & 0xf000 {
-        0x4000 => FileType::Dir,
-        0x8000 => FileType::File,
+        EXT4_MODE_DIR => FileType::Dir,
+        EXT4_MODE_FILE => FileType::File,
         0x2000 => FileType::Char,
         0x6000 => FileType::Block,
         0x1000 => FileType::Fifo,
@@ -529,6 +821,36 @@ fn inode_mode_type(mode: u16) -> FileType {
         0xc000 => FileType::Socket,
         _ => FileType::File,
     }
+}
+
+fn dir_entry_size(name_len: usize) -> usize {
+    let size = EXT4_DIR_ENTRY_HEADER + name_len;
+    (size + 3) & !3
+}
+
+fn dir_entry_type(kind: FileType) -> u8 {
+    match kind {
+        FileType::File => EXT4_DIR_ENTRY_FILE,
+        FileType::Dir => EXT4_DIR_ENTRY_DIR,
+        FileType::Char => EXT4_DIR_ENTRY_CHAR,
+        FileType::Block => EXT4_DIR_ENTRY_BLOCK,
+        FileType::Fifo => EXT4_DIR_ENTRY_FIFO,
+        FileType::Socket => EXT4_DIR_ENTRY_SOCKET,
+        FileType::Symlink => EXT4_DIR_ENTRY_SYMLINK,
+    }
+}
+
+fn write_dir_entry(buf: &mut [u8], offset: usize, inode: InodeId, name: &[u8], kind: FileType, rec_len: u16) -> VfsResult<()> {
+    if name.len() > axvfs::MAX_NAME_LEN || rec_len as usize > buf.len().saturating_sub(offset) {
+        return Err(VfsError::Invalid);
+    }
+    write_u32(buf, offset, inode as u32);
+    write_u16(buf, offset + 4, rec_len);
+    buf[offset + 6] = name.len() as u8;
+    buf[offset + 7] = dir_entry_type(kind);
+    let name_off = offset + EXT4_DIR_ENTRY_HEADER;
+    buf[name_off..name_off + name.len()].copy_from_slice(name);
+    Ok(())
 }
 
 struct ExtentHeader {
@@ -616,8 +938,14 @@ mod tests {
             Ok(())
         }
 
-        fn write_block(&self, _block_id: BlockId, _buf: &[u8]) -> VfsResult<()> {
-            Err(VfsError::NotSupported)
+        fn write_block(&self, block_id: BlockId, buf: &[u8]) -> VfsResult<()> {
+            let offset = block_id as usize * self.block_size;
+            let mut data = self.data.borrow_mut();
+            if offset + self.block_size > data.len() {
+                return Err(VfsError::NotFound);
+            }
+            data[offset..offset + self.block_size].copy_from_slice(&buf[..self.block_size]);
+            Ok(())
         }
 
         fn flush(&self) -> VfsResult<()> {
@@ -645,8 +973,14 @@ mod tests {
             Ok(())
         }
 
-        fn write_block(&self, _block_id: BlockId, _buf: &[u8]) -> VfsResult<()> {
-            Err(VfsError::NotSupported)
+        fn write_block(&self, block_id: BlockId, buf: &[u8]) -> VfsResult<()> {
+            let offset = block_id as usize * self.block_size;
+            let mut data = self.data.borrow_mut();
+            if offset + self.block_size > data.len() {
+                return Err(VfsError::NotFound);
+            }
+            data[offset..offset + self.block_size].copy_from_slice(&buf[..self.block_size]);
+            Ok(())
         }
 
         fn flush(&self) -> VfsResult<()> {
@@ -809,8 +1143,37 @@ mod tests {
         assert!(large_buf.iter().all(|&b| b == b'Z'));
     }
 
+    #[test]
+    fn create_write_truncate() {
+        let mut data = vec![0u8; 64 * 1024];
+        build_ext4_for_write(&mut data);
+        let dev = FileBlockDevice {
+            block_size: 512,
+            data: RefCell::new(data),
+        };
+        let fs = Ext4Fs::new(&dev).unwrap();
+        let root = fs.root().unwrap();
+        let inode = fs.create(root, "log", FileType::File, 0o644).unwrap();
+        let payload = b"hello-ext4";
+        let written = fs.write_at(inode, 0, payload).unwrap();
+        assert_eq!(written, payload.len());
+        let meta = fs.metadata(inode).unwrap();
+        assert_eq!(meta.size, payload.len() as u64);
+        let mut buf = [0u8; 16];
+        let read = fs.read_at(inode, 0, &mut buf).unwrap();
+        assert_eq!(&buf[..read], payload);
+        fs.truncate(inode, 5).unwrap();
+        let meta = fs.metadata(inode).unwrap();
+        assert_eq!(meta.size, 5);
+        let read = fs.read_at(inode, 0, &mut buf).unwrap();
+        assert_eq!(read, 5);
+        assert_eq!(&buf[..read], &payload[..read]);
+    }
+
     fn build_minimal_ext4(buf: &mut [u8], file_data: &[u8]) {
         const BLOCK_SIZE: usize = 1024;
+        const BLOCK_BITMAP_BLOCK: usize = 3;
+        const INODE_BITMAP_BLOCK: usize = 4;
         const INODE_TABLE_BLOCK: usize = 5;
         const ROOT_DIR_BLOCK: usize = 6;
         const INIT_BLOCK: usize = 7;
@@ -824,6 +1187,16 @@ mod tests {
         write_u16(sb, SUPERBLOCK_INODE_SIZE_OFFSET, TEST_INODE_SIZE as u16);
 
         let gd_offset = BLOCK_SIZE * 2;
+        write_u32(
+            &mut buf[gd_offset..gd_offset + GROUP_DESC_SIZE],
+            GROUP_DESC_BLOCK_BITMAP_OFFSET,
+            BLOCK_BITMAP_BLOCK as u32,
+        );
+        write_u32(
+            &mut buf[gd_offset..gd_offset + GROUP_DESC_SIZE],
+            GROUP_DESC_INODE_BITMAP_OFFSET,
+            INODE_BITMAP_BLOCK as u32,
+        );
         write_u32(
             &mut buf[gd_offset..gd_offset + GROUP_DESC_SIZE],
             GROUP_DESC_INODE_TABLE_OFFSET,
@@ -866,6 +1239,8 @@ mod tests {
 
     fn build_ext4_with_extent_tree(buf: &mut [u8], file_data: &[u8]) {
         const BLOCK_SIZE: usize = 1024;
+        const BLOCK_BITMAP_BLOCK: usize = 3;
+        const INODE_BITMAP_BLOCK: usize = 4;
         const INODE_TABLE_BLOCK: usize = 5;
         const ROOT_DIR_BLOCK: usize = 6;
         const INIT_BLOCK: usize = 7;
@@ -879,6 +1254,16 @@ mod tests {
         write_u16(sb, SUPERBLOCK_INODE_SIZE_OFFSET, TEST_INODE_SIZE as u16);
 
         let gd_offset = BLOCK_SIZE * 2;
+        write_u32(
+            &mut buf[gd_offset..gd_offset + GROUP_DESC_SIZE],
+            GROUP_DESC_BLOCK_BITMAP_OFFSET,
+            BLOCK_BITMAP_BLOCK as u32,
+        );
+        write_u32(
+            &mut buf[gd_offset..gd_offset + GROUP_DESC_SIZE],
+            GROUP_DESC_INODE_BITMAP_OFFSET,
+            INODE_BITMAP_BLOCK as u32,
+        );
         write_u32(
             &mut buf[gd_offset..gd_offset + GROUP_DESC_SIZE],
             GROUP_DESC_INODE_TABLE_OFFSET,
@@ -948,6 +1333,8 @@ mod tests {
 
     fn build_ext4_with_indirect(buf: &mut [u8], file_data: &[u8]) {
         const BLOCK_SIZE: usize = 1024;
+        const BLOCK_BITMAP_BLOCK: usize = 3;
+        const INODE_BITMAP_BLOCK: usize = 4;
         const INODE_TABLE_BLOCK: usize = 5;
         const ROOT_DIR_BLOCK: usize = 6;
         const INDIRECT_BLOCK: usize = 7;
@@ -961,6 +1348,16 @@ mod tests {
         write_u16(sb, SUPERBLOCK_INODE_SIZE_OFFSET, TEST_INODE_SIZE as u16);
 
         let gd_offset = BLOCK_SIZE * 2;
+        write_u32(
+            &mut buf[gd_offset..gd_offset + GROUP_DESC_SIZE],
+            GROUP_DESC_BLOCK_BITMAP_OFFSET,
+            BLOCK_BITMAP_BLOCK as u32,
+        );
+        write_u32(
+            &mut buf[gd_offset..gd_offset + GROUP_DESC_SIZE],
+            GROUP_DESC_INODE_BITMAP_OFFSET,
+            INODE_BITMAP_BLOCK as u32,
+        );
         write_u32(
             &mut buf[gd_offset..gd_offset + GROUP_DESC_SIZE],
             GROUP_DESC_INODE_TABLE_OFFSET,
@@ -1005,6 +1402,70 @@ mod tests {
         buf[init_offset..init_offset + len].copy_from_slice(&file_data[..len]);
     }
 
+    fn build_ext4_for_write(buf: &mut [u8]) {
+        const BLOCK_SIZE: usize = 1024;
+        const BLOCK_BITMAP_BLOCK: usize = 3;
+        const INODE_BITMAP_BLOCK: usize = 4;
+        const INODE_TABLE_BLOCK: usize = 5;
+        const ROOT_DIR_BLOCK: usize = 6;
+
+        buf.fill(0);
+
+        let sb = &mut buf[SUPERBLOCK_OFFSET as usize..SUPERBLOCK_OFFSET as usize + SUPERBLOCK_SIZE];
+        write_u16(sb, SUPERBLOCK_MAGIC_OFFSET, EXT4_MAGIC);
+        write_u32(sb, SUPERBLOCK_LOG_BLOCK_SIZE_OFFSET, 0);
+        write_u32(sb, SUPERBLOCK_BLOCKS_PER_GROUP_OFFSET, 8192);
+        write_u32(sb, SUPERBLOCK_INODES_PER_GROUP_OFFSET, 32);
+        write_u16(sb, SUPERBLOCK_INODE_SIZE_OFFSET, TEST_INODE_SIZE as u16);
+
+        let gd_offset = BLOCK_SIZE * 2;
+        write_u32(
+            &mut buf[gd_offset..gd_offset + GROUP_DESC_SIZE],
+            GROUP_DESC_BLOCK_BITMAP_OFFSET,
+            BLOCK_BITMAP_BLOCK as u32,
+        );
+        write_u32(
+            &mut buf[gd_offset..gd_offset + GROUP_DESC_SIZE],
+            GROUP_DESC_INODE_BITMAP_OFFSET,
+            INODE_BITMAP_BLOCK as u32,
+        );
+        write_u32(
+            &mut buf[gd_offset..gd_offset + GROUP_DESC_SIZE],
+            GROUP_DESC_INODE_TABLE_OFFSET,
+            INODE_TABLE_BLOCK as u32,
+        );
+
+        let bb_offset = BLOCK_BITMAP_BLOCK * BLOCK_SIZE;
+        set_bitmap(&mut buf[bb_offset..bb_offset + BLOCK_SIZE], 0);
+        set_bitmap(&mut buf[bb_offset..bb_offset + BLOCK_SIZE], 1);
+        set_bitmap(&mut buf[bb_offset..bb_offset + BLOCK_SIZE], 2);
+        set_bitmap(&mut buf[bb_offset..bb_offset + BLOCK_SIZE], BLOCK_BITMAP_BLOCK);
+        set_bitmap(&mut buf[bb_offset..bb_offset + BLOCK_SIZE], INODE_BITMAP_BLOCK);
+        set_bitmap(&mut buf[bb_offset..bb_offset + BLOCK_SIZE], INODE_TABLE_BLOCK);
+        set_bitmap(&mut buf[bb_offset..bb_offset + BLOCK_SIZE], ROOT_DIR_BLOCK);
+
+        let ib_offset = INODE_BITMAP_BLOCK * BLOCK_SIZE;
+        set_bitmap(&mut buf[ib_offset..ib_offset + BLOCK_SIZE], 0);
+        set_bitmap(&mut buf[ib_offset..ib_offset + BLOCK_SIZE], 1);
+
+        let inode_table_offset = INODE_TABLE_BLOCK * BLOCK_SIZE;
+        let mut root_blocks = [0u32; 15];
+        root_blocks[0] = ROOT_DIR_BLOCK as u32;
+        write_inode(
+            &mut buf[inode_table_offset..],
+            2,
+            0x4000 | 0o755,
+            BLOCK_SIZE as u32,
+            0,
+            &root_blocks,
+        );
+
+        let dir_offset = ROOT_DIR_BLOCK * BLOCK_SIZE;
+        let dir = &mut buf[dir_offset..dir_offset + BLOCK_SIZE];
+        write_dir_entry(dir, 0, 2, b".", 2, 12);
+        write_dir_entry(dir, 12, 2, b"..", 2, (BLOCK_SIZE - 12) as u16);
+    }
+
     fn write_inode(buf: &mut [u8], inode_num: u32, mode: u16, size: u32, flags: u32, blocks: &[u32; 15]) {
         let index = (inode_num - 1) as usize;
         let base = index * TEST_INODE_SIZE;
@@ -1037,5 +1498,11 @@ mod tests {
     fn write_u32(buf: &mut [u8], offset: usize, value: u32) {
         let bytes = value.to_le_bytes();
         buf[offset..offset + 4].copy_from_slice(&bytes);
+    }
+
+    fn set_bitmap(buf: &mut [u8], bit: usize) {
+        let byte = bit / 8;
+        let offset = bit % 8;
+        buf[byte] |= 1u8 << offset;
     }
 }
