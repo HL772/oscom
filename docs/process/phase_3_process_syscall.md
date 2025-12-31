@@ -70,6 +70,7 @@
 - waitpid 回收 Zombie 时释放子进程的用户页表与物理页。
 - fd 表按进程隔离，fork/clone 复制 fd/偏移/stdio 重定向并维护 pipe 引用计数，退出时统一释放。
 - fd 句柄内置文件偏移，read/write/getdents64 直接更新句柄状态。
+- cwd/umask 改为按进程保存，chdir 更新 cwd，openat 创建时应用 umask。
 - 增加 uname，占位返回内核与平台信息。
 - 增加 getppid/getuid/geteuid/getgid/getegid/getresuid/getresgid 等身份信息占位。
 - 增加 gettid 与 sched_yield，占位支持线程 ID；任务上下文可用时返回 TaskId+1。

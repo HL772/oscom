@@ -321,7 +321,6 @@ const RUSAGE_THREAD: isize = 1;
 const S_IFIFO: u32 = 0o010000;
 
 static RNG_STATE: AtomicU64 = AtomicU64::new(0);
-static UMASK: AtomicU64 = AtomicU64::new(0);
 const DEFAULT_PRCTL_NAME: [u8; 16] = *b"aurora\0\0\0\0\0\0\0\0\0\0";
 static mut PRCTL_NAME: [u8; 16] = DEFAULT_PRCTL_NAME;
 
@@ -527,6 +526,12 @@ static mut FD_TABLES: [[FdEntry; FD_TABLE_SLOTS]; MAX_PROCS] = [[EMPTY_FD_ENTRY;
 static mut STDIO_REDIRECT: [[Option<FdEntry>; 3]; MAX_PROCS] = [[None; 3]; MAX_PROCS];
 // SAFETY: 标准 fd 的状态标志在单核阶段按进程顺序访问。
 static mut STDIO_FLAGS: [[usize; 3]; MAX_PROCS] = [[0; 3]; MAX_PROCS];
+// SAFETY: 当前工作目录缓存按进程顺序访问。
+static mut PROC_CWD: [[u8; MAX_PATH_LEN]; MAX_PROCS] = [[0; MAX_PATH_LEN]; MAX_PROCS];
+// SAFETY: 当前工作目录长度按进程顺序访问。
+static mut PROC_CWD_LEN: [usize; MAX_PROCS] = [0; MAX_PROCS];
+// SAFETY: umask 按进程顺序访问。
+static mut PROC_UMASK: [u16; MAX_PROCS] = [0; MAX_PROCS];
 // SAFETY: 控制台输入缓存仅在单核阶段顺序访问。
 static mut CONSOLE_STASH: i16 = -1;
 // SAFETY: pipe 表在早期阶段串行访问。
@@ -893,9 +898,10 @@ fn sys_openat(_dirfd: usize, pathname: usize, flags: usize, _mode: usize) -> Res
     }
     let status_flags = flags & (O_ACCMODE | O_NONBLOCK | O_CLOEXEC);
     let accmode = flags & O_ACCMODE;
+    let create_mode = (_mode as u16) & !current_umask();
     with_mounts(|mounts| {
         let mut path_buf = [0u8; MAX_PATH_LEN];
-        let path = read_user_path_str(root_pa, pathname, &mut path_buf)?;
+        let path = read_user_path_abs(root_pa, pathname, &mut path_buf)?;
         let mut created = false;
         let (mount, inode) = match mounts.resolve_path(path) {
             Ok((mount, inode)) => (mount, inode),
@@ -906,7 +912,7 @@ fn sys_openat(_dirfd: usize, pathname: usize, flags: usize, _mode: usize) -> Res
                 let (mount, parent, name) = mounts.resolve_parent(path).map_err(map_vfs_err)?;
                 let fs = mounts.fs_for(mount).ok_or(Errno::NoEnt)?;
                 let inode = fs
-                    .create(parent, name, FileType::File, _mode as u16)
+                    .create(parent, name, FileType::File, create_mode)
                     .map_err(map_vfs_err)?;
                 created = true;
                 (mount, inode)
@@ -1187,7 +1193,7 @@ fn sys_newfstatat(_dirfd: usize, pathname: usize, stat_ptr: usize, _flags: usize
         return Err(Errno::Fault);
     }
     let mut path_buf = [0u8; MAX_PATH_LEN];
-    let path = read_user_path_str(root_pa, pathname, &mut path_buf)?;
+    let path = read_user_path_abs(root_pa, pathname, &mut path_buf)?;
     with_mounts(|mounts| {
         let (mount_id, inode) = mounts.resolve_path(path).map_err(map_vfs_err)?;
         let fs = mounts.fs_for(mount_id).ok_or(Errno::NoEnt)?;
@@ -1657,22 +1663,25 @@ fn sys_uname(buf: usize) -> Result<usize, Errno> {
 }
 
 fn sys_getcwd(buf: usize, size: usize) -> Result<usize, Errno> {
-    const PATH: &[u8] = b"/\0";
     if buf == 0 {
         return Err(Errno::Fault);
-    }
-    if size < PATH.len() {
-        return Err(Errno::Range);
     }
     let root_pa = mm::current_root_pa();
     if root_pa == 0 {
         return Err(Errno::Fault);
     }
-    let slice = UserSlice::new(buf, PATH.len());
-    slice
-        .copy_from_slice(root_pa, PATH)
+    let cwd = current_cwd_str();
+    let cwd_len = cwd.as_bytes().len();
+    if size < cwd_len + 1 {
+        return Err(Errno::Range);
+    }
+    UserSlice::new(buf, cwd_len)
+        .copy_from_slice(root_pa, cwd.as_bytes())
         .ok_or(Errno::Fault)?;
-    Ok(PATH.len())
+    UserPtr::<u8>::new(buf + cwd_len)
+        .write(root_pa, 0)
+        .ok_or(Errno::Fault)?;
+    Ok(cwd_len + 1)
 }
 
 fn sys_chdir(pathname: usize) -> Result<usize, Errno> {
@@ -1683,11 +1692,14 @@ fn sys_chdir(pathname: usize) -> Result<usize, Errno> {
     if root_pa == 0 {
         return Err(Errno::Fault);
     }
-    let (mount, inode) = vfs_lookup_inode(root_pa, pathname)?;
+    let mut path_buf = [0u8; MAX_PATH_LEN];
+    let path = read_user_path_abs(root_pa, pathname, &mut path_buf)?;
     with_mounts(|mounts| {
+        let (mount, inode) = mounts.resolve_path(path).map_err(map_vfs_err)?;
         let fs = mounts.fs_for(mount).ok_or(Errno::NoEnt)?;
         let meta = fs.metadata(inode).map_err(map_vfs_err)?;
         if meta.file_type == FileType::Dir {
+            set_current_cwd(path)?;
             Ok(0)
         } else {
             Err(Errno::NotDir)
@@ -1698,7 +1710,30 @@ fn sys_chdir(pathname: usize) -> Result<usize, Errno> {
 fn sys_fchdir(fd: usize) -> Result<usize, Errno> {
     let entry = resolve_fd(fd).ok_or(Errno::Badf)?;
     match entry.kind {
-        FdKind::Vfs(handle) if handle.file_type == FileType::Dir => Ok(0),
+        FdKind::Vfs(handle) if handle.file_type == FileType::Dir => {
+            let mut updated = false;
+            if handle.mount == MountId::Dev && handle.inode == devfs::ROOT_ID {
+                set_current_cwd("/dev")?;
+                updated = true;
+            } else if handle.mount == MountId::Proc && handle.inode == procfs::ROOT_ID {
+                set_current_cwd("/proc")?;
+                updated = true;
+            } else if handle.mount == MountId::Root {
+                let root_inode = with_mounts(|mounts| {
+                    let fs = mounts.fs_for(MountId::Root).ok_or(Errno::NoEnt)?;
+                    fs.root().map_err(map_vfs_err)
+                })?;
+                if handle.inode == root_inode {
+                    set_current_cwd("/")?;
+                    updated = true;
+                }
+            }
+            if !updated {
+                // 未知目录路径：保持 cwd 不变。
+                return Ok(0);
+            }
+            Ok(0)
+        }
         _ => Err(Errno::NotDir),
     }
 }
@@ -2066,7 +2101,7 @@ fn sys_fcntl(fd: usize, cmd: usize, arg: usize) -> Result<usize, Errno> {
 }
 
 fn sys_umask(mask: usize) -> Result<usize, Errno> {
-    let old = UMASK.swap((mask & 0o777) as u64, Ordering::Relaxed);
+    let old = set_current_umask((mask & 0o777) as u16)?;
     Ok(old as usize)
 }
 
@@ -2457,13 +2492,13 @@ fn with_mounts<R>(f: impl FnOnce(&MountTable<'_, VFS_MOUNT_COUNT>) -> R) -> R {
 
 fn vfs_lookup_inode(root_pa: usize, pathname: usize) -> Result<(MountId, InodeId), Errno> {
     let mut buf = [0u8; MAX_PATH_LEN];
-    let path = read_user_path_str(root_pa, pathname, &mut buf)?;
+    let path = read_user_path_abs(root_pa, pathname, &mut buf)?;
     with_mounts(|mounts| mounts.resolve_path(path).map_err(map_vfs_err))
 }
 
 fn vfs_check_parent(root_pa: usize, pathname: usize) -> Result<(), Errno> {
     let mut buf = [0u8; MAX_PATH_LEN];
-    let path = read_user_path_str(root_pa, pathname, &mut buf)?;
+    let path = read_user_path_abs(root_pa, pathname, &mut buf)?;
     with_mounts(|mounts| mounts.resolve_parent(path).map(|_| ()).map_err(map_vfs_err))
 }
 
@@ -2546,6 +2581,164 @@ fn current_proc_index() -> Option<usize> {
     } else {
         None
     }
+}
+
+fn current_umask() -> u16 {
+    let Some(idx) = current_proc_index() else {
+        return 0;
+    };
+    // SAFETY: 单核阶段顺序访问 umask。
+    unsafe { PROC_UMASK[idx] }
+}
+
+fn set_current_umask(mask: u16) -> Result<u16, Errno> {
+    let Some(idx) = current_proc_index() else {
+        return Err(Errno::Fault);
+    };
+    // SAFETY: 单核阶段顺序访问 umask。
+    let old = unsafe { PROC_UMASK[idx] };
+    unsafe {
+        PROC_UMASK[idx] = mask;
+    }
+    Ok(old)
+}
+
+fn init_proc_cwd(idx: usize) {
+    if idx >= MAX_PROCS {
+        return;
+    }
+    // SAFETY: 单核阶段顺序初始化 cwd。
+    unsafe {
+        PROC_CWD[idx][0] = b'/';
+        PROC_CWD_LEN[idx] = 1;
+    }
+}
+
+fn clone_proc_cwd(parent: usize, child: usize) {
+    if parent >= MAX_PROCS || child >= MAX_PROCS {
+        return;
+    }
+    // SAFETY: 单核阶段顺序复制 cwd。
+    unsafe {
+        PROC_CWD[child] = PROC_CWD[parent];
+        PROC_CWD_LEN[child] = PROC_CWD_LEN[parent];
+    }
+}
+
+fn clear_proc_cwd(idx: usize) {
+    if idx >= MAX_PROCS {
+        return;
+    }
+    // SAFETY: 单核阶段顺序清理 cwd。
+    unsafe {
+        PROC_CWD[idx] = [0; MAX_PATH_LEN];
+        PROC_CWD_LEN[idx] = 0;
+    }
+}
+
+fn current_cwd_str() -> &'static str {
+    let Some(idx) = current_proc_index() else {
+        return "/";
+    };
+    // SAFETY: 单核阶段顺序访问 cwd。
+    let len = unsafe { PROC_CWD_LEN[idx] };
+    if len == 0 || len > MAX_PATH_LEN {
+        return "/";
+    }
+    let bytes = unsafe { &PROC_CWD[idx][..len] };
+    core::str::from_utf8(bytes).unwrap_or("/")
+}
+
+fn set_current_cwd(path: &str) -> Result<(), Errno> {
+    let Some(idx) = current_proc_index() else {
+        return Err(Errno::Fault);
+    };
+    if !path.starts_with('/') {
+        return Err(Errno::Inval);
+    }
+    if path.is_empty() || path.len() >= MAX_PATH_LEN {
+        return Err(Errno::Range);
+    }
+    // SAFETY: 单核阶段顺序写入 cwd。
+    unsafe {
+        PROC_CWD[idx].fill(0);
+        PROC_CWD[idx][..path.len()].copy_from_slice(path.as_bytes());
+        PROC_CWD_LEN[idx] = path.len();
+    }
+    Ok(())
+}
+
+fn normalize_path<'a>(base: &str, path: &str, out: &'a mut [u8]) -> Result<&'a str, Errno> {
+    const MAX_PATH_DEPTH: usize = axfs::mount::MAX_PATH_DEPTH;
+    let mut len = 1usize;
+    let mut depth = 0usize;
+    let mut stack = [0usize; MAX_PATH_DEPTH];
+
+    out.get_mut(0).ok_or(Errno::Range)?;
+    out[0] = b'/';
+
+    let mut push_segment = |seg: &str| -> Result<(), Errno> {
+        if seg.is_empty() || seg == "." {
+            return Ok(());
+        }
+        if seg == ".." {
+            if depth > 0 {
+                depth -= 1;
+                let start = stack[depth];
+                len = if start > 1 { start - 1 } else { 1 };
+            }
+            return Ok(());
+        }
+        if depth >= MAX_PATH_DEPTH {
+            return Err(Errno::Range);
+        }
+        if len > 1 {
+            if len >= out.len() {
+                return Err(Errno::Range);
+            }
+            out[len] = b'/';
+            len += 1;
+        }
+        let start = len;
+        let bytes = seg.as_bytes();
+        if start + bytes.len() > out.len() {
+            return Err(Errno::Range);
+        }
+        out[start..start + bytes.len()].copy_from_slice(bytes);
+        len += bytes.len();
+        stack[depth] = start;
+        depth += 1;
+        Ok(())
+    };
+
+    if !path.starts_with('/') {
+        for seg in base.split('/') {
+            push_segment(seg)?;
+        }
+    }
+    for seg in path.split('/') {
+        push_segment(seg)?;
+    }
+
+    if len == 0 {
+        if out.is_empty() {
+            return Err(Errno::Range);
+        }
+        out[0] = b'/';
+        len = 1;
+    }
+    core::str::from_utf8(&out[..len]).map_err(|_| Errno::Inval)
+}
+
+fn read_user_path_abs<'a>(root_pa: usize, path: usize, buf: &'a mut [u8]) -> Result<&'a str, Errno> {
+    let mut raw_buf = [0u8; MAX_PATH_LEN];
+    let raw = read_user_path_str(root_pa, path, &mut raw_buf)?;
+    let base = if raw.starts_with('/') {
+        "/"
+    } else {
+        current_cwd_str()
+    };
+    normalize_path(base, raw, buf)
 }
 
 fn stdio_kind(fd: usize) -> Option<FdKind> {
@@ -2778,6 +2971,13 @@ fn clear_fd_table(idx: usize) {
 
 pub fn init_fd_table(task_id: TaskId) {
     clear_fd_table(task_id);
+    init_proc_cwd(task_id);
+    if task_id < MAX_PROCS {
+        // SAFETY: 单核阶段顺序初始化 umask。
+        unsafe {
+            PROC_UMASK[task_id] = 0;
+        }
+    }
 }
 
 pub fn clone_fd_table(parent: TaskId, child: TaskId) {
@@ -2799,10 +2999,22 @@ pub fn clone_fd_table(parent: TaskId, child: TaskId) {
             }
         }
     }
+    clone_proc_cwd(parent, child);
+    // SAFETY: 单核阶段顺序复制 umask。
+    unsafe {
+        PROC_UMASK[child] = PROC_UMASK[parent];
+    }
 }
 
 pub fn release_fd_table(task_id: TaskId) {
     clear_fd_table(task_id);
+    clear_proc_cwd(task_id);
+    if task_id < MAX_PROCS {
+        // SAFETY: 单核阶段顺序清理 umask。
+        unsafe {
+            PROC_UMASK[task_id] = 0;
+        }
+    }
 }
 
 fn alloc_pipe() -> Option<usize> {

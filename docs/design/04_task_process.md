@@ -29,6 +29,7 @@
 - fork/clone 通过复制 trapframe + CoW 页表生成子任务，父进程返回子 PID，子进程返回 0。
 - fd 表按进程隔离，fork/clone 复制 fd 状态并在子进程中增加 pipe 引用计数，退出时统一关闭释放。
 - fd 句柄包含文件偏移，避免独立全局偏移表，dup 继承偏移保持语义一致。
+- 进程记录 cwd/umask，chdir 更新 cwd，openat 创建时应用 umask。
 - dummy task 与调度日志通过 `sched-demo` feature 控制，默认构建保持安静。
 - 调度触发周期可配置（`SCHED_INTERVAL_TICKS`），避免频繁切换。
 - 引入 `transition_state` 校验任务状态转换，避免过期队列项覆盖运行态。
