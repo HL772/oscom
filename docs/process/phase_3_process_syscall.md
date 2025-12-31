@@ -69,6 +69,7 @@
 - clone_user_root 从内核根表构建子页表，只克隆用户映射，避免共享父页表页。
 - waitpid 回收 Zombie 时释放子进程的用户页表与物理页。
 - fd 表按进程隔离，fork/clone 复制 fd/偏移/stdio 重定向并维护 pipe 引用计数，退出时统一释放。
+- fd 句柄内置文件偏移，read/write/getdents64 直接更新句柄状态。
 - 增加 uname，占位返回内核与平台信息。
 - 增加 getppid/getuid/geteuid/getgid/getegid/getresuid/getresgid 等身份信息占位。
 - 增加 gettid 与 sched_yield，占位支持线程 ID；任务上下文可用时返回 TaskId+1。

@@ -491,6 +491,7 @@ enum FdKind {
 struct FdEntry {
     kind: FdKind,
     flags: usize,
+    offset: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -517,12 +518,11 @@ const EMPTY_PIPE: Pipe = Pipe {
 const EMPTY_FD_ENTRY: FdEntry = FdEntry {
     kind: FdKind::Empty,
     flags: 0,
+    offset: 0,
 };
 
 // SAFETY: 单核早期阶段，fd 表按进程索引串行访问。
 static mut FD_TABLES: [[FdEntry; FD_TABLE_SLOTS]; MAX_PROCS] = [[EMPTY_FD_ENTRY; FD_TABLE_SLOTS]; MAX_PROCS];
-// SAFETY: fd 偏移仅用于目录遍历，单核阶段按进程顺序访问。
-static mut FD_OFFSETS: [[usize; FD_TABLE_SLOTS]; MAX_PROCS] = [[0; FD_TABLE_SLOTS]; MAX_PROCS];
 // SAFETY: 仅用于重定向标准 fd，单核阶段按进程顺序访问。
 static mut STDIO_REDIRECT: [[Option<FdEntry>; 3]; MAX_PROCS] = [[None; 3]; MAX_PROCS];
 // SAFETY: 标准 fd 的状态标志在单核阶段按进程顺序访问。
@@ -852,14 +852,22 @@ fn sys_pipe2(pipefd: usize, flags: usize) -> Result<usize, Errno> {
     // 占位 pipe：固定缓冲区，空/满时阻塞或返回 EAGAIN。
     let pipe_id = alloc_pipe().ok_or(Errno::MFile)?;
     let status_flags = if (flags & O_NONBLOCK) != 0 { O_NONBLOCK } else { 0 };
-    let read_fd = match alloc_fd(FdEntry { kind: FdKind::PipeRead(pipe_id), flags: status_flags }) {
+    let read_fd = match alloc_fd(FdEntry {
+        kind: FdKind::PipeRead(pipe_id),
+        flags: status_flags,
+        offset: 0,
+    }) {
         Some(fd) => fd,
         None => {
             free_pipe(pipe_id);
             return Err(Errno::MFile);
         }
     };
-    let write_fd = match alloc_fd(FdEntry { kind: FdKind::PipeWrite(pipe_id), flags: status_flags }) {
+    let write_fd = match alloc_fd(FdEntry {
+        kind: FdKind::PipeWrite(pipe_id),
+        flags: status_flags,
+        offset: 0,
+    }) {
         Some(fd) => fd,
         None => {
             let _ = close_fd(read_fd);
@@ -936,6 +944,7 @@ fn sys_openat(_dirfd: usize, pathname: usize, flags: usize, _mode: usize) -> Res
         alloc_fd(FdEntry {
             kind: FdKind::Vfs(handle),
             flags: status_flags,
+            offset: 0,
         })
         .ok_or(Errno::MFile)
     })
@@ -2559,6 +2568,7 @@ fn stdio_entry(fd: usize) -> Option<FdEntry> {
             Some(FdEntry {
                 kind,
                 flags: STDIO_FLAGS[proc_idx][fd],
+                offset: 0,
             })
         }
     }
@@ -2592,6 +2602,16 @@ fn fd_table_index(fd: usize) -> Option<usize> {
 }
 
 fn fd_offset(fd: usize) -> Option<usize> {
+    if stdio_kind(fd).is_some() {
+        let proc_idx = current_proc_index()?;
+        // SAFETY: 单核早期阶段访问重定向表。
+        unsafe {
+            if let Some(entry) = STDIO_REDIRECT[proc_idx][fd] {
+                return Some(entry.offset);
+            }
+        }
+        return Some(0);
+    }
     let proc_idx = current_proc_index()?;
     let idx = fd_table_index(fd)?;
     // SAFETY: 单核早期阶段，fd 表无并发访问。
@@ -2599,8 +2619,7 @@ fn fd_offset(fd: usize) -> Option<usize> {
     if entry.kind == FdKind::Empty {
         None
     } else {
-        // SAFETY: 单核早期阶段，偏移顺序访问。
-        Some(unsafe { FD_OFFSETS[proc_idx][idx] })
+        Some(entry.offset)
     }
 }
 
@@ -2608,6 +2627,16 @@ fn set_fd_offset(fd: usize, offset: usize) {
     let Some(proc_idx) = current_proc_index() else {
         return;
     };
+    if stdio_kind(fd).is_some() {
+        // SAFETY: 单核早期阶段访问重定向表。
+        unsafe {
+            if let Some(mut entry) = STDIO_REDIRECT[proc_idx][fd] {
+                entry.offset = offset;
+                STDIO_REDIRECT[proc_idx][fd] = Some(entry);
+            }
+        }
+        return;
+    }
     let Some(idx) = fd_table_index(fd) else {
         return;
     };
@@ -2616,7 +2645,7 @@ fn set_fd_offset(fd: usize, offset: usize) {
         if FD_TABLES[proc_idx][idx].kind == FdKind::Empty {
             return;
         }
-        FD_OFFSETS[proc_idx][idx] = offset;
+        FD_TABLES[proc_idx][idx].offset = offset;
     }
 }
 
@@ -2630,7 +2659,6 @@ fn alloc_fd(entry: FdEntry) -> Option<usize> {
         for (idx, slot) in FD_TABLES[proc_idx].iter_mut().enumerate() {
             if slot.kind == FdKind::Empty {
                 *slot = entry;
-                FD_OFFSETS[proc_idx][idx] = 0;
                 pipe_acquire(entry.kind);
                 return Some(FD_TABLE_BASE + idx);
             }
@@ -2652,7 +2680,6 @@ fn dup_to_fd(newfd: usize, entry: FdEntry) -> Result<usize, Errno> {
             pipe_release(old.kind);
         }
         FD_TABLES[proc_idx][idx] = entry;
-        FD_OFFSETS[proc_idx][idx] = 0;
     }
     pipe_acquire(entry.kind);
     Ok(newfd)
@@ -2678,7 +2705,6 @@ fn close_fd(fd: usize) -> Result<usize, Errno> {
             return Err(Errno::Badf);
         }
         FD_TABLES[proc_idx][idx] = EMPTY_FD_ENTRY;
-        FD_OFFSETS[proc_idx][idx] = 0;
         pipe_release(old.kind);
     }
     Ok(0)
@@ -2738,9 +2764,6 @@ fn clear_fd_table(idx: usize) {
                 *entry = EMPTY_FD_ENTRY;
             }
         }
-        for offset in FD_OFFSETS[idx].iter_mut() {
-            *offset = 0;
-        }
         for slot in STDIO_REDIRECT[idx].iter_mut() {
             if let Some(entry) = *slot {
                 pipe_release(entry.kind);
@@ -2765,7 +2788,6 @@ pub fn clone_fd_table(parent: TaskId, child: TaskId) {
     // SAFETY: 单核早期阶段按进程顺序复制 fd 表。
     unsafe {
         FD_TABLES[child] = FD_TABLES[parent];
-        FD_OFFSETS[child] = FD_OFFSETS[parent];
         STDIO_REDIRECT[child] = STDIO_REDIRECT[parent];
         STDIO_FLAGS[child] = STDIO_FLAGS[parent];
         for entry in FD_TABLES[child].iter() {
