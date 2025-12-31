@@ -18,13 +18,16 @@
 - clone_user_root 基于内核根表构建子页表，只克隆用户映射，避免共享父页表页。
 - 写入触发页错误时，分配新页并复制旧内容，恢复可写权限。
 - 增加帧引用计数与空闲栈，支持 fork/exec/exit 后回收用户页与页表页。
+- 空闲帧栈操作在关中断临界区执行，避免重入导致的双重分配。
+- 内核栈从 bump 分配连续物理页，并预留 guard page 以隔离栈下溢。
 
 ## 关键数据结构
 - `PhysAddr/VirtAddr`：物理/虚拟地址封装与对齐工具。
 - `PhysPageNum/VirtPageNum`：页号封装，便于页表映射。
 - `PageTableEntry`：PTE 编解码与标志位管理。
 - `BumpFrameAllocator`：最小可用帧分配占位实现。
-- `alloc_frame`：早期帧分配接口（无回收）。
+- `alloc_frame`：早期帧分配接口，分配后清零避免残留脏数据。
+- `alloc_contiguous_frames`：绕过空闲栈的连续页分配，用于内核栈。
 - `PageTable`：页表页从 `alloc_frame` 分配并清零。
 - `translate_user_ptr`：基于当前页表的用户指针翻译与权限检查。
 - `UserPtr/UserSlice`：用户指针与缓冲区访问封装。
@@ -49,7 +52,7 @@ init_mm
 - Sv39 细节处理不当会导致页表映射错误与异常。
 - 1GiB 范围内映射的截断风险需在后续细化。
 - 当前帧分配范围限制在 identity 映射的 1GiB 区间内。
-- 空闲帧复用仍缺乏隔离与清零策略，后续需补齐。
+- 空闲帧复用已加入清零，但仍缺乏权限隔离与更严格的边界检查。
 
 ## 测试点
 - QEMU 启动后基本内存分配 sanity check。

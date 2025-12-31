@@ -2,9 +2,9 @@
 
 use core::mem::MaybeUninit;
 
-use crate::mm::alloc_frame;
+use crate::mm::{self, alloc_contiguous_frames};
 
-const STACK_PAGES: usize = 2;
+const STACK_PAGES: usize = 4;
 const PAGE_SIZE: usize = 4096;
 
 #[repr(C)]
@@ -15,23 +15,16 @@ pub struct KernelStack {
 
 impl KernelStack {
     pub fn new() -> Option<Self> {
-        let mut base = 0usize;
-        let mut last = 0usize;
-        for _ in 0..STACK_PAGES {
-            let frame = alloc_frame()?;
-            let addr = frame.addr().as_usize();
-            if base == 0 {
-                base = addr;
-                last = addr;
-                continue;
-            }
-            if addr != last + PAGE_SIZE {
-                // 早期阶段要求连续页作为内核栈。
-                return None;
-            }
-            last = addr;
-        }
+        let alloc_pages = STACK_PAGES + 1;
+        let start = alloc_contiguous_frames(alloc_pages)?;
+        let start_pa = start.addr().as_usize();
+        // Guard page sits below the usable stack range.
+        let base = start_pa + PAGE_SIZE;
         let size = STACK_PAGES * PAGE_SIZE;
+        // Keep guard page zeroed to detect unexpected writes in debug dumps.
+        unsafe {
+            core::ptr::write_bytes(start_pa as *mut u8, 0, mm::PAGE_SIZE);
+        }
         Some(Self { base, size })
     }
 

@@ -346,6 +346,14 @@ struct TimeZone {
     tz_dsttime: i32,
 }
 
+#[inline(always)]
+fn read_sp() -> usize {
+    let sp: usize;
+    // SAFETY: reading sp is a side-effect-free register read.
+    unsafe { core::arch::asm!("mv {0}, sp", out(reg) sp) };
+    sp
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct Iovec {
@@ -753,12 +761,12 @@ fn sys_clone(
             crate::task::user_sp(task_id).ok_or(Errno::Fault)?
         };
         let child_root = mm::clone_user_root(root_pa).ok_or(Errno::NoMem)?;
-        let pid = crate::runtime::spawn_forked_user(tf, child_root, user_sp).ok_or(Errno::NoMem)?;
-        if (flags & CLONE_PARENT_SETTID) != 0 {
-            mm::UserPtr::new(ptid)
-                .write(root_pa, pid)
-                .ok_or(Errno::Fault)?;
-        }
+    let pid = crate::runtime::spawn_forked_user(tf, child_root, user_sp).ok_or(Errno::NoMem)?;
+    if (flags & CLONE_PARENT_SETTID) != 0 {
+        mm::UserPtr::new(ptid)
+            .write(root_pa, pid)
+            .ok_or(Errno::Fault)?;
+    }
         if (flags & CLONE_CHILD_SETTID) != 0 {
             mm::UserPtr::new(ctid)
                 .write(child_root, pid)
@@ -1658,6 +1666,64 @@ fn sys_futex(
             let root_pa = mm::current_root_pa();
             if root_pa == 0 {
                 return Err(Errno::Fault);
+            }
+            if crate::config::ENABLE_EXT4_WRITE_TEST {
+                let current = UserPtr::<u32>::new(uaddr)
+                    .read(root_pa)
+                    .unwrap_or(0xdead_beef);
+                let (tv_sec, tv_nsec) = if timeout != 0 {
+                    UserPtr::<Timespec>::new(timeout)
+                        .read(root_pa)
+                        .map(|ts| (ts.tv_sec, ts.tv_nsec))
+                        .unwrap_or((-1, -1))
+                } else {
+                    (0, 0)
+                };
+                crate::println!(
+                    "sys_futex: wait uaddr={:#x} val={} mem={} timeout={:#x} ts=({},{})",
+                    uaddr,
+                    val,
+                    current,
+                    timeout,
+                    tv_sec,
+                    tv_nsec
+                );
+            }
+            if crate::config::ENABLE_EXT4_WRITE_TEST {
+                let timeout_pa = if timeout != 0 {
+                    mm::translate_user_ptr(
+                        root_pa,
+                        timeout,
+                        size_of::<Timespec>(),
+                        UserAccess::Read,
+                    )
+                } else {
+                    None
+                };
+                let sp = read_sp();
+                let sp_pa = mm::kernel_virt_to_phys(sp);
+                match timeout_pa {
+                    Some(pa) => {
+                        crate::println!(
+                            "DEBUG: futex timeout_va={:#x} pa={:#x} sp={:#x} sp_pa={:#x}",
+                            timeout,
+                            pa,
+                            sp,
+                            sp_pa
+                        );
+                        if (pa & !0xfff) == (sp_pa & !0xfff) {
+                            crate::println!("CRITICAL: user timeout page aliases kernel stack");
+                        }
+                    }
+                    None => {
+                        crate::println!(
+                            "DEBUG: futex timeout_va={:#x} pa=None sp={:#x} sp_pa={:#x}",
+                            timeout,
+                            sp,
+                            sp_pa
+                        );
+                    }
+                }
             }
             let timeout_ms = futex_timeout_ms(root_pa, timeout)?;
             futex::wait(root_pa, uaddr, val as u32, timeout_ms, private)
@@ -2571,9 +2637,6 @@ pub fn ext4_write_smoke() {
         crate::println!("ext4: write skip (rootfs not ext4)");
         return;
     }
-    if crate::config::ENABLE_EXT4_WRITE_TEST {
-        debug_read_issue();
-    }
     let payload = b"ext4: write ok\n";
     let result = with_mounts(|mounts| {
         let fs = mounts.fs_for(MountId::Root).ok_or(VfsError::NotFound)?;
@@ -2612,24 +2675,6 @@ fn maybe_ext4_write_smoke() {
         return;
     }
     ext4_write_smoke();
-}
-
-fn debug_read_issue() {
-    let result: axfs::VfsResult<()> = with_mounts(|mounts| {
-        let (mount, inode) = mounts.resolve_path("/etc/issue")?;
-        let fs = mounts.fs_for(mount).ok_or(VfsError::NotFound)?;
-        let mut buf = [0u8; 64];
-        let read = fs.read_at(inode, 0, &mut buf)?;
-        if read == 0 {
-            crate::println!("KERNEL_DEBUG: /etc/issue empty");
-            return Ok(());
-        }
-        crate::println!("KERNEL_DEBUG: /etc/issue read ok len={}", read);
-        Ok(())
-    });
-    if result.is_err() {
-        crate::println!("KERNEL_DEBUG: /etc/issue read failed");
-    }
 }
 
 fn vfs_lookup_inode(root_pa: usize, pathname: usize) -> Result<(MountId, InodeId), Errno> {

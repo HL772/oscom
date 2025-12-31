@@ -244,12 +244,17 @@ impl BumpFrameAllocator {
         }
     }
 
-    pub fn alloc(&self) -> Option<PhysPageNum> {
-        let current = self.next.fetch_add(PAGE_SIZE, Ordering::Relaxed);
-        if current + PAGE_SIZE > self.end {
+    pub fn alloc_contiguous(&self, count: usize) -> Option<PhysPageNum> {
+        let size = count.checked_mul(PAGE_SIZE)?;
+        let current = self.next.fetch_add(size, Ordering::Relaxed);
+        if current + size > self.end {
             return None;
         }
         Some(PhysPageNum::new(current >> PAGE_SHIFT))
+    }
+
+    pub fn alloc(&self) -> Option<PhysPageNum> {
+        self.alloc_contiguous(1)
     }
 }
 
@@ -271,14 +276,37 @@ pub fn alloc_frame() -> Option<PhysPageNum> {
     if !FRAME_ALLOC_READY.load(Ordering::Acquire) {
         return None;
     }
-    if let Some(pa) = pop_free_frame() {
+    let frame = if let Some(pa) = pop_free_frame() {
         let _ = set_refcount(pa, 1);
-        return Some(PhysPageNum::new(pa >> PAGE_SHIFT));
+        PhysPageNum::new(pa >> PAGE_SHIFT)
+    } else {
+        // SAFETY: initialized once in init_frame_allocator before any allocations.
+        let frame = unsafe { FRAME_ALLOC.assume_init_ref().alloc()? };
+        let pa = frame.addr().as_usize();
+        let _ = set_refcount(pa, 1);
+        frame
+    };
+    // SAFETY: the frame is exclusively owned and identity-mapped.
+    unsafe {
+        ptr::write_bytes(frame.addr().as_usize() as *mut u8, 0, PAGE_SIZE);
     }
-    // SAFETY: initialized once in init_frame_allocator before any allocations.
-    let frame = unsafe { FRAME_ALLOC.assume_init_ref().alloc()? };
+    Some(frame)
+}
+
+pub fn alloc_contiguous_frames(count: usize) -> Option<PhysPageNum> {
+    if !FRAME_ALLOC_READY.load(Ordering::Acquire) {
+        return None;
+    }
+    // Bypass the free list to guarantee physical contiguity for kernel stacks.
+    let frame = unsafe { FRAME_ALLOC.assume_init_ref().alloc_contiguous(count)? };
     let pa = frame.addr().as_usize();
-    let _ = set_refcount(pa, 1);
+    for idx in 0..count {
+        let _ = set_refcount(pa + idx * PAGE_SIZE, 1);
+    }
+    // SAFETY: the frames are exclusively owned and identity-mapped.
+    unsafe {
+        ptr::write_bytes(pa as *mut u8, 0, count * PAGE_SIZE);
+    }
     Some(frame)
 }
 
@@ -741,27 +769,41 @@ fn frame_refcount(pa: usize) -> Option<u16> {
     unsafe { Some(FRAME_REFCOUNT[idx]) }
 }
 
-fn push_free_frame(pa: usize) -> bool {
-    // SAFETY: early boot single-hart; free list is only touched here.
+fn with_no_irq<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    let sstatus: usize;
     unsafe {
+        asm!("csrr {0}, sstatus", out(reg) sstatus);
+        asm!("csrci sstatus, 0x2");
+    }
+    let ret = f();
+    unsafe {
+        asm!("csrw sstatus, {0}", in(reg) sstatus);
+    }
+    ret
+}
+
+fn push_free_frame(pa: usize) -> bool {
+    with_no_irq(|| unsafe {
         if FRAME_FREE_LEN >= MAX_FRAMES {
             return false;
         }
         FRAME_FREE_LIST[FRAME_FREE_LEN] = pa;
         FRAME_FREE_LEN += 1;
         true
-    }
+    })
 }
 
 fn pop_free_frame() -> Option<usize> {
-    // SAFETY: early boot single-hart; free list is only touched here.
-    unsafe {
+    with_no_irq(|| unsafe {
         if FRAME_FREE_LEN == 0 {
             return None;
         }
         FRAME_FREE_LEN -= 1;
         Some(FRAME_FREE_LIST[FRAME_FREE_LEN])
-    }
+    })
 }
 
 fn table_has_user_l0(table: &PageTable) -> bool {
@@ -815,7 +857,11 @@ pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
                     ok = false;
                     break 'l2;
                 }
-                let _ = retain_frame(parent_l2e.ppn().addr().as_usize());
+                let pa = parent_l2e.ppn().addr().as_usize();
+                if !retain_frame(pa) {
+                    ok = false;
+                    break 'l2;
+                }
                 child_root.entries[l2_idx] = parent_l2e;
             }
             continue;
@@ -845,7 +891,11 @@ pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
                         ok = false;
                         break 'l2;
                     }
-                    let _ = retain_frame(parent_l1e.ppn().addr().as_usize());
+                    let pa = parent_l1e.ppn().addr().as_usize();
+                    if !retain_frame(pa) {
+                        ok = false;
+                        break 'l2;
+                    }
                     child_l1.entries[l1_idx] = parent_l1e;
                 }
                 continue;
@@ -875,7 +925,11 @@ pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
                 let new_flags = cow_flags(parent_l0e.flags());
                 parent_l0.entries[l0_idx] = PageTableEntry::new(parent_l0e.ppn(), new_flags);
                 child_l0.entries[l0_idx] = PageTableEntry::new(parent_l0e.ppn(), new_flags);
-                let _ = retain_frame(parent_l0e.ppn().addr().as_usize());
+                let pa = parent_l0e.ppn().addr().as_usize();
+                if !retain_frame(pa) {
+                    ok = false;
+                    break 'l2;
+                }
             }
         }
     }
