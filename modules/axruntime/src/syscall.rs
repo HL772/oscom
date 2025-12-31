@@ -51,6 +51,7 @@ const ROOTFS_KIND_MEMFS: u8 = 3;
 static ROOTFS_LOGGED: AtomicU8 = AtomicU8::new(0);
 // Rootfs kind is initialized once and reused to keep block cache state stable.
 static ROOTFS_KIND: AtomicU8 = AtomicU8::new(ROOTFS_KIND_UNKNOWN);
+static EXT4_WRITE_DONE: AtomicU8 = AtomicU8::new(0);
 // SAFETY: rootfs instances are initialized once in single-core boot and then shared read-only.
 static mut ROOTFS_EXT4: MaybeUninit<ext4::Ext4Fs<'static>> = MaybeUninit::uninit();
 // SAFETY: rootfs instances are initialized once in single-core boot and then shared read-only.
@@ -896,6 +897,7 @@ fn sys_openat(_dirfd: usize, pathname: usize, flags: usize, _mode: usize) -> Res
     if root_pa == 0 {
         return Err(Errno::Fault);
     }
+    maybe_ext4_write_smoke();
     let status_flags = flags & (O_ACCMODE | O_NONBLOCK | O_CLOEXEC);
     let accmode = flags & O_ACCMODE;
     let create_mode = (_mode as u16) & !current_umask();
@@ -2520,6 +2522,19 @@ pub fn ext4_write_smoke() {
         Ok(()) => crate::println!("ext4: write ok"),
         Err(err) => crate::println!("ext4: write failed ({:?})", err),
     }
+}
+
+fn maybe_ext4_write_smoke() {
+    if !crate::config::ENABLE_EXT4_WRITE_TEST {
+        return;
+    }
+    if rootfs_kind() != ROOTFS_KIND_EXT4 {
+        return;
+    }
+    if EXT4_WRITE_DONE.swap(1, Ordering::AcqRel) != 0 {
+        return;
+    }
+    ext4_write_smoke();
 }
 
 fn vfs_lookup_inode(root_pa: usize, pathname: usize) -> Result<(MountId, InodeId), Errno> {

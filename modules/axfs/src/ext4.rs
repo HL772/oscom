@@ -526,48 +526,56 @@ impl<'a> Ext4Fs<'a> {
             return Err(VfsError::NotDir);
         }
         let block_size = self.fs_block_size() as usize;
-        let mut scratch = [0u8; EXT4_SCRATCH_SIZE];
-        let Some(block) = self.map_block(&inode_meta, 0)? else {
-            return Err(VfsError::NotSupported);
-        };
-        self.read_fs_block(block, &mut scratch[..block_size])?;
         let entry_len = dir_entry_size(name_bytes.len());
-
-        let mut pos = 0usize;
-        let mut last_entry: Option<(usize, usize, usize)> = None;
-        while pos + EXT4_DIR_ENTRY_HEADER <= block_size {
-            let inode_num = read_u32(&scratch, pos) as usize;
-            let rec_len = read_u16(&scratch, pos + 4) as usize;
-            if rec_len < EXT4_DIR_ENTRY_HEADER || pos + rec_len > block_size {
-                break;
-            }
-            let name_len = scratch[pos + 6] as usize;
-            if inode_num == 0 {
-                if rec_len >= entry_len {
-                    write_dir_entry(&mut scratch, pos, inode, name_bytes, kind, rec_len as u16)?;
-                    return self.write_fs_block(block, &scratch[..block_size]);
-                }
-                return Err(VfsError::NoMem);
-            }
-            let actual = dir_entry_size(name_len);
-            last_entry = Some((pos, rec_len, actual));
-            pos += rec_len;
-        }
-
-        let Some((last_pos, last_len, last_actual)) = last_entry else {
-            return Err(VfsError::Invalid);
-        };
-        if last_len < last_actual {
-            return Err(VfsError::Invalid);
-        }
-        let free = last_len - last_actual;
-        if free < entry_len {
+        let mut scratch = [0u8; EXT4_SCRATCH_SIZE];
+        let total_blocks = ((inode_meta.size + block_size as u64 - 1) / block_size as u64) as u32;
+        if total_blocks == 0 {
             return Err(VfsError::NoMem);
         }
-        write_u16(&mut scratch, last_pos + 4, last_actual as u16);
-        let new_pos = last_pos + last_actual;
-        write_dir_entry(&mut scratch, new_pos, inode, name_bytes, kind, free as u16)?;
-        self.write_fs_block(block, &scratch[..block_size])
+
+        for block_index in 0..total_blocks {
+            let Some(block) = self.map_block(&inode_meta, block_index)? else {
+                continue;
+            };
+            self.read_fs_block(block, &mut scratch[..block_size])?;
+            let mut pos = 0usize;
+            let mut last_entry: Option<(usize, usize, usize)> = None;
+            while pos + EXT4_DIR_ENTRY_HEADER <= block_size {
+                let inode_num = read_u32(&scratch, pos) as usize;
+                let rec_len = read_u16(&scratch, pos + 4) as usize;
+                if rec_len < EXT4_DIR_ENTRY_HEADER || pos + rec_len > block_size {
+                    break;
+                }
+                let name_len = scratch[pos + 6] as usize;
+                if inode_num == 0 {
+                    if rec_len >= entry_len {
+                        write_dir_entry(&mut scratch, pos, inode, name_bytes, kind, rec_len as u16)?;
+                        return self.write_fs_block(block, &scratch[..block_size]);
+                    }
+                    break;
+                }
+                let actual = dir_entry_size(name_len);
+                last_entry = Some((pos, rec_len, actual));
+                pos += rec_len;
+            }
+
+            let Some((last_pos, last_len, last_actual)) = last_entry else {
+                continue;
+            };
+            if last_len < last_actual {
+                return Err(VfsError::Invalid);
+            }
+            let free = last_len - last_actual;
+            if free < entry_len {
+                continue;
+            }
+            write_u16(&mut scratch, last_pos + 4, last_actual as u16);
+            let new_pos = last_pos + last_actual;
+            write_dir_entry(&mut scratch, new_pos, inode, name_bytes, kind, free as u16)?;
+            return self.write_fs_block(block, &scratch[..block_size]);
+        }
+
+        Err(VfsError::NoMem)
     }
 }
 
