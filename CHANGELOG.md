@@ -185,6 +185,7 @@
 - Add UDP_ECHO_TEST smoke path with udp-echo log validation.
 - Implement connect EINPROGRESS semantics and map connection failures to net-specific errno.
 - Add minimal getsockopt/setsockopt/shutdown support with SO_ERROR tracking for TCP connects.
+- Add getsockname/getpeername support for socket address queries.
 - Fix sockaddr_in IP parsing to honor network byte order for local TCP connects.
 - Keep net polling active while TCP handshake is pending to avoid stalled connects.
 - Grow RISC-V boot stack to 64KB to avoid deep syscall stack overflows.

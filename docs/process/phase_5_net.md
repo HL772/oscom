@@ -21,6 +21,7 @@
 - 连接中（SYN 期间）持续触发 net poll，避免无中断场景下 connect 卡死。
 - idle loop 切换到独立 idle stack，避免 boot stack 溢出导致 BSS 被污染。
 - 修正 virtio-net 现代特性头部长度为 12 字节，并对齐 TX 缓冲区，ARP Reply 已可观测。
+- 增加 getsockname/getpeername 与 SO_ERROR/setsockopt/shutdown 最小实现，补齐用户态 socket 语义。
 
 ## 问题与定位
 - QEMU user-net 下 ARP probe 已发送但 RX 帧未进入，定位为 virtio 现代特性头部长度不匹配导致帧损坏。

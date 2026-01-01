@@ -114,8 +114,18 @@ fn syscall_sendto(fd: usize, buf: &[u8], addr: &SockAddrIn) -> usize {
     })
 }
 
-fn syscall_recvfrom(fd: usize, buf: &mut [u8]) -> usize {
-    check(unsafe { syscall6(SYS_RECVFROM, fd, buf.as_mut_ptr() as usize, buf.len(), 0, 0, 0) })
+fn syscall_recvfrom(fd: usize, buf: &mut [u8], addr: &mut SockAddrIn, addrlen: &mut u32) -> usize {
+    check(unsafe {
+        syscall6(
+            SYS_RECVFROM,
+            fd,
+            buf.as_mut_ptr() as usize,
+            buf.len(),
+            0,
+            addr as *mut SockAddrIn as usize,
+            addrlen as *mut u32 as usize,
+        )
+    })
 }
 
 fn syscall_close(fd: usize) {
@@ -160,8 +170,24 @@ pub extern "C" fn _start() -> ! {
     }
 
     let mut buf = [0u8; 16];
-    let received = syscall_recvfrom(server, &mut buf);
+    let mut from_addr = SockAddrIn {
+        sin_family: 0,
+        sin_port: 0,
+        sin_addr: 0,
+        sin_zero: [0; 8],
+    };
+    let mut from_len = core::mem::size_of::<SockAddrIn>() as u32;
+    let received = syscall_recvfrom(server, &mut buf, &mut from_addr, &mut from_len);
     if !slices_equal(&buf[..received], SEND_MSG) {
+        fail();
+    }
+    if from_len as usize != core::mem::size_of::<SockAddrIn>() {
+        fail();
+    }
+    if from_addr.sin_family != AF_INET
+        || from_addr.sin_port != CLIENT_PORT.to_be()
+        || from_addr.sin_addr != u32::from_be_bytes(LOCAL_IP)
+    {
         fail();
     }
 
@@ -170,8 +196,24 @@ pub extern "C" fn _start() -> ! {
         fail();
     }
 
-    let received = syscall_recvfrom(client, &mut buf);
+    let mut reply_addr = SockAddrIn {
+        sin_family: 0,
+        sin_port: 0,
+        sin_addr: 0,
+        sin_zero: [0; 8],
+    };
+    let mut reply_len = core::mem::size_of::<SockAddrIn>() as u32;
+    let received = syscall_recvfrom(client, &mut buf, &mut reply_addr, &mut reply_len);
     if !slices_equal(&buf[..received], REPLY_MSG) {
+        fail();
+    }
+    if reply_len as usize != core::mem::size_of::<SockAddrIn>() {
+        fail();
+    }
+    if reply_addr.sin_family != AF_INET
+        || reply_addr.sin_port != SERVER_PORT.to_be()
+        || reply_addr.sin_addr != u32::from_be_bytes(LOCAL_IP)
+    {
         fail();
     }
 

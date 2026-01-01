@@ -927,6 +927,40 @@ pub fn socket_shutdown(id: SocketId, how: usize) -> Result<(), NetError> {
     }
 }
 
+pub fn socket_local_endpoint(id: SocketId) -> Result<(IpAddress, u16), NetError> {
+    let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
+    let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
+    match kind {
+        AxSocketKind::Tcp => {
+            let port = socket_local_port(id)?;
+            let ip = IpAddress::Ipv4(local_ipv4());
+            Ok((ip, port))
+        }
+        AxSocketKind::Udp => {
+            let socket = state.sockets.get_mut::<UdpSocket>(handle);
+            let endpoint = socket.endpoint();
+            let ip = endpoint.addr.unwrap_or(IpAddress::Ipv4(Ipv4Address::UNSPECIFIED));
+            Ok((ip, endpoint.port))
+        }
+    }
+}
+
+pub fn socket_remote_endpoint(id: SocketId) -> Result<Option<(IpAddress, u16)>, NetError> {
+    let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
+    let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
+    match kind {
+        AxSocketKind::Tcp => {
+            let socket = state.sockets.get_mut::<TcpSocket>(handle);
+            let tcp_state = socket.state();
+            if !matches!(tcp_state, TcpState::Established | TcpState::CloseWait) {
+                return Ok(None);
+            }
+            Ok(socket.remote_endpoint().map(|ep| (ep.addr, ep.port)))
+        }
+        AxSocketKind::Udp => Ok(None),
+    }
+}
+
 pub fn socket_connecting(id: SocketId) -> Result<bool, NetError> {
     // SAFETY: single-hart early stage, socket table is serialized.
     unsafe {

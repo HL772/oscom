@@ -32,6 +32,7 @@ pub enum Errno {
     Child = 10,
     NetUnreach = 101,
     IsConn = 106,
+    NotConn = 107,
     ConnRefused = 111,
     TimedOut = 110,
     InProgress = 115,
@@ -181,6 +182,8 @@ fn dispatch(tf: &mut TrapFrame, ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_WAIT4 => sys_wait4(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_SOCKET => sys_socket(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_BIND => sys_bind(ctx.args[0], ctx.args[1], ctx.args[2]),
+        SYS_GETSOCKNAME => sys_getsockname(ctx.args[0], ctx.args[1], ctx.args[2]),
+        SYS_GETPEERNAME => sys_getpeername(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_CONNECT => sys_connect(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_SETSOCKOPT => sys_setsockopt(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3], ctx.args[4]),
         SYS_GETSOCKOPT => sys_getsockopt(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3], ctx.args[4]),
@@ -246,6 +249,8 @@ const SYS_UMASK: usize = 166;
 const SYS_PRCTL: usize = 167;
 const SYS_SOCKET: usize = 198;
 const SYS_BIND: usize = 200;
+const SYS_GETSOCKNAME: usize = 204;
+const SYS_GETPEERNAME: usize = 205;
 const SYS_LISTEN: usize = 201;
 const SYS_ACCEPT: usize = 202;
 const SYS_CONNECT: usize = 203;
@@ -1026,6 +1031,25 @@ fn sys_bind(fd: usize, addr: usize, len: usize) -> Result<usize, Errno> {
     let socket_id = resolve_socket_fd(fd)?;
     let (ip, port) = parse_sockaddr_in(root_pa, addr, len)?;
     axnet::socket_bind(socket_id, ip, port).map_err(map_net_err)?;
+    Ok(0)
+}
+
+fn sys_getsockname(fd: usize, addr: usize, addrlen: usize) -> Result<usize, Errno> {
+    let root_pa = mm::current_root_pa();
+    let socket_id = resolve_socket_fd(fd)?;
+    let (ip, port) = axnet::socket_local_endpoint(socket_id).map_err(map_net_err)?;
+    write_sockaddr_in(root_pa, addr, addrlen, Some((ip, port)))?;
+    Ok(0)
+}
+
+fn sys_getpeername(fd: usize, addr: usize, addrlen: usize) -> Result<usize, Errno> {
+    let root_pa = mm::current_root_pa();
+    let socket_id = resolve_socket_fd(fd)?;
+    let endpoint = axnet::socket_remote_endpoint(socket_id).map_err(map_net_err)?;
+    let Some((ip, port)) = endpoint else {
+        return Err(Errno::NotConn);
+    };
+    write_sockaddr_in(root_pa, addr, addrlen, Some((ip, port)))?;
     Ok(0)
 }
 
