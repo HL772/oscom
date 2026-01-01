@@ -156,6 +156,7 @@
 - Add setpgid/getpgid/getsid/setsid/getpgrp/setpgrp stubs (TaskId+1 when available).
 - Add getgroups/setgroups stubs returning empty groups.
 - Add test runner script for internal self-test cases and log summaries.
+- Extend self-test case list with net, net-loopback, and tcp-echo cases.
 - Add PLIC-backed external IRQ handling and virtio-blk interrupt-driven completion.
 - Add an ext4 rootfs mount log marker and smoke-test check in QEMU runs.
 - Extend /init to read `/etc/issue` and verify it in ext4 QEMU smoke runs.

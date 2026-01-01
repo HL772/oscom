@@ -29,7 +29,7 @@
 - `NET=1 TCP_ECHO_TEST=1 EXPECT_TCP_ECHO=1 make test-qemu-smoke ARCH=riscv64 PLATFORM=qemu`
 - 日志包含 virtio-net ready、net: arp probe sent、net: arp reply from 10.0.2.2，ARP 路径恢复正常。
 - 日志包含 `tcp-echo: ok`，用户态 TCP echo 覆盖 connect/accept/send/recv 路径。
-- 调试过程与根因分析记录：`docs/process/debug_report_virtio_net_arp.md`。
+- 调试过程与根因分析记录：`docs/process/debug_report_virtio_net_arp.md`，`docs/process/debug_report_tcp_echo.md`。
 - 待协议栈接入后补充 ping/iperf/redis 基准验证。
 
 ## 下一步

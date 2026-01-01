@@ -2,3 +2,6 @@
 ramdisk
 ext4
 ext4-init
+net
+net-loopback
+tcp-echo
