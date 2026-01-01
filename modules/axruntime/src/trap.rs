@@ -2,9 +2,9 @@
 
 use core::arch::asm;
 use core::ptr;
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use crate::{runtime, sbi, time};
+use crate::{mm, runtime, sbi, time};
 
 // Trap/interrupt helpers are scaffolded for upcoming scheduler/timer work.
 
@@ -64,11 +64,13 @@ const SCAUSE_SUPERVISOR_TIMER: usize = 5;
 const SCAUSE_SUPERVISOR_EXTERNAL: usize = 9;
 const SCAUSE_USER_ECALL: usize = 8;
 const SCAUSE_SUPERVISOR_ECALL: usize = 9;
+const SCAUSE_ILLEGAL_INSTRUCTION: usize = 2;
 const SCAUSE_INST_PAGE_FAULT: usize = 12;
 const SCAUSE_LOAD_PAGE_FAULT: usize = 13;
 const SCAUSE_STORE_PAGE_FAULT: usize = 15;
 
 static TIMER_INTERVAL: AtomicU64 = AtomicU64::new(0);
+static TRAP_LOG_ONCE: AtomicBool = AtomicBool::new(false);
 static mut CURRENT_TRAP_FRAME: *mut TrapFrame = ptr::null_mut();
 
 pub struct TrapFrameGuard;
@@ -190,6 +192,33 @@ extern "C" fn trap_handler(tf: &mut TrapFrame) {
 
     let is_interrupt = (scause & SCAUSE_INTERRUPT_BIT) != 0;
     let code = scause & !SCAUSE_INTERRUPT_BIT;
+    if !is_interrupt && code == SCAUSE_ILLEGAL_INSTRUCTION {
+        if !TRAP_LOG_ONCE.swap(true, Ordering::Relaxed) {
+            crate::println!(
+                "trap: illegal insn sepc={:#x} stval={:#x} sp={:#x} sscratch={:#x} sstatus={:#x} ra={:#x} user_sp={:#x}",
+                sepc,
+                stval,
+                read_sp(),
+                unsafe { read_sscratch() },
+                tf.sstatus,
+                tf.ra,
+                tf.user_sp
+            );
+        }
+    }
+    if !is_interrupt && code == SCAUSE_STORE_PAGE_FAULT {
+        if !TRAP_LOG_ONCE.swap(true, Ordering::Relaxed) {
+            crate::println!(
+                "trap: store fault sepc={:#x} stval={:#x} sp={:#x} sscratch={:#x} sstatus={:#x} satp={:#x}",
+                sepc,
+                stval,
+                read_sp(),
+                unsafe { read_sscratch() },
+                tf.sstatus,
+                mm::current_root_pa()
+            );
+        }
+    }
 
     if is_interrupt {
         if code == SCAUSE_SUPERVISOR_TIMER {
@@ -201,9 +230,16 @@ extern "C" fn trap_handler(tf: &mut TrapFrame) {
             let ticks = time::tick();
             runtime::on_tick(ticks);
             runtime::maybe_schedule(ticks, crate::config::SCHED_INTERVAL_TICKS);
-            runtime::preempt_current();
+            if (tf.sstatus & SSTATUS_SPP) == 0 {
+                runtime::preempt_current();
+            }
             return;
         } else if code == SCAUSE_SUPERVISOR_EXTERNAL {
+            let current_root = mm::current_root_pa();
+            let kernel_root = mm::kernel_root_pa();
+            if kernel_root != 0 && current_root != kernel_root {
+                mm::switch_root(kernel_root);
+            }
             loop {
                 let Some(irq) = crate::plic::claim() else {
                     break;
@@ -211,6 +247,9 @@ extern "C" fn trap_handler(tf: &mut TrapFrame) {
                 let _handled = crate::virtio_blk::handle_irq(irq);
                 let _handled = crate::virtio_net::handle_irq(irq);
                 crate::plic::complete(irq);
+            }
+            if kernel_root != 0 && current_root != kernel_root {
+                mm::switch_root(current_root);
             }
             return;
         }

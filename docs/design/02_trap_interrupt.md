@@ -13,13 +13,16 @@
 - 定时器中断使用 SBI set_timer 重新编程，实现周期性 tick。
 - tick 计数在 time 模块中维护，供后续调度与超时使用。
 - tick 中断设置调度请求标志，并在有运行任务时切回空闲上下文，由 idle_loop 执行调度，避免在 trap 中直接选取下个任务。
+- 定时器抢占仅在从用户态陷入时触发，避免内核态中断打断内核路径导致非可重入切换。
 - tick 中断可抢占用户态任务：入队后切回 idle，恢复时根据 trapframe 继续返回用户态。
 - 使用 TrapFrameGuard 记录当前 trapframe 指针，为后续抢占保存上下文预留入口。
 - trap 入口使用 `sscratch` 交换内核栈指针，确保从 U-mode 进入时切到内核栈。
 - trap 入口区分来自 U/S 态：内核态嵌套中断保持使用当前内核栈，用户态陷入时才使用 sscratch 切换；内核运行期间将 sscratch 置零避免嵌套破坏。
 - trap 返回用户态时依赖 trapframe 内保存的 user_sp，避免在内核态写 sscratch。
+- context_switch 保持 sscratch 为 0，避免内核态切换后误触发用户态栈交换逻辑。
 - page fault 分支尝试处理 CoW 写入异常，成功时直接返回用户态。
 - 支持 S 态外部中断：通过 PLIC claim/complete 拉取 IRQ 并分发到设备处理函数（如 virtio-blk）。
+- 外部中断处理临时切换到内核根页表，确保 PLIC/MMIO 访问不受用户页表缺失影响。
 - 外部中断开启 SIE.SEIE，确保设备完成可唤醒阻塞 I/O。
 
 ## 关键数据结构
