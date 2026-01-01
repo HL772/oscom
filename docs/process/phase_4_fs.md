@@ -51,12 +51,14 @@
 
 ## 问题与定位
 - ext4 extent 深度>0 与间接块读路径已经补齐，后续仍需覆盖写路径。
+- ext4 稀疏文件读取在遇到未分配块时提前返回，导致 `/init` ELF 被截断并触发 `execve` 返回 `EINVAL`。
 - FAT32 写入回读不一致：`sys_write`/`sys_read` 的临时 scratch 仅 256B，小于 FAT32 扇区 512B，触发 RMW；同时 `with_mounts` 每次 syscall 重建 FS/BlockCache，导致第二次写入读取到旧扇区内容，把第一次写入覆盖回旧值。
 - 调试误操作：尝试修改 `USER_CODE` 中 FAT32 缓冲区地址时使用 `addi` 立即数 `0x800`，符号扩展为 -2048，指针落入代码页，写入覆盖指令，导致后续 read 路径被破坏（表现为 `fat32: ok` 不再出现）。
 
 ## 解决与验证
 - 将 `read_vfs_at`/`write_vfs_at` scratch 扩大到 512B，匹配扇区大小，规避 RMW 与缓存重建组合导致的数据回退。
 - 回退 `USER_CODE` 的缓冲区改动，恢复原始 FAT32 buffer 地址，避免写入覆盖指令。
+- ext4 读路径遇到空洞时填零继续读取，避免 ELF 读到半截。
 - 已通过 `make test-oscomp ARCH=riscv64 PLATFORM=qemu`（ramdisk/ext4 自研自测）。
 - `cargo test -p axfs`
 - `AXFS_EXT4_IMAGE=build/rootfs.ext4 cargo test -p axfs ext4_init_image`

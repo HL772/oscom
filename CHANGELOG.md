@@ -112,6 +112,7 @@
 - Extend ext4-init host test to validate root directory entries, `/etc/issue`, and larger reads.
 - Force QEMU virtio-mmio into modern mode in run/test scripts.
 - Extend ext4 read path to handle extent trees and indirect blocks.
+- Fix ext4 sparse-file reads by zero-filling holes instead of truncating at missing blocks.
 - Re-enable interrupts in idle so blocking syscalls can sleep and resume.
 - Extend user-mode smoke to cover multi-fd ppoll timeout path.
 - Track O_NONBLOCK via fcntl and honor it for pipe reads/writes.
@@ -151,6 +152,7 @@
 - Add an ext4 rootfs mount log marker and smoke-test check in QEMU runs.
 - Extend /init to read `/etc/issue` and verify it in ext4 QEMU smoke runs.
 - Reduce ext4 read-path stack pressure by reusing a shared scratch buffer.
+- Allocate kernel stacks from contiguous pages with a guard page to prevent stack underflow into user data.
 - Extend FAT32 write_at to update directory entries and grow cluster chains, plus add a fatlog.txt rootfs fixture and host growth test.
 - Extend USER_TEST to write/read `/fatlog.txt` and add a FAT32 write/read marker check in ramdisk self-tests.
 - Allow the FAT32 ramdisk block device to write back to the in-memory rootfs image for self-tests.
