@@ -647,6 +647,13 @@ fn sys_execve(tf: &mut TrapFrame, pathname: usize, argv: usize, envp: usize) -> 
     if root_pa == 0 {
         return Err(Errno::Fault);
     }
+    if cfg!(feature = "user-tcp-echo") {
+        let mut buf = [0u8; 128];
+        match read_user_path_str(root_pa, pathname, &mut buf) {
+            Ok(path) => crate::println!("sys_execve: trying {}", path),
+            Err(_) => crate::println!("sys_execve: trying <invalid path>"),
+        }
+    }
     validate_user_path(root_pa, pathname)?;
     validate_user_ptr_list(root_pa, argv)?;
     validate_user_ptr_list(root_pa, envp)?;
@@ -654,15 +661,24 @@ fn sys_execve(tf: &mut TrapFrame, pathname: usize, argv: usize, envp: usize) -> 
     let image = match execve_vfs_image(root_pa, pathname) {
         Ok(image) => image,
         Err(err) => {
+            if cfg!(feature = "user-tcp-echo") {
+                crate::println!("sys_execve: read image failed ({:?})", err);
+            }
             return Err(err);
         }
     };
     let ctx = match crate::user::load_exec_elf(root_pa, image, argv, envp) {
         Ok(ctx) => ctx,
         Err(err) => {
+            if cfg!(feature = "user-tcp-echo") {
+                crate::println!("sys_execve: load elf failed ({:?})", err);
+            }
             return Err(err);
         }
     };
+    if cfg!(feature = "user-tcp-echo") {
+        crate::println!("sys_execve: success entry={:#x} sp={:#x}", ctx.entry, ctx.user_sp);
+    }
     // execve 成功后不返回，更新入口与用户栈并清理参数寄存器。
     tf.sepc = ctx.entry.wrapping_sub(4);
     tf.a0 = ctx.argc;

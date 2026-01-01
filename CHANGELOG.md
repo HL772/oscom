@@ -173,3 +173,5 @@
 - Add user-space tcp_echo app, build script, and ext4 rootfs integration for /tcp_echo.
 - Add TCP_ECHO_TEST smoke path with tcp-echo log validation.
 - Implement connect EINPROGRESS semantics and map connection failures to net-specific errno.
+- Grow RISC-V boot stack to 64KB to avoid deep syscall stack overflows.
+- Map user stacks page-by-page to avoid execve stack zeroing overflows.

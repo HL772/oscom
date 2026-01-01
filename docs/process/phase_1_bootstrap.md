@@ -23,6 +23,7 @@
 - 增加 KernelStack 原型，使用连续页作为内核栈。
 - 增加 TaskEntry 占位与 dummy task 初始化。
 - 增加调度触发周期参数，占位可配置调度策略（SCHED_INTERVAL_TICKS）。
+- 扩大 boot stack 到 64KB，降低复杂 syscall 路径导致的栈溢出风险。
 
 ## 问题与定位
 - 当前仅支持单核与 legacy SBI 接口。

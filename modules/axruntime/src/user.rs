@@ -18,12 +18,15 @@ pub struct UserContext {
 }
 
 const PAGE_SIZE: usize = 4096;
-const USER_STACK_PAGES: usize = 1;
+// 用户态测试程序需要更大的栈空间以容纳网络相关调用与缓冲区布局。
+const USER_STACK_PAGES: usize = 32;
 const USER_STACK_SIZE: usize = USER_STACK_PAGES * PAGE_SIZE;
 
 const USER_CODE_VA: usize = config::USER_TEST_BASE;
 const USER_DATA_VA: usize = config::USER_TEST_BASE + PAGE_SIZE;
-const USER_STACK_VA: usize = config::USER_TEST_BASE + PAGE_SIZE * 2;
+// 避开 UART MMIO 与 DRAM 恒等映射区。
+const USER_STACK_VA: usize = 0x6000_0000;
+const USER_MESSAGE_PAGE_VA: usize = USER_DATA_VA + PAGE_SIZE;
 const USER_IOVEC_VA: usize = USER_DATA_VA;
 const USER_PIPEFD_VA: usize = USER_DATA_VA + 0x40;
 const USER_POLLFD_VA: usize = USER_DATA_VA + 0x50;
@@ -223,9 +226,29 @@ pub fn prepare_user_test() -> Option<UserContext> {
 pub fn load_user_image(root_pa: usize) -> Option<UserContext> {
     let code_pa = ensure_user_page(root_pa, USER_CODE_VA, mm::UserAccess::Read, mm::map_user_code)?;
     let data_pa = ensure_user_page(root_pa, USER_DATA_VA, mm::UserAccess::Write, mm::map_user_data)?;
-    let stack_pa = ensure_user_page(root_pa, USER_STACK_VA, mm::UserAccess::Write, mm::map_user_stack)?;
+    let message_pa =
+        ensure_user_page(root_pa, USER_MESSAGE_PAGE_VA, mm::UserAccess::Write, mm::map_user_data)?;
+    // SAFETY: identity-mapped frame; clear message page for deterministic writev test.
+    unsafe {
+        ptr::write_bytes(message_pa as *mut u8, 0, PAGE_SIZE);
+    }
+    let mut stack_pa = 0usize;
+    for idx in 0..USER_STACK_PAGES {
+        let va = USER_STACK_VA + idx * PAGE_SIZE;
+        let pa = ensure_user_page(root_pa, va, mm::UserAccess::Write, mm::map_user_stack)?;
+        if idx == 0 {
+            stack_pa = pa;
+        }
+        // SAFETY: identity-mapped frame; clear each stack page.
+        unsafe {
+            ptr::write_bytes(pa as *mut u8, 0, PAGE_SIZE);
+        }
+    }
+    if stack_pa == 0 {
+        return None;
+    }
 
-    init_user_image(code_pa, data_pa, stack_pa);
+    init_user_image(code_pa, data_pa, message_pa, stack_pa);
     mm::flush_icache();
     mm::flush_tlb();
 
@@ -254,16 +277,19 @@ pub fn load_exec_elf(
         return Err(err);
     }
 
-    let stack_pa = match ensure_user_page(root_pa, USER_STACK_VA, mm::UserAccess::Write, mm::map_user_stack) {
-        Some(pa) => pa,
-        None => {
-            mm::release_user_root(root_pa);
-            return Err(Errno::Fault);
+    for idx in 0..USER_STACK_PAGES {
+        let va = USER_STACK_VA + idx * PAGE_SIZE;
+        let pa = match ensure_user_page(root_pa, va, mm::UserAccess::Write, mm::map_user_stack) {
+            Some(pa) => pa,
+            None => {
+                mm::release_user_root(root_pa);
+                return Err(Errno::Fault);
+            }
+        };
+        // SAFETY: identity-mapped frame; clear each stack page.
+        unsafe {
+            ptr::write_bytes(pa as *mut u8, 0, PAGE_SIZE);
         }
-    };
-    // SAFETY: identity-mapped frame; zero stack page before writing.
-    unsafe {
-        ptr::write_bytes(stack_pa as *mut u8, 0, USER_STACK_SIZE);
     }
 
     let (user_sp, argc, argv_ptr, envp_ptr) = match build_user_stack(old_root_pa, root_pa, argv, envp) {
@@ -643,13 +669,13 @@ fn ensure_user_page(
     Some(pa)
 }
 
-fn init_user_image(code_pa: usize, data_pa: usize, stack_pa: usize) {
+fn init_user_image(code_pa: usize, data_pa: usize, message_pa: usize, stack_pa: usize) {
     // SAFETY: frames are identity-mapped; code/data fit in a single page each.
     unsafe {
         // Ensure deterministic user data layout before partial writes.
         ptr::write_bytes(data_pa as *mut u8, 0, mm::PAGE_SIZE);
         ptr::copy_nonoverlapping(USER_CODE.as_ptr(), code_pa as *mut u8, USER_CODE.len());
-        ptr::write_bytes(stack_pa as *mut u8, 0, USER_STACK_SIZE);
+        ptr::write_bytes(stack_pa as *mut u8, 0, PAGE_SIZE);
         // 将消息拆分写入 data+stack 跨页区域，验证用户态跨页访问。
         let first_len = min(USER_MESSAGE_LEN, USER_MESSAGE_SPLIT);
         ptr::copy_nonoverlapping(
@@ -659,11 +685,11 @@ fn init_user_image(code_pa: usize, data_pa: usize, stack_pa: usize) {
         );
         if first_len < USER_MESSAGE_LEN {
             let rest = USER_MESSAGE_LEN - first_len;
-            ptr::copy_nonoverlapping(
-                USER_MESSAGE.as_ptr().add(first_len),
-                stack_pa as *mut u8,
-                rest,
-            );
+        ptr::copy_nonoverlapping(
+            USER_MESSAGE.as_ptr().add(first_len),
+            message_pa as *mut u8,
+            rest,
+        );
         }
         // 布局 iovec 数组：第一个条目跨页读取，第二个条目为 0 长度占位。
         let iov_base = data_pa as *mut usize;
