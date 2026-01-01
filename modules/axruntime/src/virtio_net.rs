@@ -62,6 +62,7 @@ static VIRTIO_NET_TX_QUEUE_SIZE: AtomicUsize = AtomicUsize::new(0);
 static VIRTIO_NET_RX_USED: AtomicUsize = AtomicUsize::new(0);
 static VIRTIO_NET_TX_USED: AtomicUsize = AtomicUsize::new(0);
 static VIRTIO_NET_IRQ_LOGGED: AtomicBool = AtomicBool::new(false);
+static VIRTIO_NET_RX_USED_LOGGED: AtomicBool = AtomicBool::new(false);
 
 static VIRTIO_NET_DEVICE: VirtioNetDevice = VirtioNetDevice;
 
@@ -186,7 +187,7 @@ unsafe impl Sync for QueueCell {}
 static VIRTIO_NET_RX_QUEUE: QueueCell = QueueCell::new();
 static VIRTIO_NET_TX_QUEUE: QueueCell = QueueCell::new();
 
-#[repr(C, align(16))]
+#[repr(C, align(4096))]
 struct RxBuffer {
     data: [[u8; NET_BUF_SIZE]; QUEUE_SIZE],
 }
@@ -298,6 +299,9 @@ impl NetDevice for VirtioNetDevice {
         let queue = VIRTIO_NET_RX_QUEUE.get();
         let used_idx = unsafe { ptr::read_volatile(&queue.used.idx) };
         let last_used = VIRTIO_NET_RX_USED.load(Ordering::Acquire) as u16;
+        if used_idx != last_used && !VIRTIO_NET_RX_USED_LOGGED.swap(true, Ordering::AcqRel) {
+            crate::println!("virtio-net: rx used idx={} last={}", used_idx, last_used);
+        }
         used_idx != last_used
     }
 }
