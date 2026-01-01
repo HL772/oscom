@@ -680,7 +680,7 @@ fn sys_execve(tf: &mut TrapFrame, pathname: usize, argv: usize, envp: usize) -> 
     Ok(0)
 }
 
-const EXECVE_IMAGE_MAX: usize = 0x2000;
+const EXECVE_IMAGE_MAX: usize = 0x100000;
 // SAFETY: 单核 execve 过程复用该缓冲区读取 ELF 镜像。
 static mut EXECVE_IMAGE: [u8; EXECVE_IMAGE_MAX] = [0; EXECVE_IMAGE_MAX];
 

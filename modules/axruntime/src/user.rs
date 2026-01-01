@@ -65,6 +65,7 @@ const USER_PATH: &[u8] = b"/init\0";
 #[cfg(not(feature = "user-tcp-echo"))]
 const USER_ARG0: &[u8] = b"init\0";
 const USER_ENV0: &[u8] = b"TERM=vt100\0";
+const USER_PATH_STRIDE: usize = 16;
 const USER_COW_INIT: u32 = 0x1234_5678;
 const USER_COW_OK: &[u8] = b"cow: ok\n";
 const USER_COW_BAD: &[u8] = b"cow: bad\n";
@@ -695,16 +696,16 @@ fn init_user_image(code_pa: usize, data_pa: usize, stack_pa: usize) {
         // execve 路径字符串与 argv/envp。
         let path_base = data_pa + (USER_PATH_VA - USER_DATA_VA);
         ptr::copy_nonoverlapping(USER_PATH.as_ptr(), path_base as *mut u8, USER_PATH.len());
-        let arg0_base = path_base + 8;
+        let arg0_base = path_base + USER_PATH_STRIDE;
         ptr::copy_nonoverlapping(USER_ARG0.as_ptr(), arg0_base as *mut u8, USER_ARG0.len());
-        let env0_base = arg0_base + 8;
+        let env0_base = arg0_base + USER_PATH_STRIDE;
         ptr::copy_nonoverlapping(USER_ENV0.as_ptr(), env0_base as *mut u8, USER_ENV0.len());
         let argv_base = (data_pa + (USER_ARGV_VA - USER_DATA_VA)) as *mut usize;
         argv_base.write(USER_PATH_VA);
-        argv_base.add(1).write(USER_PATH_VA + 8);
+        argv_base.add(1).write(USER_PATH_VA + USER_PATH_STRIDE);
         argv_base.add(2).write(0);
         let envp_base = (data_pa + (USER_ENVP_VA - USER_DATA_VA)) as *mut usize;
-        envp_base.write(USER_PATH_VA + 16);
+        envp_base.write(USER_PATH_VA + USER_PATH_STRIDE * 2);
         envp_base.add(1).write(0);
         let dirbuf_base = data_pa + (USER_DIRENT_BUF_VA - USER_DATA_VA);
         ptr::write_bytes(dirbuf_base as *mut u8, 0, USER_DIRENT_BUF_LEN);
