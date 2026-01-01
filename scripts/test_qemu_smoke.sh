@@ -158,6 +158,11 @@ if [[ "${EXPECT_NET}" == "1" ]]; then
     cat "${LOG_FILE}" >&2
     exit 1
   fi
+  if ! grep -q "net: arp reply from 10.0.2.2" "${LOG_FILE}"; then
+    echo "Smoke test failed: ARP reply not found." >&2
+    cat "${LOG_FILE}" >&2
+    exit 1
+  fi
 fi
 
 

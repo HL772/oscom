@@ -13,6 +13,7 @@
 - 网络定时器与重传计时统一依赖 `time` 模块。
 - 先落地最小 `axnet` 抽象与 virtio-net RAW 帧读写，协议栈后续接入。
 - smoltcp 接入使用静态地址配置（QEMU user-net: 10.0.2.15/24, gw 10.0.2.2），轮询在空闲上下文触发。
+- 启动后发送一次 ARP probe 探测网关，收到应答即认为 RX/IRQ 路径可用。
 
 ## 关键数据结构
 - `NetDevice`：网卡设备抽象（send/recv/irq）。
@@ -27,6 +28,7 @@ rx_irq
   -> driver.rx()
   -> protocol_stack.poll()
   -> socket_ready()
+  -> wake(net_waiters)
 
 socket_read(fd)
   -> dequeue packet
@@ -42,4 +44,4 @@ socket_read(fd)
 - 基础连通性：ping/UDP echo。
 - TCP 建连与收发：iperf 基准。
 - 应用层：git clone/push、redis 基本命令回归。
-- QEMU: `NET=1 EXPECT_NET=1 make test-qemu-smoke` 检查 virtio-net ready。
+- QEMU: `NET=1 EXPECT_NET=1 make test-qemu-smoke` 检查 virtio-net ready + ARP reply。

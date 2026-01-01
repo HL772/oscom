@@ -969,16 +969,30 @@ fn sys_listen(fd: usize, backlog: usize) -> Result<usize, Errno> {
 }
 
 fn sys_accept(fd: usize, addr: usize, addrlen: usize) -> Result<usize, Errno> {
-    let socket_id = resolve_socket_fd(fd)?;
-    let new_id = axnet::socket_accept(socket_id).map_err(map_net_err)?;
-    let entry = FdEntry {
-        kind: FdKind::Socket(new_id),
-        flags: 0,
-        offset: 0,
-    };
-    let newfd = alloc_fd(entry).ok_or(Errno::MFile)?;
-    write_sockaddr_in(mm::current_root_pa(), addr, addrlen, None)?;
-    Ok(newfd)
+    let (socket_id, flags) = resolve_socket_entry(fd)?;
+    let nonblock = (flags & O_NONBLOCK) != 0;
+    loop {
+        match axnet::socket_accept(socket_id) {
+            Ok((accepted_id, listener_id, remote)) => {
+                replace_socket_fd(fd, listener_id)?;
+                let entry = FdEntry {
+                    kind: FdKind::Socket(accepted_id),
+                    flags: flags & O_NONBLOCK,
+                    offset: 0,
+                };
+                let newfd = alloc_fd(entry).ok_or(Errno::MFile)?;
+                write_sockaddr_in(mm::current_root_pa(), addr, addrlen, remote)?;
+                return Ok(newfd);
+            }
+            Err(axnet::NetError::WouldBlock) => {
+                if nonblock || !can_block_current() {
+                    return Err(Errno::Again);
+                }
+                crate::runtime::block_current(crate::runtime::net_wait_queue());
+            }
+            Err(err) => return Err(map_net_err(err)),
+        }
+    }
 }
 
 fn sys_sendto(
@@ -990,7 +1004,8 @@ fn sys_sendto(
     addrlen: usize,
 ) -> Result<usize, Errno> {
     let root_pa = mm::current_root_pa();
-    let socket_id = resolve_socket_fd(fd)?;
+    let (socket_id, flags) = resolve_socket_entry(fd)?;
+    let nonblock = (flags & O_NONBLOCK) != 0;
     let endpoint = if addr != 0 {
         let (ip, port) = parse_sockaddr_in(root_pa, addr, addrlen)?;
         Some((ip, port))
@@ -1009,8 +1024,20 @@ fn sys_sendto(
         UserSlice::new(src, chunk)
             .copy_to_slice(root_pa, &mut scratch[..chunk])
             .ok_or(Errno::Fault)?;
-        let sent = axnet::socket_send(socket_id, &scratch[..chunk], endpoint)
-            .map_err(map_net_err)?;
+        let sent = match axnet::socket_send(socket_id, &scratch[..chunk], endpoint) {
+            Ok(sent) => sent,
+            Err(axnet::NetError::WouldBlock) => {
+                if total > 0 {
+                    break;
+                }
+                if nonblock || !can_block_current() {
+                    return Err(Errno::Again);
+                }
+                crate::runtime::block_current(crate::runtime::net_wait_queue());
+                continue;
+            }
+            Err(err) => return Err(map_net_err(err)),
+        };
         total += sent;
         if sent < chunk {
             break;
@@ -1029,7 +1056,8 @@ fn sys_recvfrom(
     addrlen: usize,
 ) -> Result<usize, Errno> {
     let root_pa = mm::current_root_pa();
-    let socket_id = resolve_socket_fd(fd)?;
+    let (socket_id, flags) = resolve_socket_entry(fd)?;
+    let nonblock = (flags & O_NONBLOCK) != 0;
     if len == 0 {
         return Ok(0);
     }
@@ -1039,8 +1067,20 @@ fn sys_recvfrom(
     let mut last_endpoint = None;
     while remaining > 0 {
         let chunk = core::cmp::min(remaining, scratch.len());
-        let (read, endpoint) = axnet::socket_recv(socket_id, &mut scratch[..chunk])
-            .map_err(map_net_err)?;
+        let (read, endpoint) = match axnet::socket_recv(socket_id, &mut scratch[..chunk]) {
+            Ok(result) => result,
+            Err(axnet::NetError::WouldBlock) => {
+                if total > 0 {
+                    break;
+                }
+                if nonblock || !can_block_current() {
+                    return Err(Errno::Again);
+                }
+                crate::runtime::block_current(crate::runtime::net_wait_queue());
+                continue;
+            }
+            Err(err) => return Err(map_net_err(err)),
+        };
         let dst = buf.checked_add(total).ok_or(Errno::Fault)?;
         UserSlice::new(dst, read)
             .copy_from_slice(root_pa, &scratch[..read])
@@ -3102,6 +3142,24 @@ fn dup_to_fd(newfd: usize, entry: FdEntry) -> Result<usize, Errno> {
     Ok(newfd)
 }
 
+fn replace_socket_fd(fd: usize, socket_id: axnet::SocketId) -> Result<(), Errno> {
+    if stdio_kind(fd).is_some() {
+        return Err(Errno::Badf);
+    }
+    let proc_idx = current_proc_index().ok_or(Errno::Badf)?;
+    let idx = fd_table_index(fd).ok_or(Errno::Badf)?;
+    // SAFETY: 单核早期阶段，fd 表串行更新。
+    unsafe {
+        let entry = &mut FD_TABLES[proc_idx][idx];
+        if !matches!(entry.kind, FdKind::Socket(_)) {
+            return Err(Errno::Badf);
+        }
+        entry.kind = FdKind::Socket(socket_id);
+        entry.offset = 0;
+    }
+    Ok(())
+}
+
 fn close_fd(fd: usize) -> Result<usize, Errno> {
     let proc_idx = current_proc_index().ok_or(Errno::Badf)?;
     if stdio_kind(fd).is_some() {
@@ -3670,6 +3728,7 @@ fn ppoll_single_waiter_queue(fd: i32, events: u16) -> Option<&'static crate::tas
     match entry.kind {
         FdKind::PipeRead(pipe_id) if (events & POLLIN) != 0 => Some(pipe_read_queue(pipe_id)),
         FdKind::PipeWrite(pipe_id) if (events & POLLOUT) != 0 => Some(pipe_write_queue(pipe_id)),
+        FdKind::Socket(_) if (events & (POLLIN | POLLOUT)) != 0 => Some(crate::runtime::net_wait_queue()),
         _ => None,
     }
 }
@@ -3678,6 +3737,14 @@ fn resolve_socket_fd(fd: usize) -> Result<axnet::SocketId, Errno> {
     let entry = resolve_fd(fd).ok_or(Errno::Badf)?;
     match entry.kind {
         FdKind::Socket(id) => Ok(id),
+        _ => Err(Errno::Badf),
+    }
+}
+
+fn resolve_socket_entry(fd: usize) -> Result<(axnet::SocketId, usize), Errno> {
+    let entry = resolve_fd(fd).ok_or(Errno::Badf)?;
+    match entry.kind {
+        FdKind::Socket(id) => Ok((id, entry.flags)),
         _ => Err(Errno::Badf),
     }
 }
@@ -3751,7 +3818,10 @@ fn read_from_entry(fd: usize, entry: FdEntry, root_pa: usize, buf: usize, len: u
             let nonblock = (entry.flags & O_NONBLOCK) != 0;
             pipe_read(pipe_id, root_pa, buf, len, nonblock)
         }
-        FdKind::Socket(socket_id) => read_socket(root_pa, socket_id, buf, len),
+        FdKind::Socket(socket_id) => {
+            let nonblock = (entry.flags & O_NONBLOCK) != 0;
+            read_socket(root_pa, socket_id, buf, len, nonblock)
+        }
         FdKind::Stdout | FdKind::Stderr | FdKind::PipeWrite(_) => Err(Errno::Badf),
         FdKind::Empty => Err(Errno::Badf),
     }
@@ -3871,13 +3941,22 @@ fn write_to_entry(fd: usize, entry: FdEntry, root_pa: usize, buf: usize, len: us
             let nonblock = (entry.flags & O_NONBLOCK) != 0;
             pipe_write(pipe_id, root_pa, buf, len, nonblock)
         }
-        FdKind::Socket(socket_id) => write_socket(root_pa, socket_id, buf, len),
+        FdKind::Socket(socket_id) => {
+            let nonblock = (entry.flags & O_NONBLOCK) != 0;
+            write_socket(root_pa, socket_id, buf, len, nonblock)
+        }
         FdKind::Stdin | FdKind::PipeRead(_) => Err(Errno::Badf),
         FdKind::Empty => Err(Errno::Badf),
     }
 }
 
-fn read_socket(root_pa: usize, socket_id: axnet::SocketId, buf: usize, len: usize) -> Result<usize, Errno> {
+fn read_socket(
+    root_pa: usize,
+    socket_id: axnet::SocketId,
+    buf: usize,
+    len: usize,
+    nonblock: bool,
+) -> Result<usize, Errno> {
     if len == 0 {
         return Ok(0);
     }
@@ -3886,7 +3965,20 @@ fn read_socket(root_pa: usize, socket_id: axnet::SocketId, buf: usize, len: usiz
     let mut scratch = [0u8; 512];
     while remaining > 0 {
         let chunk = core::cmp::min(remaining, scratch.len());
-        let (read, _) = axnet::socket_recv(socket_id, &mut scratch[..chunk]).map_err(map_net_err)?;
+        let (read, _) = match axnet::socket_recv(socket_id, &mut scratch[..chunk]) {
+            Ok(result) => result,
+            Err(axnet::NetError::WouldBlock) => {
+                if total > 0 {
+                    break;
+                }
+                if nonblock || !can_block_current() {
+                    return Err(Errno::Again);
+                }
+                crate::runtime::block_current(crate::runtime::net_wait_queue());
+                continue;
+            }
+            Err(err) => return Err(map_net_err(err)),
+        };
         let dst = buf.checked_add(total).ok_or(Errno::Fault)?;
         UserSlice::new(dst, read)
             .copy_from_slice(root_pa, &scratch[..read])
@@ -3900,7 +3992,13 @@ fn read_socket(root_pa: usize, socket_id: axnet::SocketId, buf: usize, len: usiz
     Ok(total)
 }
 
-fn write_socket(root_pa: usize, socket_id: axnet::SocketId, buf: usize, len: usize) -> Result<usize, Errno> {
+fn write_socket(
+    root_pa: usize,
+    socket_id: axnet::SocketId,
+    buf: usize,
+    len: usize,
+    nonblock: bool,
+) -> Result<usize, Errno> {
     if len == 0 {
         return Ok(0);
     }
@@ -3913,7 +4011,20 @@ fn write_socket(root_pa: usize, socket_id: axnet::SocketId, buf: usize, len: usi
         UserSlice::new(src, chunk)
             .copy_to_slice(root_pa, &mut scratch[..chunk])
             .ok_or(Errno::Fault)?;
-        let sent = axnet::socket_send(socket_id, &scratch[..chunk], None).map_err(map_net_err)?;
+        let sent = match axnet::socket_send(socket_id, &scratch[..chunk], None) {
+            Ok(sent) => sent,
+            Err(axnet::NetError::WouldBlock) => {
+                if total > 0 {
+                    break;
+                }
+                if nonblock || !can_block_current() {
+                    return Err(Errno::Again);
+                }
+                crate::runtime::block_current(crate::runtime::net_wait_queue());
+                continue;
+            }
+            Err(err) => return Err(map_net_err(err)),
+        };
         total += sent;
         if sent < chunk {
             break;

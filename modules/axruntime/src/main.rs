@@ -85,7 +85,7 @@ pub extern "C" fn rust_main(hart_id: usize, dtb_addr: usize) -> ! {
     if let Some(dev) = virtio_net::device() {
         if axnet::init(dev).is_ok() {
             crate::println!("axnet: interface up (static 10.0.2.15/24)");
-            let _ = axnet::ping_gateway_once();
+            let _ = axnet::arp_probe_gateway_once();
         }
     }
 
@@ -113,7 +113,7 @@ pub extern "C" fn rust_main(hart_id: usize, dtb_addr: usize) -> ! {
         }
     }
 
-    runtime::idle_loop();
+    runtime::enter_idle_loop();
 }
 
 #[panic_handler]

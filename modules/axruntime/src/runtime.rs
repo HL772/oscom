@@ -1,8 +1,9 @@
 #![allow(dead_code)]
 
+use core::arch::asm;
 use core::mem::size_of;
 use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 use crate::config;
 use crate::mm;
@@ -18,9 +19,11 @@ use crate::wait_queue::WaitQueue;
 
 static TICK_COUNT: AtomicU64 = AtomicU64::new(0);
 static NEED_RESCHED: AtomicBool = AtomicBool::new(false);
+static IDLE_STACK_TOP: AtomicUsize = AtomicUsize::new(0);
 static RUN_QUEUE: RunQueue = RunQueue::new();
 static SLEEP_QUEUE: SleepQueue = SleepQueue::new();
 static WAIT_QUEUE: WaitQueue = WaitQueue::new();
+static NET_WAITERS: TaskWaitQueue = TaskWaitQueue::new();
 // CURRENT_TASK is valid only while executing inside a task context.
 static mut CURRENT_TASK: Option<TaskId> = None;
 static mut IDLE_TASK: TaskControlBlock = task::idle_task();
@@ -127,6 +130,7 @@ pub fn init() {
 
     match stack::init_idle_stack() {
         Some(stack) => {
+            IDLE_STACK_TOP.store(stack.top(), Ordering::Release);
             if config::ENABLE_SCHED_DEMO {
                 crate::println!("scheduler: idle stack top={:#x}", stack.top());
             }
@@ -492,6 +496,10 @@ pub fn wait_timeout_ms(queue: &TaskWaitQueue, timeout_ms: u64) -> WaitResult {
     }
 }
 
+pub fn net_wait_queue() -> &'static TaskWaitQueue {
+    &NET_WAITERS
+}
+
 pub fn block_current(queue: &TaskWaitQueue) {
     // Block the current task on a wait queue; caller controls the wake-up.
     // SAFETY: single-hart early use; CURRENT_TASK is only accessed in init/idle/task contexts.
@@ -574,10 +582,37 @@ pub fn idle_loop() -> ! {
                 axnet::NetEvent::IcmpEchoReply { seq, from } => {
                     crate::println!("net: icmp echo reply seq={} from={}", seq, from);
                 }
+                axnet::NetEvent::ArpReply { from } => {
+                    crate::println!("net: arp reply from {}", from);
+                }
+                axnet::NetEvent::ArpProbeSent { target } => {
+                    crate::println!("net: arp probe sent to {}", target);
+                }
+                axnet::NetEvent::RxFrameSeen => {
+                    crate::println!("net: rx frame seen");
+                }
+                axnet::NetEvent::Activity => {}
             }
+            let _ = wake_all(net_wait_queue());
         }
         yield_if_needed();
         crate::trap::enable_interrupts();
         crate::cpu::wait_for_interrupt();
+    }
+}
+
+pub fn enter_idle_loop() -> ! {
+    let top = IDLE_STACK_TOP.load(Ordering::Acquire);
+    if top == 0 {
+        idle_loop();
+    }
+    unsafe {
+        asm!(
+            "mv sp, {0}",
+            "j {1}",
+            in(reg) top,
+            sym idle_loop,
+            options(noreturn)
+        );
     }
 }

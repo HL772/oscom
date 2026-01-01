@@ -163,3 +163,7 @@
 - Add smoltcp-backed axnet interface with static IPv4 config and idle-loop polling.
 - Add ICMP echo request path on boot (reply depends on QEMU user-net).
 - Add socket syscall skeletons and socket fd handling for TCP/UDP paths.
+- Add ARP probe on boot with reply logging and smoke-test check for QEMU user-net.
+- Add blocking accept/send/recv paths for sockets with net wait queue wakeups.
+- Switch idle loop to a dedicated idle stack to avoid boot stack overflows.
+- Log one-time virtio-net IRQ and ARP probe events for RX-path diagnostics.

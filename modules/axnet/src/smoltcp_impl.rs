@@ -2,7 +2,7 @@
 
 use core::mem::MaybeUninit;
 use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
 
 use smoltcp::iface::{Config, Interface, SocketHandle, SocketSet, SocketStorage};
 use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
@@ -13,7 +13,10 @@ use smoltcp::socket::icmp::{
 use smoltcp::socket::tcp::{Socket as TcpSocket, SocketBuffer as TcpSocketBuffer};
 use smoltcp::socket::udp::{PacketBuffer as UdpPacketBuffer, PacketMetadata as UdpPacketMetadata, Socket as UdpSocket};
 use smoltcp::time::Instant;
-use smoltcp::wire::{EthernetAddress, Icmpv4Packet, Icmpv4Repr, IpAddress, IpCidr, IpEndpoint, IpListenEndpoint, Ipv4Address};
+use smoltcp::wire::{
+    ArpOperation, ArpPacket, ArpRepr, EthernetAddress, EthernetFrame, EthernetProtocol, Icmpv4Packet,
+    Icmpv4Repr, IpAddress, IpCidr, IpEndpoint, IpListenEndpoint, Ipv4Address,
+};
 
 use crate::{NetDevice, NetError};
 
@@ -26,6 +29,7 @@ const ICMP_BUF_LEN: usize = 256;
 const TCP_BUF_LEN: usize = 2048;
 const UDP_BUF_LEN: usize = 2048;
 const UDP_META_LEN: usize = 4;
+const ARP_POLL_RETRY: u16 = 8;
 
 const NET_IPV4_ADDR: [u8; 4] = [10, 0, 2, 15];
 const NET_IPV4_GATEWAY: [u8; 4] = [10, 0, 2, 2];
@@ -34,6 +38,11 @@ const NET_IPV4_PREFIX: u8 = 24;
 static NET_READY: AtomicBool = AtomicBool::new(false);
 static NET_NEED_POLL: AtomicBool = AtomicBool::new(false);
 static NET_PING_REQUESTED: AtomicBool = AtomicBool::new(false);
+static NET_ARP_REQUESTED: AtomicBool = AtomicBool::new(false);
+static NET_ARP_PENDING: AtomicU16 = AtomicU16::new(0);
+static NET_ARP_REPLY_IP: AtomicU32 = AtomicU32::new(0);
+static NET_ARP_SENT_IP: AtomicU32 = AtomicU32::new(0);
+static NET_RX_SEEN: AtomicBool = AtomicBool::new(false);
 static NEXT_EPHEMERAL_PORT: AtomicU16 = AtomicU16::new(49152);
 
 static mut RX_BUF: [u8; NET_BUF_SIZE] = [0; NET_BUF_SIZE];
@@ -50,6 +59,7 @@ static mut UDP_RX_BUF: [[u8; UDP_BUF_LEN]; MAX_SOCKETS] = [[0; UDP_BUF_LEN]; MAX
 static mut UDP_TX_META: [[UdpPacketMetadata; UDP_META_LEN]; MAX_SOCKETS] =
     [[UdpPacketMetadata::EMPTY; UDP_META_LEN]; MAX_SOCKETS];
 static mut UDP_TX_BUF: [[u8; UDP_BUF_LEN]; MAX_SOCKETS] = [[0; UDP_BUF_LEN]; MAX_SOCKETS];
+static mut ARP_TX_BUF: [u8; 64] = [0; 64];
 
 struct SmolDevice {
     dev: &'static dyn NetDevice,
@@ -80,6 +90,8 @@ impl Device for SmolDevice {
         }
         // SAFETY: single-token receive; buffer is reused once token is consumed.
         let len = unsafe { self.dev.recv(&mut RX_BUF).ok()? };
+        let _ = NET_RX_SEEN.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire);
+        record_arp_reply(unsafe { &RX_BUF[..len] });
         Some((SmolRxToken { len }, SmolTxToken { dev: self.dev }))
     }
 
@@ -181,6 +193,10 @@ pub fn notify_irq() {
 
 pub enum NetEvent {
     IcmpEchoReply { seq: u16, from: IpAddress },
+    ArpReply { from: Ipv4Address },
+    ArpProbeSent { target: Ipv4Address },
+    RxFrameSeen,
+    Activity,
 }
 
 pub fn poll(now_ms: u64) -> Option<NetEvent> {
@@ -223,10 +239,25 @@ pub fn poll(now_ms: u64) -> Option<NetEvent> {
             NET_NEED_POLL.store(true, Ordering::Release);
         }
     }
-
-    let _ = state
+    if NET_ARP_REQUESTED.swap(false, Ordering::AcqRel) {
+        send_arp_probe(state);
+        NET_ARP_PENDING.store(ARP_POLL_RETRY, Ordering::Release);
+        NET_NEED_POLL.store(true, Ordering::Release);
+    }
+    let activity = state
         .iface
         .poll(timestamp, &mut state.device, &mut state.sockets);
+
+    if let Some(target) = take_arp_sent() {
+        return Some(NetEvent::ArpProbeSent { target });
+    }
+    if let Some(reply) = take_arp_reply() {
+        NET_ARP_PENDING.store(0, Ordering::Release);
+        return Some(NetEvent::ArpReply { from: reply });
+    }
+    if take_rx_seen() {
+        return Some(NetEvent::RxFrameSeen);
+    }
 
     let socket = state.sockets.get_mut::<IcmpSocket>(state.icmp_handle);
     if socket.can_recv() {
@@ -242,6 +273,14 @@ pub fn poll(now_ms: u64) -> Option<NetEvent> {
             }
         }
     }
+    if activity {
+        return Some(NetEvent::Activity);
+    }
+    let pending = NET_ARP_PENDING.load(Ordering::Acquire);
+    if pending > 0 {
+        NET_ARP_PENDING.store(pending.saturating_sub(1), Ordering::Release);
+        NET_NEED_POLL.store(true, Ordering::Release);
+    }
     None
 }
 
@@ -250,6 +289,15 @@ pub fn ping_gateway_once() -> Result<(), NetError> {
         return Err(NetError::NotReady);
     }
     NET_PING_REQUESTED.store(true, Ordering::Release);
+    NET_NEED_POLL.store(true, Ordering::Release);
+    Ok(())
+}
+
+pub fn arp_probe_gateway_once() -> Result<(), NetError> {
+    if !NET_READY.load(Ordering::Acquire) {
+        return Err(NetError::NotReady);
+    }
+    NET_ARP_REQUESTED.store(true, Ordering::Release);
     NET_NEED_POLL.store(true, Ordering::Release);
     Ok(())
 }
@@ -374,8 +422,36 @@ pub fn socket_listen(id: SocketId, _backlog: usize) -> Result<(), NetError> {
     }
 }
 
-pub fn socket_accept(_id: SocketId) -> Result<SocketId, NetError> {
-    Err(NetError::Unsupported)
+pub fn socket_accept(id: SocketId) -> Result<(SocketId, SocketId, Option<(IpAddress, u16)>), NetError> {
+    let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
+    let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
+    let AxSocketKind::Tcp = kind else {
+        return Err(NetError::Unsupported);
+    };
+    let socket = state.sockets.get_mut::<TcpSocket>(handle);
+    if socket.is_listening() || socket.state() == smoltcp::socket::tcp::State::SynReceived {
+        return Err(NetError::WouldBlock);
+    }
+    let tcp_state = socket.state();
+    if tcp_state != smoltcp::socket::tcp::State::Established
+        && tcp_state != smoltcp::socket::tcp::State::CloseWait
+    {
+        return Err(NetError::WouldBlock);
+    }
+    let remote = socket.remote_endpoint().map(|ep| (ep.addr, ep.port));
+    let local_port = socket_local_port(id)?;
+    let listener_id = reserve_socket_slot(AxSocketKind::Tcp).ok_or(NetError::NoMem)?;
+    let rx = unsafe { TcpSocketBuffer::new(&mut TCP_RX_BUF[listener_id][..]) };
+    let tx = unsafe { TcpSocketBuffer::new(&mut TCP_TX_BUF[listener_id][..]) };
+    let listener_handle = state.sockets.add(TcpSocket::new(rx, tx));
+    set_socket_handle(listener_id, listener_handle);
+    set_socket_local_port(listener_id, local_port)?;
+    let listener = state.sockets.get_mut::<TcpSocket>(listener_handle);
+    listener
+        .listen(IpListenEndpoint { addr: None, port: local_port })
+        .map_err(|_| NetError::Invalid)?;
+    NET_NEED_POLL.store(true, Ordering::Release);
+    Ok((id, listener_id, remote))
 }
 
 pub fn socket_send(id: SocketId, buf: &[u8], addr: Option<(IpAddress, u16)>) -> Result<usize, NetError> {
@@ -384,16 +460,22 @@ pub fn socket_send(id: SocketId, buf: &[u8], addr: Option<(IpAddress, u16)>) -> 
     let sent = match kind {
         AxSocketKind::Tcp => {
             let socket = state.sockets.get_mut::<TcpSocket>(handle);
-            socket.send_slice(buf).map_err(|_| NetError::WouldBlock)?
+            match socket.send_slice(buf) {
+                Ok(0) => return Err(NetError::WouldBlock),
+                Ok(size) => size,
+                Err(smoltcp::socket::tcp::SendError::InvalidState) => return Err(NetError::Invalid),
+            }
         }
         AxSocketKind::Udp => {
             let socket = state.sockets.get_mut::<UdpSocket>(handle);
             let Some((addr, port)) = addr else {
                 return Err(NetError::Invalid);
             };
-            socket
-                .send_slice(buf, IpEndpoint::new(addr, port))
-                .map_err(|_| NetError::WouldBlock)?;
+            match socket.send_slice(buf, IpEndpoint::new(addr, port)) {
+                Ok(()) => {}
+                Err(smoltcp::socket::udp::SendError::BufferFull) => return Err(NetError::WouldBlock),
+                Err(smoltcp::socket::udp::SendError::Unaddressable) => return Err(NetError::Invalid),
+            }
             buf.len()
         }
     };
@@ -410,12 +492,25 @@ pub fn socket_recv(
     match kind {
         AxSocketKind::Tcp => {
             let socket = state.sockets.get_mut::<TcpSocket>(handle);
-            let size = socket.recv_slice(buf).map_err(|_| NetError::WouldBlock)?;
+            let size = match socket.recv_slice(buf) {
+                Ok(0) => return Err(NetError::WouldBlock),
+                Ok(size) => size,
+                Err(smoltcp::socket::tcp::RecvError::Finished) => return Ok((0, None)),
+                Err(smoltcp::socket::tcp::RecvError::InvalidState) => return Err(NetError::Invalid),
+            };
             Ok((size, None))
         }
         AxSocketKind::Udp => {
             let socket = state.sockets.get_mut::<UdpSocket>(handle);
-            let (size, endpoint) = socket.recv_slice(buf).map_err(|_| NetError::WouldBlock)?;
+            let (size, endpoint) = match socket.recv_slice(buf) {
+                Ok((size, endpoint)) => {
+                    if size == 0 {
+                        return Err(NetError::WouldBlock);
+                    }
+                    (size, endpoint)
+                }
+                Err(smoltcp::socket::udp::RecvError::Exhausted) => return Err(NetError::WouldBlock),
+            };
             Ok((size, Some((endpoint.endpoint.addr, endpoint.endpoint.port))))
         }
     }
@@ -510,3 +605,117 @@ fn release_socket_slot(id: SocketId) {
 
 static mut SOCKET_STORAGE: [SocketStorage<'static>; SOCKET_STORAGE_LEN] =
     [SocketStorage::EMPTY; SOCKET_STORAGE_LEN];
+
+fn local_ipv4() -> Ipv4Address {
+    Ipv4Address::new(
+        NET_IPV4_ADDR[0],
+        NET_IPV4_ADDR[1],
+        NET_IPV4_ADDR[2],
+        NET_IPV4_ADDR[3],
+    )
+}
+
+fn gateway_ipv4() -> Ipv4Address {
+    Ipv4Address::new(
+        NET_IPV4_GATEWAY[0],
+        NET_IPV4_GATEWAY[1],
+        NET_IPV4_GATEWAY[2],
+        NET_IPV4_GATEWAY[3],
+    )
+}
+
+fn ipv4_to_u32(addr: Ipv4Address) -> u32 {
+    u32::from_be_bytes(addr.0)
+}
+
+fn take_arp_reply() -> Option<Ipv4Address> {
+    let ip = NET_ARP_REPLY_IP.swap(0, Ordering::AcqRel);
+    if ip == 0 {
+        return None;
+    }
+    Some(Ipv4Address::from_bytes(&ip.to_be_bytes()))
+}
+
+fn take_arp_sent() -> Option<Ipv4Address> {
+    let ip = NET_ARP_SENT_IP.swap(0, Ordering::AcqRel);
+    if ip == 0 {
+        return None;
+    }
+    Some(Ipv4Address::from_bytes(&ip.to_be_bytes()))
+}
+
+fn take_rx_seen() -> bool {
+    NET_RX_SEEN.swap(false, Ordering::AcqRel)
+}
+
+fn record_arp_reply(frame: &[u8]) {
+    let Ok(eth) = EthernetFrame::new_checked(frame) else {
+        return;
+    };
+    if eth.ethertype() != EthernetProtocol::Arp {
+        return;
+    }
+    let Ok(arp_pkt) = ArpPacket::new_checked(eth.payload()) else {
+        return;
+    };
+    let Ok(repr) = ArpRepr::parse(&arp_pkt) else {
+        return;
+    };
+    let ArpRepr::EthernetIpv4 {
+        operation: ArpOperation::Reply,
+        source_protocol_addr,
+        target_protocol_addr,
+        ..
+    } = repr
+    else {
+        return;
+    };
+    if target_protocol_addr != local_ipv4() {
+        return;
+    }
+    if source_protocol_addr != gateway_ipv4() {
+        return;
+    }
+    let _ = NET_ARP_REPLY_IP.compare_exchange(
+        0,
+        ipv4_to_u32(source_protocol_addr),
+        Ordering::AcqRel,
+        Ordering::Acquire,
+    );
+}
+
+fn send_arp_probe(state: &mut NetState) {
+    let src_mac = EthernetAddress(state.device.dev.mac_address());
+    let src_ip = local_ipv4();
+    let target_ip = gateway_ipv4();
+    let arp = ArpRepr::EthernetIpv4 {
+        operation: ArpOperation::Request,
+        source_hardware_addr: src_mac,
+        source_protocol_addr: src_ip,
+        target_hardware_addr: EthernetAddress([0; 6]),
+        target_protocol_addr: target_ip,
+    };
+    let eth = smoltcp::wire::EthernetRepr {
+        src_addr: src_mac,
+        dst_addr: EthernetAddress::BROADCAST,
+        ethertype: EthernetProtocol::Arp,
+    };
+    let frame_len = eth.buffer_len() + arp.buffer_len();
+    let total_len = core::cmp::max(frame_len, 60);
+    // SAFETY: single-hart early use; ARP probe is one-shot and reuses a static buffer.
+    let buf = unsafe { &mut ARP_TX_BUF[..total_len] };
+    buf.fill(0);
+    {
+        let mut frame = EthernetFrame::new_unchecked(&mut buf[..frame_len]);
+        eth.emit(&mut frame);
+        let mut pkt = ArpPacket::new_unchecked(frame.payload_mut());
+        arp.emit(&mut pkt);
+    }
+    let _ = state.device.dev.send(buf);
+    let _ = NET_ARP_SENT_IP.compare_exchange(
+        0,
+        ipv4_to_u32(target_ip),
+        Ordering::AcqRel,
+        Ordering::Acquire,
+    );
+}

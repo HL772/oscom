@@ -61,6 +61,7 @@ static VIRTIO_NET_RX_QUEUE_SIZE: AtomicUsize = AtomicUsize::new(0);
 static VIRTIO_NET_TX_QUEUE_SIZE: AtomicUsize = AtomicUsize::new(0);
 static VIRTIO_NET_RX_USED: AtomicUsize = AtomicUsize::new(0);
 static VIRTIO_NET_TX_USED: AtomicUsize = AtomicUsize::new(0);
+static VIRTIO_NET_IRQ_LOGGED: AtomicBool = AtomicBool::new(false);
 
 static VIRTIO_NET_DEVICE: VirtioNetDevice = VirtioNetDevice;
 
@@ -335,6 +336,9 @@ pub fn handle_irq(irq: u32) -> bool {
     let base = VIRTIO_NET_BASE.load(Ordering::Acquire);
     if base == 0 {
         return false;
+    }
+    if !VIRTIO_NET_IRQ_LOGGED.swap(true, Ordering::AcqRel) {
+        crate::println!("virtio-net: irq received");
     }
     let status = mmio_read32(base, MMIO_INTERRUPT_STATUS);
     if status != 0 {

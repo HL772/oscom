@@ -21,7 +21,8 @@ pub trait NetDevice {
 }
 
 pub use smoltcp_impl::{
-    init, notify_irq, ping_gateway_once, poll, socket_accept, socket_bind, socket_close,
+    arp_probe_gateway_once, init, notify_irq, ping_gateway_once, poll, socket_accept, socket_bind,
+    socket_close,
     socket_connect, socket_create, socket_listen, socket_recv, socket_send, NetEvent, SocketId,
 };
 pub use smoltcp::wire::{IpAddress, Ipv4Address};
