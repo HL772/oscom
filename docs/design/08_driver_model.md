@@ -14,6 +14,7 @@
 - I/O 访问尽量走安全封装（MMIO 访问封装 + volatile 读写）。
 - 当前阶段先落地 virtio-blk(mmio) 最小驱动：DTB 枚举、MMIO 映射、单队列同步读写，优先使用 IRQ 完成唤醒（PLIC claim/complete），无 IRQ 时回退轮询。
 - virtio-blk 仅实现 read/write 请求，暂不启用多队列与高级特性。
+- virtio-net(mmio) 先提供最小 RAW 帧收发：RX/TX 双队列、静态缓冲区、IRQ 触发后由上层轮询取包。
 
 ## 关键数据结构
 - `DeviceInfo`：设备类型、MMIO 基址、IRQ 号、设备树节点信息。
@@ -22,6 +23,7 @@
 - `Bus`：设备枚举与资源映射抽象（DTB/Virtio-MMIO）。
 - `DmaBuf`：DMA 缓冲区描述（物理地址、长度、缓存一致性标志）。
 - `VirtioBlkQueue`：virtio-blk 描述符/avail/used 环队列布局。
+- `VirtioNetQueue`：virtio-net RX/TX 描述符环队列布局。
 
 ## 关键流程图或伪代码
 ```text

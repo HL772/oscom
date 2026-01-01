@@ -155,3 +155,6 @@
 - Extend USER_TEST to write/read `/fatlog.txt` and add a FAT32 write/read marker check in ramdisk self-tests.
 - Allow the FAT32 ramdisk block device to write back to the in-memory rootfs image for self-tests.
 - Extend FAT32 directory entry updates to find files under subdirectories and add a subdir write/read host test.
+- Add axnet NetDevice/NetError interfaces as the network driver boundary.
+- Add minimal virtio-net MMIO driver with RX/TX queues and IRQ ack handling.
+- Add NET=1 QEMU toggle and optional virtio-net smoke log check.

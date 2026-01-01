@@ -21,6 +21,8 @@ help:
 	@printf "\nOptions:\n"
 	@printf "  USER_TEST=1  Enable minimal user-mode ecall smoke path\n"
 	@printf "  SCHED_DEMO=1 Enable scheduler demo tasks/logs during bring-up\n"
+	@printf "  NET=1        Enable virtio-net device in QEMU run/test\n"
+	@printf "  EXPECT_NET=1 Require virtio-net ready banner in smoke test\n"
 
 fmt:
 	@./scripts/fmt.sh

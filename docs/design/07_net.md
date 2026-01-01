@@ -11,12 +11,14 @@
 - `NetDevice` 负责提交/接收包缓冲，协议栈负责协议解析与重组。
 - 优先减少拷贝：驱动 DMA 缓冲与协议栈 PacketBuffer 复用。
 - 网络定时器与重传计时统一依赖 `time` 模块。
+- 先落地最小 `axnet` 抽象与 virtio-net RAW 帧读写，协议栈后续接入。
 
 ## 关键数据结构
 - `NetDevice`：网卡设备抽象（send/recv/irq）。
 - `PacketBuffer`：包缓冲与引用计数。
 - `SocketTable`：socket 句柄管理与 fd 映射。
 - `NetConfig`：IP/网关/掩码等配置。
+- `VirtioNetQueue`：virtio-net 描述符/avail/used 队列。
 
 ## 关键流程图或伪代码
 ```text

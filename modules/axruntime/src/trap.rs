@@ -220,6 +220,7 @@ extern "C" fn trap_handler(tf: &mut TrapFrame) {
                     break;
                 };
                 let _handled = crate::virtio_blk::handle_irq(irq);
+                let _handled = crate::virtio_net::handle_irq(irq);
                 crate::plic::complete(irq);
             }
             return;

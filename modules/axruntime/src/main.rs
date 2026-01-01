@@ -18,6 +18,7 @@ mod syscall;
 mod user;
 mod fs;
 mod virtio_blk;
+mod virtio_net;
 mod task_wait_queue;
 mod task;
 mod scheduler;
@@ -80,6 +81,7 @@ pub extern "C" fn rust_main(hart_id: usize, dtb_addr: usize) -> ! {
     mm::init(dtb_info.memory, &device_regions[..device_count]);
     plic::init(dtb_info.plic);
     fs::init(dtb_info.virtio_mmio_devices());
+    virtio_net::init(dtb_info.virtio_mmio_devices());
 
     let timebase = dtb_info.timebase_frequency.unwrap_or(10_000_000);
     let tick_hz = config::DEFAULT_TICK_HZ;

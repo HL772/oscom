@@ -33,4 +33,5 @@ make test-* -> scripts/test_*.sh
 - make test-qemu-smoke
 - USER_TEST=1 make test-qemu-smoke (验证最小用户态 ecall 路径，覆盖 getdents64(/,/dev)、FAT32 文件写入回读、/dev/null write、ppoll 多 fd sleep-retry 超时、poll/pipe 就绪、futex cleartid 唤醒与 timeout、wait4 与 execve ELF 加载)
 - EXT4_WRITE_TEST=1 EXPECT_EXT4=1 make test-qemu-smoke (在 virtio-blk ext4 镜像上执行 create/write 读回路径)
+- NET=1 EXPECT_NET=1 make test-qemu-smoke (启用 virtio-net 并确认 ready 日志)
 - make test-oscomp（运行 tests/self 用例：ramdisk + ext4 + ext4-init）

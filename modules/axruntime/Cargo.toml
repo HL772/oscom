@@ -10,3 +10,4 @@ ext4-write-test = []
 
 [dependencies]
 axfs = { path = "../axfs" }
+axnet = { path = "../axnet" }

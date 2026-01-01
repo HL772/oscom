@@ -6,6 +6,7 @@ ARCH=${ARCH:-riscv64}
 PLATFORM=${PLATFORM:-qemu}
 FS=${FS:-}
 MODE=${MODE:-debug}
+NET=${NET:-0}
 TARGET=riscv64gc-unknown-none-elf
 CRATE=axruntime
 QEMU_BIN=${QEMU_BIN:-qemu-system-riscv64}
@@ -41,6 +42,14 @@ else
   echo "FS image not set; continuing without block device." >&2
 fi
 
+NET_ARGS=()
+if [[ "${NET}" == "1" ]]; then
+  NET_ARGS=(
+    -netdev user,id=net0
+    -device virtio-net-device,netdev=net0
+  )
+fi
+
 exec "${QEMU_BIN}" \
   -global virtio-mmio.force-legacy=false \
   -machine virt \
@@ -49,4 +58,5 @@ exec "${QEMU_BIN}" \
   -m "${MEM}" \
   -smp "${SMP}" \
   -kernel "${KERNEL}" \
-  "${DRIVE_ARGS[@]}"
+  "${DRIVE_ARGS[@]}" \
+  "${NET_ARGS[@]}"

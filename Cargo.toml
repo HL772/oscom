@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
   "modules/axfs",
+  "modules/axnet",
   "modules/axruntime",
   "crates/axvfs",
 ]

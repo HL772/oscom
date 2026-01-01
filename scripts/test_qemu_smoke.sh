@@ -12,6 +12,8 @@ EXPECT_EXT4=${EXPECT_EXT4:-0}
 EXPECT_FAT32=${EXPECT_FAT32:-0}
 EXT4_WRITE_TEST=${EXT4_WRITE_TEST:-0}
 EXPECT_EXT4_WRITE=${EXPECT_EXT4_WRITE:-0}
+NET=${NET:-0}
+EXPECT_NET=${EXPECT_NET:-0}
 TARGET=riscv64gc-unknown-none-elf
 CRATE=axruntime
 QEMU_BIN=${QEMU_BIN:-qemu-system-riscv64}
@@ -54,6 +56,14 @@ if [[ -n "${FS}" ]]; then
   )
 fi
 
+NET_ARGS=()
+if [[ "${NET}" == "1" ]]; then
+  NET_ARGS=(
+    -netdev user,id=net0
+    -device virtio-net-device,netdev=net0
+  )
+fi
+
 set +e
 if command -v timeout >/dev/null 2>&1; then
   timeout "${TIMEOUT}" "${QEMU_BIN}" \
@@ -65,6 +75,7 @@ if command -v timeout >/dev/null 2>&1; then
     -smp "${SMP}" \
     -kernel "${KERNEL}" \
     "${DRIVE_ARGS[@]}" \
+    "${NET_ARGS[@]}" \
     >"${LOG_FILE}" 2>&1
   STATUS=$?
 else
@@ -77,6 +88,7 @@ else
     -smp "${SMP}" \
     -kernel "${KERNEL}" \
     "${DRIVE_ARGS[@]}" \
+    "${NET_ARGS[@]}" \
     >"${LOG_FILE}" 2>&1
   STATUS=$?
 fi
@@ -135,6 +147,14 @@ fi
 if [[ "${EXPECT_EXT4_WRITE}" == "1" ]]; then
   if ! grep -q "ext4: write ok" "${LOG_FILE}"; then
     echo "Smoke test failed: ext4 write banner not found." >&2
+    cat "${LOG_FILE}" >&2
+    exit 1
+  fi
+fi
+
+if [[ "${EXPECT_NET}" == "1" ]]; then
+  if ! grep -q "virtio-net: ready" "${LOG_FILE}"; then
+    echo "Smoke test failed: virtio-net banner not found." >&2
     cat "${LOG_FILE}" >&2
     exit 1
   fi

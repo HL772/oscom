@@ -5,6 +5,7 @@ ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 ARCH=${ARCH:-riscv64}
 PLATFORM=${PLATFORM:-qemu}
 MODE=${MODE:-debug}
+NET=${NET:-0}
 TARGET=riscv64gc-unknown-none-elf
 CRATE=axruntime
 QEMU_BIN=${QEMU_BIN:-qemu-system-riscv64}
@@ -31,6 +32,14 @@ if [[ "${MODE}" == "release" ]]; then
 fi
 KERNEL="${ROOT}/target/${TARGET}/${OUT_DIR}/${CRATE}"
 
+NET_ARGS=()
+if [[ "${NET}" == "1" ]]; then
+  NET_ARGS=(
+    -netdev user,id=net0
+    -device virtio-net-device,netdev=net0
+  )
+fi
+
 echo "QEMU waiting for GDB on tcp::${GDB_PORT}" >&2
 exec "${QEMU_BIN}" \
   -global virtio-mmio.force-legacy=false \
@@ -40,4 +49,5 @@ exec "${QEMU_BIN}" \
   -m "${MEM}" \
   -smp "${SMP}" \
   -kernel "${KERNEL}" \
-  -S -gdb "tcp::${GDB_PORT}"
+  -S -gdb "tcp::${GDB_PORT}" \
+  "${NET_ARGS[@]}"
