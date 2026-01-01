@@ -10,6 +10,7 @@ const SYS_BIND: usize = 200;
 const SYS_SENDTO: usize = 206;
 const SYS_RECVFROM: usize = 207;
 const SYS_SETSOCKOPT: usize = 208;
+const SYS_GETSOCKOPT: usize = 209;
 const SYS_SENDMSG: usize = 211;
 const SYS_RECVMSG: usize = 212;
 const SYS_SENDMMSG: usize = 269;
@@ -20,6 +21,7 @@ const AF_INET: u16 = 2;
 const SOCK_DGRAM: usize = 2;
 const SOL_SOCKET: usize = 1;
 const SO_RCVTIMEO: usize = 20;
+const SO_SNDTIMEO: usize = 21;
 const ETIMEDOUT: isize = -110;
 const EAGAIN: isize = -11;
 
@@ -230,6 +232,24 @@ fn syscall_setsockopt(fd: usize, level: usize, optname: usize, optval: &Timeval)
     }
 }
 
+fn syscall_getsockopt(fd: usize, level: usize, optname: usize, optval: &mut Timeval) {
+    let mut len = core::mem::size_of::<Timeval>() as u32;
+    let ret = unsafe {
+        syscall6(
+            SYS_GETSOCKOPT,
+            fd,
+            level,
+            optname,
+            optval as *mut Timeval as usize,
+            &mut len as *mut u32 as usize,
+            0,
+        )
+    };
+    if ret < 0 || len as usize != core::mem::size_of::<Timeval>() {
+        fail();
+    }
+}
+
 fn syscall_close(fd: usize) {
     let _ = unsafe { syscall6(SYS_CLOSE, fd, 0, 0, 0, 0, 0) };
 }
@@ -314,6 +334,20 @@ pub extern "C" fn _start() -> ! {
         tv_usec: 0,
     };
     syscall_setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout_off);
+
+    let send_timeout = Timeval {
+        tv_sec: 0,
+        tv_usec: 150_000,
+    };
+    syscall_setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &send_timeout);
+    let mut read_timeout = Timeval {
+        tv_sec: 0,
+        tv_usec: 0,
+    };
+    syscall_getsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &mut read_timeout);
+    if read_timeout.tv_sec != send_timeout.tv_sec || read_timeout.tv_usec != send_timeout.tv_usec {
+        fail();
+    }
 
     let mut send_iov = [Iovec {
         iov_base: SEND_MSG.as_ptr() as usize,

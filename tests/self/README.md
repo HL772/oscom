@@ -9,7 +9,7 @@ Cases:
 - net: enable virtio-net and confirm ARP reply from the QEMU user-net gateway.
 - net-loopback: run the in-kernel TCP loopback self-test and confirm the loopback banner.
 - tcp-echo: build `/tcp_echo`, boot with NET=1 and an ext4 image, and confirm the user echo banner.
-- udp-echo: build `/udp_echo`, boot with NET=1 and an ext4 image, confirm the user datagram echo banner, validate recvfrom source addresses, exercise sendmsg/recvmsg/sendmmsg/recvmmsg, and verify SO_RCVTIMEO timeout behavior.
+- udp-echo: build `/udp_echo`, boot with NET=1 and an ext4 image, confirm the user datagram echo banner, validate recvfrom source addresses, exercise sendmsg/recvmsg/sendmmsg/recvmmsg, and verify SO_RCVTIMEO timeout + SO_SNDTIMEO get/set.
 
 Notes:
 - ext4-init reads the image path from `AXFS_EXT4_IMAGE` (set by `scripts/test_oscomp.sh`).

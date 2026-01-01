@@ -190,6 +190,7 @@
 - Add sendmsg/recvmsg with basic iovec support for sockets.
 - Add sendmmsg/recvmmsg batching for UDP sockets.
 - Extend udp_echo to validate SO_RCVTIMEO timeout errors.
+- Extend udp_echo to validate SO_SNDTIMEO get/set behavior.
 - Fix sockaddr_in IP parsing to honor network byte order for local TCP connects.
 - Keep net polling active while TCP handshake is pending to avoid stalled connects.
 - Grow RISC-V boot stack to 64KB to avoid deep syscall stack overflows.

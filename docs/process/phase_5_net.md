@@ -26,6 +26,7 @@
 - 增加 sendmsg/recvmsg 最小实现，支持 iovec 聚散发送与接收。
 - 增加 sendmmsg/recvmmsg 批量收发支持，UDP 自测覆盖多包路径。
 - UDP 自测补充 SO_RCVTIMEO 超时校验，覆盖超时错误码路径。
+- UDP 自测覆盖 SO_SNDTIMEO get/set 校验，验证超时选项的回读一致性。
 
 ## 问题与定位
 - QEMU user-net 下 ARP probe 已发送但 RX 帧未进入，定位为 virtio 现代特性头部长度不匹配导致帧损坏。
