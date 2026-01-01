@@ -192,6 +192,7 @@
 - Extend udp_echo to validate SO_RCVTIMEO timeout errors.
 - Extend udp_echo to validate SO_SNDTIMEO get/set behavior.
 - Extend tcp_echo to exercise nonblocking connect with ppoll and SO_ERROR checks.
+- Extend tcp_echo to exercise sendmsg/recvmsg with split iovecs over TCP.
 - Fix sockaddr_in IP parsing to honor network byte order for local TCP connects.
 - Keep net polling active while TCP handshake is pending to avoid stalled connects.
 - Grow RISC-V boot stack to 64KB to avoid deep syscall stack overflows.

@@ -10,8 +10,8 @@ const SYS_BIND: usize = 200;
 const SYS_LISTEN: usize = 201;
 const SYS_ACCEPT: usize = 202;
 const SYS_CONNECT: usize = 203;
-const SYS_SENDTO: usize = 206;
-const SYS_RECVFROM: usize = 207;
+const SYS_SENDMSG: usize = 211;
+const SYS_RECVMSG: usize = 212;
 const SYS_PPOLL: usize = 73;
 const SYS_GETSOCKOPT: usize = 209;
 const SYS_FCNTL: usize = 25;
@@ -57,6 +57,25 @@ struct PollFd {
 struct Timespec {
     tv_sec: i64,
     tv_nsec: i64,
+}
+
+#[repr(C)]
+struct Iovec {
+    iov_base: usize,
+    iov_len: usize,
+}
+
+#[repr(C)]
+struct MsgHdr {
+    msg_name: usize,
+    msg_namelen: u32,
+    msg_namelen_pad: u32,
+    msg_iov: usize,
+    msg_iovlen: usize,
+    msg_control: usize,
+    msg_controllen: usize,
+    msg_flags: i32,
+    msg_flags_pad: u32,
 }
 
 #[inline(always)]
@@ -156,12 +175,34 @@ fn syscall_connect_nonblock(fd: usize, addr: &SockAddrIn) {
     }
 }
 
-fn syscall_send(fd: usize, buf: &[u8]) -> usize {
-    check(unsafe { syscall6(SYS_SENDTO, fd, buf.as_ptr() as usize, buf.len(), 0, 0, 0) })
+fn syscall_sendmsg(fd: usize, iovs: &mut [Iovec]) -> usize {
+    let msg = MsgHdr {
+        msg_name: 0,
+        msg_namelen: 0,
+        msg_namelen_pad: 0,
+        msg_iov: iovs.as_ptr() as usize,
+        msg_iovlen: iovs.len(),
+        msg_control: 0,
+        msg_controllen: 0,
+        msg_flags: 0,
+        msg_flags_pad: 0,
+    };
+    check(unsafe { syscall6(SYS_SENDMSG, fd, &msg as *const MsgHdr as usize, 0, 0, 0, 0) })
 }
 
-fn syscall_recv(fd: usize, buf: &mut [u8]) -> usize {
-    check(unsafe { syscall6(SYS_RECVFROM, fd, buf.as_mut_ptr() as usize, buf.len(), 0, 0, 0) })
+fn syscall_recvmsg(fd: usize, iovs: &mut [Iovec]) -> usize {
+    let mut msg = MsgHdr {
+        msg_name: 0,
+        msg_namelen: 0,
+        msg_namelen_pad: 0,
+        msg_iov: iovs.as_mut_ptr() as usize,
+        msg_iovlen: iovs.len(),
+        msg_control: 0,
+        msg_controllen: 0,
+        msg_flags: 0,
+        msg_flags_pad: 0,
+    };
+    check(unsafe { syscall6(SYS_RECVMSG, fd, &mut msg as *mut MsgHdr as usize, 0, 0, 0, 0) })
 }
 
 fn syscall_ppoll(fds: &mut [PollFd], timeout: &Timespec) -> isize {
@@ -224,6 +265,16 @@ fn slices_equal(a: &[u8], b: &[u8]) -> bool {
     true
 }
 
+fn iov_matches(a: &[u8], b: &[u8], expected: &[u8]) -> bool {
+    if expected.len() != a.len() + b.len() {
+        return false;
+    }
+    if !slices_equal(a, &expected[..a.len()]) {
+        return false;
+    }
+    slices_equal(b, &expected[a.len()..])
+}
+
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     let server = syscall_socket(AF_INET, SOCK_STREAM, 0);
@@ -265,24 +316,67 @@ pub extern "C" fn _start() -> ! {
 
     let accepted = syscall_accept(server);
 
-    let sent = syscall_send(client, SEND_MSG);
+    let mut send_iov = [
+        Iovec {
+            iov_base: SEND_MSG[..2].as_ptr() as usize,
+            iov_len: 2,
+        },
+        Iovec {
+            iov_base: SEND_MSG[2..].as_ptr() as usize,
+            iov_len: SEND_MSG.len() - 2,
+        },
+    ];
+    let sent = syscall_sendmsg(client, &mut send_iov);
     if sent != SEND_MSG.len() {
         fail();
     }
 
-    let mut buf = [0u8; 16];
-    let received = syscall_recv(accepted, &mut buf);
-    if !slices_equal(&buf[..received], SEND_MSG) {
+    let mut recv_left = [0u8; 2];
+    let mut recv_right = [0u8; 2];
+    let mut recv_iov = [
+        Iovec {
+            iov_base: recv_left.as_mut_ptr() as usize,
+            iov_len: recv_left.len(),
+        },
+        Iovec {
+            iov_base: recv_right.as_mut_ptr() as usize,
+            iov_len: recv_right.len(),
+        },
+    ];
+    let received = syscall_recvmsg(accepted, &mut recv_iov);
+    if received != SEND_MSG.len() || !iov_matches(&recv_left, &recv_right, SEND_MSG) {
         fail();
     }
 
-    let sent = syscall_send(accepted, REPLY_MSG);
+    let mut reply_iov = [
+        Iovec {
+            iov_base: REPLY_MSG[..2].as_ptr() as usize,
+            iov_len: 2,
+        },
+        Iovec {
+            iov_base: REPLY_MSG[2..].as_ptr() as usize,
+            iov_len: REPLY_MSG.len() - 2,
+        },
+    ];
+    let sent = syscall_sendmsg(accepted, &mut reply_iov);
     if sent != REPLY_MSG.len() {
         fail();
     }
 
-    let received = syscall_recv(client, &mut buf);
-    if !slices_equal(&buf[..received], REPLY_MSG) {
+    let mut recv_left = [0u8; 2];
+    let mut recv_right = [0u8; 2];
+    let mut recv_iov = [
+        Iovec {
+            iov_base: recv_left.as_mut_ptr() as usize,
+            iov_len: recv_left.len(),
+        },
+        Iovec {
+            iov_base: recv_right.as_mut_ptr() as usize,
+            iov_len: recv_right.len(),
+        },
+    ];
+    let received = syscall_recvmsg(client, &mut recv_iov);
+    if received != REPLY_MSG.len() || !iov_matches(&recv_left, &recv_right, REPLY_MSG) {
         fail();
     }
 

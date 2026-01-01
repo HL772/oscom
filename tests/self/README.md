@@ -8,7 +8,7 @@ Cases:
 - ext4-init: host-side ext4 image check that enumerates root and `/etc` via `read_dir` offsets, opens `/init`, validates ELF magic, and reads `/etc/issue` + `/etc/large` (multi-block).
 - net: enable virtio-net and confirm ARP reply from the QEMU user-net gateway.
 - net-loopback: run the in-kernel TCP loopback self-test and confirm the loopback banner.
-- tcp-echo: build `/tcp_echo`, boot with NET=1 and an ext4 image, and confirm the user echo banner (nonblocking connect + ppoll + SO_ERROR).
+- tcp-echo: build `/tcp_echo`, boot with NET=1 and an ext4 image, and confirm the user echo banner (nonblocking connect + ppoll + SO_ERROR + sendmsg/recvmsg iovec).
 - udp-echo: build `/udp_echo`, boot with NET=1 and an ext4 image, confirm the user datagram echo banner, validate recvfrom source addresses, exercise sendmsg/recvmsg/sendmmsg/recvmmsg, and verify SO_RCVTIMEO timeout + SO_SNDTIMEO get/set.
 
 Notes:
