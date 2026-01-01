@@ -21,6 +21,7 @@
 ## 解决与验证
 - `NET=1 EXPECT_NET=1 make test-qemu-smoke ARCH=riscv64 PLATFORM=qemu`
 - 日志包含 virtio-net ready、net: arp probe sent、net: arp reply from 10.0.2.2，ARP 路径恢复正常。
+- 调试过程与根因分析记录：`docs/process/debug_report_virtio_net_arp.md`。
 - 待协议栈接入后补充 ping/iperf/redis 基准验证。
 
 ## 下一步
