@@ -53,6 +53,7 @@ static NEXT_EPHEMERAL_PORT: AtomicU16 = AtomicU16::new(49152);
 
 static mut RX_BUF: [u8; NET_BUF_SIZE] = [0; NET_BUF_SIZE];
 static mut TX_BUF: [u8; NET_BUF_SIZE] = [0; NET_BUF_SIZE];
+static mut LOOPBACK_QUEUE: LoopbackQueue = LoopbackQueue::new();
 static mut ICMP_RX_META: [IcmpPacketMetadata; ICMP_META_LEN] = [IcmpPacketMetadata::EMPTY; ICMP_META_LEN];
 static mut ICMP_RX_BUF: [u8; ICMP_BUF_LEN] = [0; ICMP_BUF_LEN];
 static mut ICMP_TX_META: [IcmpPacketMetadata; ICMP_META_LEN] = [IcmpPacketMetadata::EMPTY; ICMP_META_LEN];
@@ -66,6 +67,7 @@ static mut UDP_TX_META: [[UdpPacketMetadata; UDP_META_LEN]; MAX_SOCKETS] =
     [[UdpPacketMetadata::EMPTY; UDP_META_LEN]; MAX_SOCKETS];
 static mut UDP_TX_BUF: [[u8; UDP_BUF_LEN]; MAX_SOCKETS] = [[0; UDP_BUF_LEN]; MAX_SOCKETS];
 static mut ARP_TX_BUF: [u8; 64] = [0; 64];
+const ARP_FRAME_LEN: usize = 42;
 
 struct SmolDevice {
     dev: &'static dyn NetDevice,
@@ -93,6 +95,12 @@ impl Device for SmolDevice {
     }
 
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        // Loopback frames take priority to wake local TCP listeners.
+        let loopback_len = unsafe { LOOPBACK_QUEUE.pop(&mut RX_BUF) };
+        if let Some(len) = loopback_len {
+            let _ = NET_RX_SEEN.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire);
+            return Some((SmolRxToken { len }, SmolTxToken { dev: self.dev }));
+        }
         if !self.dev.poll() {
             return None;
         }
@@ -130,6 +138,18 @@ impl TxToken for SmolTxToken<'_> {
         // SAFETY: TX buffer is used by a single token at a time.
         let buf = unsafe { &mut TX_BUF[..len] };
         let result = f(buf);
+        let mac = EthernetAddress(self.dev.mac_address());
+        if try_loopback_arp(buf, mac) {
+            return result;
+        }
+        if should_loopback(buf) {
+            // SAFETY: single-hart; loopback queue is only touched here and in receive.
+            unsafe {
+                LOOPBACK_QUEUE.push(buf);
+            }
+            NET_NEED_POLL.store(true, Ordering::Release);
+            return result;
+        }
         let _ = self.dev.send(buf);
         result
     }
@@ -255,6 +275,10 @@ pub fn poll(now_ms: u64) -> Option<NetEvent> {
     let activity = state
         .iface
         .poll(timestamp, &mut state.device, &mut state.sockets);
+    let pending_tcp = has_pending_tcp(state);
+    if pending_tcp {
+        NET_NEED_POLL.store(true, Ordering::Release);
+    }
 
     if let Some(target) = take_arp_sent() {
         return Some(NetEvent::ArpProbeSent { target });
@@ -281,6 +305,9 @@ pub fn poll(now_ms: u64) -> Option<NetEvent> {
             }
         }
     }
+    if pending_tcp {
+        return Some(NetEvent::Activity);
+    }
     if activity {
         return Some(NetEvent::Activity);
     }
@@ -290,6 +317,24 @@ pub fn poll(now_ms: u64) -> Option<NetEvent> {
         NET_NEED_POLL.store(true, Ordering::Release);
     }
     None
+}
+
+fn has_pending_tcp(state: &mut NetState) -> bool {
+    // SAFETY: socket table access is serialized by the single-hart runtime.
+    unsafe {
+        for slot in SOCKET_TABLE.iter() {
+            if !slot.used || slot.kind != AxSocketKind::Tcp {
+                continue;
+            }
+            let handle = ptr::read(slot.handle.as_ptr());
+            let socket = state.sockets.get::<TcpSocket>(handle);
+            match socket.state() {
+                TcpState::SynSent | TcpState::SynReceived => return true,
+                _ => {}
+            }
+        }
+    }
+    false
 }
 
 pub fn tcp_loopback_test_once() -> Result<(), NetError> {
@@ -793,6 +838,9 @@ pub fn socket_poll(id: SocketId, events: u16) -> Result<u16, NetError> {
             let listening = socket_is_listening(id)?;
             let socket = state.sockets.get_mut::<TcpSocket>(handle);
             let tcp_state = socket.state();
+            if matches!(tcp_state, TcpState::SynSent | TcpState::SynReceived) {
+                NET_NEED_POLL.store(true, Ordering::Release);
+            }
             if (events & NET_POLLIN) != 0 {
                 if listening {
                     // 监听 socket 就绪：连接完成后转为 Established/CloseWait。
@@ -945,6 +993,71 @@ fn release_socket_slot(id: SocketId) {
 
 static mut SOCKET_STORAGE: [SocketStorage<'static>; SOCKET_STORAGE_LEN] =
     [SocketStorage::EMPTY; SOCKET_STORAGE_LEN];
+
+fn should_loopback(frame: &[u8]) -> bool {
+    const ETH_HDR_LEN: usize = 14;
+    const ETH_TYPE_IPV4: u16 = 0x0800;
+    if frame.len() < ETH_HDR_LEN + 20 {
+        return false;
+    }
+    let eth_type = u16::from_be_bytes([frame[12], frame[13]]);
+    if eth_type != ETH_TYPE_IPV4 {
+        return false;
+    }
+    let ip = &frame[ETH_HDR_LEN..];
+    let dst = [ip[16], ip[17], ip[18], ip[19]];
+    dst == NET_IPV4_ADDR
+}
+
+fn try_loopback_arp(frame: &[u8], mac: EthernetAddress) -> bool {
+    let Ok(eth) = EthernetFrame::new_checked(frame) else {
+        return false;
+    };
+    if eth.ethertype() != EthernetProtocol::Arp {
+        return false;
+    }
+    let Ok(arp_pkt) = ArpPacket::new_checked(eth.payload()) else {
+        return false;
+    };
+    let Ok(repr) = ArpRepr::parse(&arp_pkt) else {
+        return false;
+    };
+    let ArpRepr::EthernetIpv4 {
+        operation: ArpOperation::Request,
+        source_hardware_addr,
+        source_protocol_addr,
+        target_protocol_addr,
+        ..
+    } = repr
+    else {
+        return false;
+    };
+    if target_protocol_addr != local_ipv4() {
+        return false;
+    }
+    let reply = ArpRepr::EthernetIpv4 {
+        operation: ArpOperation::Reply,
+        source_hardware_addr: mac,
+        source_protocol_addr: local_ipv4(),
+        target_hardware_addr: source_hardware_addr,
+        target_protocol_addr: source_protocol_addr,
+    };
+    // SAFETY: single-hart; buffer reused for loopback replies.
+    let buf = unsafe { &mut ARP_TX_BUF[..] };
+    {
+        let mut eth = EthernetFrame::new_unchecked(&mut buf[..]);
+        eth.set_dst_addr(source_hardware_addr);
+        eth.set_src_addr(mac);
+        eth.set_ethertype(EthernetProtocol::Arp);
+        let mut arp = ArpPacket::new_unchecked(eth.payload_mut());
+        reply.emit(&mut arp);
+    }
+    unsafe {
+        LOOPBACK_QUEUE.push(&buf[..ARP_FRAME_LEN]);
+    }
+    NET_NEED_POLL.store(true, Ordering::Release);
+    true
+}
 
 fn local_ipv4() -> Ipv4Address {
     Ipv4Address::new(

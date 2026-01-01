@@ -122,6 +122,10 @@
 - Guard wait queue mutations with IRQ masking to avoid reentrant corruption.
 - Make trap entry handle kernel-mode interrupts without swapping to user stack.
 - Keep sscratch zero in kernel mode and use trapframe.user_sp for user returns.
+- Switch to kernel page table during external IRQ handling to access PLIC safely.
+- Skip timer preemption when trapping from kernel mode to avoid reentrancy issues.
+- Clear sscratch during context switches to honor kernel-mode trap contract.
+- Loop back IPv4 frames destined to the local address for in-kernel TCP echo tests.
 - Add gettid and sched_yield stubs (TaskId+1 when available).
 - Add exit_group stub aligned with exit shutdown.
 - Add clock_gettime64 alias to clock_gettime stub.
@@ -177,5 +181,7 @@
 - Add user-space tcp_echo app, build script, and ext4 rootfs integration for /tcp_echo.
 - Add TCP_ECHO_TEST smoke path with tcp-echo log validation.
 - Implement connect EINPROGRESS semantics and map connection failures to net-specific errno.
+- Fix sockaddr_in IP parsing to honor network byte order for local TCP connects.
+- Keep net polling active while TCP handshake is pending to avoid stalled connects.
 - Grow RISC-V boot stack to 64KB to avoid deep syscall stack overflows.
 - Map user stacks page-by-page to avoid execve stack zeroing overflows.

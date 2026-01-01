@@ -64,6 +64,9 @@ static mut ROOTFS_FAT32: MaybeUninit<fat32::Fat32Fs<'static>> = MaybeUninit::uni
 static mut ROOTFS_MEMFS: MaybeUninit<memfs::MemFs<'static>> = MaybeUninit::uninit();
 static DEVFS: devfs::DevFs = devfs::DevFs::new();
 static PROCFS: procfs::ProcFs = procfs::ProcFs::new();
+static TCP_CONNECT_LOGGED: AtomicU8 = AtomicU8::new(0);
+static TCP_ACCEPT_LOGGED: AtomicU8 = AtomicU8::new(0);
+static TCP_RECV_LOGGED: AtomicU8 = AtomicU8::new(0);
 
 #[derive(Clone, Copy)]
 struct SyscallContext {
@@ -1018,6 +1021,9 @@ fn sys_connect(fd: usize, addr: usize, len: usize) -> Result<usize, Errno> {
     let root_pa = mm::current_root_pa();
     let (socket_id, flags) = resolve_socket_entry(fd)?;
     let nonblock = (flags & O_NONBLOCK) != 0;
+    if cfg!(feature = "user-tcp-echo") && TCP_CONNECT_LOGGED.swap(1, Ordering::Relaxed) == 0 {
+        crate::println!("sys_connect: fd={} nonblock={}", fd, nonblock);
+    }
     let (ip, port) = parse_sockaddr_in(root_pa, addr, len)?;
     match axnet::socket_connect(socket_id, ip, port) {
         Ok(()) => {}
@@ -1052,6 +1058,9 @@ fn sys_connect(fd: usize, addr: usize, len: usize) -> Result<usize, Errno> {
         if !can_block_current() {
             return Err(Errno::Again);
         }
+        if cfg!(feature = "user-tcp-echo") && TCP_CONNECT_LOGGED.swap(2, Ordering::Relaxed) == 1 {
+            crate::println!("sys_connect: blocking");
+        }
         crate::runtime::block_current(crate::runtime::net_wait_queue());
     }
 }
@@ -1065,6 +1074,9 @@ fn sys_listen(fd: usize, backlog: usize) -> Result<usize, Errno> {
 fn sys_accept(fd: usize, addr: usize, addrlen: usize) -> Result<usize, Errno> {
     let (socket_id, flags) = resolve_socket_entry(fd)?;
     let nonblock = (flags & O_NONBLOCK) != 0;
+    if cfg!(feature = "user-tcp-echo") && TCP_ACCEPT_LOGGED.swap(1, Ordering::Relaxed) == 0 {
+        crate::println!("sys_accept: fd={} nonblock={}", fd, nonblock);
+    }
     loop {
         match axnet::socket_accept(socket_id) {
             Ok((accepted_id, listener_id, remote)) => {
@@ -1081,6 +1093,9 @@ fn sys_accept(fd: usize, addr: usize, addrlen: usize) -> Result<usize, Errno> {
             Err(axnet::NetError::WouldBlock) => {
                 if nonblock || !can_block_current() {
                     return Err(Errno::Again);
+                }
+                if cfg!(feature = "user-tcp-echo") && TCP_ACCEPT_LOGGED.swap(2, Ordering::Relaxed) == 1 {
+                    crate::println!("sys_accept: blocking");
                 }
                 crate::runtime::block_current(crate::runtime::net_wait_queue());
             }
@@ -1152,6 +1167,9 @@ fn sys_recvfrom(
     let root_pa = mm::current_root_pa();
     let (socket_id, flags) = resolve_socket_entry(fd)?;
     let nonblock = (flags & O_NONBLOCK) != 0;
+    if cfg!(feature = "user-tcp-echo") && TCP_RECV_LOGGED.swap(1, Ordering::Relaxed) == 0 {
+        crate::println!("sys_recv: fd={} nonblock={}", fd, nonblock);
+    }
     if len == 0 {
         return Ok(0);
     }
@@ -1169,6 +1187,9 @@ fn sys_recvfrom(
                 }
                 if nonblock || !can_block_current() {
                     return Err(Errno::Again);
+                }
+                if cfg!(feature = "user-tcp-echo") && TCP_RECV_LOGGED.swap(2, Ordering::Relaxed) == 1 {
+                    crate::println!("sys_recv: blocking");
                 }
                 crate::runtime::block_current(crate::runtime::net_wait_queue());
                 continue;
@@ -3864,7 +3885,7 @@ fn parse_sockaddr_in(root_pa: usize, addr: usize, len: usize) -> Result<(axnet::
         return Err(Errno::Inval);
     }
     let port = u16::from_be(sock.sin_port);
-    let ip_bytes = u32::from_be(sock.sin_addr).to_be_bytes();
+    let ip_bytes = sock.sin_addr.to_be_bytes();
     let ip = axnet::Ipv4Address::new(ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]);
     Ok((axnet::IpAddress::Ipv4(ip), port))
 }

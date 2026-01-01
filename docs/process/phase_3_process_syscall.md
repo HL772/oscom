@@ -109,6 +109,7 @@
 - 增加 setpgid/getpgid/getsid/setsid/getpgrp/setpgrp，占位返回 TaskId+1 作为进程组信息。
 - 增加 getgroups/setgroups，占位返回空组列表。
 - 增加 socket/bind/connect/listen/sendto/recvfrom 系统调用骨架，fd 表支持 socket 句柄。
+- sockaddr_in 解析按网络字节序处理，修正本机 TCP connect 目标地址解析错误。
 
 ## 问题与定位
 - 调度仍为单核占位阶段，未覆盖完整的多核与复杂优先级策略。

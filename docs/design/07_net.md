@@ -13,6 +13,9 @@
 - 网络定时器与重传计时统一依赖 `time` 模块。
 - 先落地最小 `axnet` 抽象与 virtio-net RAW 帧读写，协议栈后续接入。
 - smoltcp 接入使用静态地址配置（QEMU user-net: 10.0.2.15/24, gw 10.0.2.2），轮询在空闲上下文触发。
+- 对本机 IPv4 目的地址的发送帧进行 loopback 注入，支持单机 TCP 自测。
+- `sockaddr_in` 解析严格按网络字节序处理，避免用户态传参导致目标地址反转。
+- 连接进行中保持 net poll，避免缺中断时 TCP 建连停滞。
 - 启动后发送一次 ARP probe 探测网关，收到应答即认为 RX/IRQ 路径可用。
 - socket 就绪判定通过 `SocketTable` 的监听标记区分 `accept` 与 `recv` 语义，`poll/ppoll` 走统一判定入口。
 - TCP loopback 自测使用内核内置 loopback 设备，避免依赖外部网络环境。
