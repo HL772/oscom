@@ -5,3 +5,4 @@ ext4-init
 net
 net-loopback
 tcp-echo
+udp-echo

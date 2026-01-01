@@ -13,6 +13,7 @@ pub enum NetError {
     InProgress,
     IsConnected,
     Unreachable,
+    ConnRefused,
 }
 
 /// Minimal net device interface for raw frame I/O.
@@ -25,8 +26,9 @@ pub trait NetDevice {
 
 pub use smoltcp_impl::{
     arp_probe_gateway_once, init, notify_irq, ping_gateway_once, poll, socket_accept, socket_bind,
-    socket_close,
-    socket_connect, socket_create, socket_listen, socket_poll, socket_recv, socket_send, tcp_loopback_test_once, NetEvent, SocketId,
+    socket_close, socket_connect, socket_connecting, socket_create, socket_listen, socket_poll,
+    socket_recv, socket_send, socket_shutdown, socket_take_error, tcp_loopback_test_once,
+    NetEvent, SocketId,
 };
 pub use smoltcp::wire::{IpAddress, Ipv4Address};
 

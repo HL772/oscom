@@ -35,4 +35,5 @@ make test-* -> scripts/test_*.sh
 - EXT4_WRITE_TEST=1 EXPECT_EXT4=1 make test-qemu-smoke (在 virtio-blk ext4 镜像上执行 create/write 读回路径)
 - NET=1 EXPECT_NET=1 make test-qemu-smoke (启用 virtio-net 并确认 ready 日志)
 - NET=1 TCP_ECHO_TEST=1 EXPECT_TCP_ECHO=1 make test-qemu-smoke (用户态 TCP echo 覆盖 socket syscall 路径)
-- make test-oscomp（运行 tests/self 用例：ramdisk + ext4 + ext4-init + net + net-loopback + tcp-echo）
+- NET=1 UDP_ECHO_TEST=1 EXPECT_UDP_ECHO=1 make test-qemu-smoke (用户态 UDP echo 覆盖 datagram syscall 路径)
+- make test-oscomp（运行 tests/self 用例：ramdisk + ext4 + ext4-init + net + net-loopback + tcp-echo + udp-echo）

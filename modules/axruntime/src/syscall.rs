@@ -182,6 +182,9 @@ fn dispatch(tf: &mut TrapFrame, ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_SOCKET => sys_socket(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_BIND => sys_bind(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_CONNECT => sys_connect(ctx.args[0], ctx.args[1], ctx.args[2]),
+        SYS_SETSOCKOPT => sys_setsockopt(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3], ctx.args[4]),
+        SYS_GETSOCKOPT => sys_getsockopt(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3], ctx.args[4]),
+        SYS_SHUTDOWN => sys_shutdown(ctx.args[0], ctx.args[1]),
         SYS_LISTEN => sys_listen(ctx.args[0], ctx.args[1]),
         SYS_ACCEPT => sys_accept(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_SENDTO => sys_sendto(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3], ctx.args[4], ctx.args[5]),
@@ -246,6 +249,9 @@ const SYS_BIND: usize = 200;
 const SYS_LISTEN: usize = 201;
 const SYS_ACCEPT: usize = 202;
 const SYS_CONNECT: usize = 203;
+const SYS_SETSOCKOPT: usize = 208;
+const SYS_GETSOCKOPT: usize = 209;
+const SYS_SHUTDOWN: usize = 210;
 const SYS_SENDTO: usize = 206;
 const SYS_RECVFROM: usize = 207;
 const SYS_LSEEK: usize = 62;
@@ -311,6 +317,12 @@ const O_RDONLY: usize = 0;
 const O_WRONLY: usize = 1;
 const O_RDWR: usize = 2;
 const O_ACCMODE: usize = 3;
+const SOL_SOCKET: usize = 1;
+const SO_REUSEADDR: usize = 2;
+const SO_ERROR: usize = 4;
+const SHUT_RD: usize = 0;
+const SHUT_WR: usize = 1;
+const SHUT_RDWR: usize = 2;
 const AT_FDCWD: isize = -100;
 const AT_SYMLINK_NOFOLLOW: usize = 0x100;
 const AT_SYMLINK_FOLLOW: usize = 0x400;
@@ -1063,6 +1075,84 @@ fn sys_connect(fd: usize, addr: usize, len: usize) -> Result<usize, Errno> {
         }
         crate::runtime::block_current(crate::runtime::net_wait_queue());
     }
+}
+
+fn sys_setsockopt(
+    fd: usize,
+    level: usize,
+    optname: usize,
+    optval: usize,
+    optlen: usize,
+) -> Result<usize, Errno> {
+    let root_pa = mm::current_root_pa();
+    let _socket_id = resolve_socket_fd(fd)?;
+    if level != SOL_SOCKET {
+        return Err(Errno::Inval);
+    }
+    match optname {
+        SO_REUSEADDR => {
+            if optlen < size_of::<u32>() || optval == 0 {
+                return Err(Errno::Inval);
+            }
+            UserPtr::<u32>::new(optval)
+                .read(root_pa)
+                .ok_or(Errno::Fault)?;
+            Ok(0)
+        }
+        _ => Err(Errno::Inval),
+    }
+}
+
+fn sys_getsockopt(
+    fd: usize,
+    level: usize,
+    optname: usize,
+    optval: usize,
+    optlen: usize,
+) -> Result<usize, Errno> {
+    let root_pa = mm::current_root_pa();
+    let socket_id = resolve_socket_fd(fd)?;
+    if level != SOL_SOCKET {
+        return Err(Errno::Inval);
+    }
+    if optlen == 0 {
+        return Err(Errno::Fault);
+    }
+    let len = UserPtr::<u32>::new(optlen)
+        .read(root_pa)
+        .ok_or(Errno::Fault)? as usize;
+    if len < size_of::<u32>() || optval == 0 {
+        return Err(Errno::Inval);
+    }
+    let value = match optname {
+        SO_ERROR => {
+            if let Some(err) = axnet::socket_take_error(socket_id).map_err(map_net_err)? {
+                map_net_err(err) as i32
+            } else if axnet::socket_connecting(socket_id).map_err(map_net_err)? {
+                Errno::InProgress as i32
+            } else {
+                0
+            }
+        }
+        SO_REUSEADDR => 0,
+        _ => return Err(Errno::Inval),
+    };
+    UserPtr::new(optval)
+        .write(root_pa, value as u32)
+        .ok_or(Errno::Fault)?;
+    UserPtr::new(optlen)
+        .write(root_pa, size_of::<u32>() as u32)
+        .ok_or(Errno::Fault)?;
+    Ok(0)
+}
+
+fn sys_shutdown(fd: usize, how: usize) -> Result<usize, Errno> {
+    let socket_id = resolve_socket_fd(fd)?;
+    if how != SHUT_RD && how != SHUT_WR && how != SHUT_RDWR {
+        return Err(Errno::Inval);
+    }
+    axnet::socket_shutdown(socket_id, how).map_err(map_net_err)?;
+    Ok(0)
 }
 
 fn sys_listen(fd: usize, backlog: usize) -> Result<usize, Errno> {
@@ -2894,6 +2984,7 @@ fn map_net_err(err: axnet::NetError) -> Errno {
         axnet::NetError::InProgress => Errno::InProgress,
         axnet::NetError::IsConnected => Errno::IsConn,
         axnet::NetError::Unreachable => Errno::NetUnreach,
+        axnet::NetError::ConnRefused => Errno::ConnRefused,
     }
 }
 

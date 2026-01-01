@@ -590,6 +590,8 @@ struct SocketSlot {
     kind: AxSocketKind,
     local_port: u16,
     listening: bool,
+    connecting: bool,
+    last_error: Option<NetError>,
     handle: MaybeUninit<SocketHandle>,
 }
 
@@ -598,6 +600,8 @@ const EMPTY_SOCKET_SLOT: SocketSlot = SocketSlot {
     kind: AxSocketKind::Tcp,
     local_port: 0,
     listening: false,
+    connecting: false,
+    last_error: None,
     handle: MaybeUninit::uninit(),
 };
 
@@ -670,11 +674,16 @@ pub fn socket_connect(id: SocketId, addr: IpAddress, port: u16) -> Result<(), Ne
             let socket = state.sockets.get_mut::<TcpSocket>(handle);
             let tcp_state = socket.state();
             match tcp_state {
-                TcpState::SynSent | TcpState::SynReceived => return Err(NetError::InProgress),
+                TcpState::SynSent | TcpState::SynReceived => {
+                    let _ = set_socket_connecting(id, true);
+                    return Err(NetError::InProgress);
+                }
                 TcpState::Listen => return Err(NetError::Invalid),
                 TcpState::Closed => {}
                 _ => return Err(NetError::IsConnected),
             }
+            set_socket_connecting(id, true)?;
+            set_socket_error(id, None)?;
             let local = IpListenEndpoint {
                 addr: None,
                 port: local_port,
@@ -841,6 +850,10 @@ pub fn socket_poll(id: SocketId, events: u16) -> Result<u16, NetError> {
             if matches!(tcp_state, TcpState::SynSent | TcpState::SynReceived) {
                 NET_NEED_POLL.store(true, Ordering::Release);
             }
+            if matches!(tcp_state, TcpState::Established | TcpState::CloseWait) {
+                let _ = set_socket_connecting(id, false);
+                let _ = set_socket_error(id, None);
+            }
             if (events & NET_POLLIN) != 0 {
                 if listening {
                     // 监听 socket 就绪：连接完成后转为 Established/CloseWait。
@@ -861,6 +874,10 @@ pub fn socket_poll(id: SocketId, events: u16) -> Result<u16, NetError> {
                 }
             }
             if tcp_state == TcpState::Closed {
+                if socket_connecting(id)? {
+                    let _ = set_socket_connecting(id, false);
+                    let _ = set_socket_error(id, Some(NetError::ConnRefused));
+                }
                 revents |= NET_POLLHUP;
             }
         }
@@ -888,6 +905,51 @@ pub fn socket_close(id: SocketId) -> Result<(), NetError> {
     }
 }
 
+pub fn socket_shutdown(id: SocketId, how: usize) -> Result<(), NetError> {
+    let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
+    let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
+    match kind {
+        AxSocketKind::Tcp => {
+            let socket = state.sockets.get_mut::<TcpSocket>(handle);
+            match how {
+                0 | 1 | 2 => {
+                    socket.close();
+                    NET_NEED_POLL.store(true, Ordering::Release);
+                    Ok(())
+                }
+                _ => Err(NetError::Invalid),
+            }
+        }
+        AxSocketKind::Udp => match how {
+            0 | 1 | 2 => Ok(()),
+            _ => Err(NetError::Invalid),
+        },
+    }
+}
+
+pub fn socket_connecting(id: SocketId) -> Result<bool, NetError> {
+    // SAFETY: single-hart early stage, socket table is serialized.
+    unsafe {
+        let slot = SOCKET_TABLE.get(id).ok_or(NetError::Invalid)?;
+        if !slot.used {
+            return Err(NetError::Invalid);
+        }
+        Ok(slot.connecting)
+    }
+}
+
+pub fn socket_take_error(id: SocketId) -> Result<Option<NetError>, NetError> {
+    // SAFETY: single-hart early stage, socket table is serialized.
+    unsafe {
+        let slot = SOCKET_TABLE.get_mut(id).ok_or(NetError::Invalid)?;
+        if !slot.used {
+            return Err(NetError::Invalid);
+        }
+        let err = slot.last_error.take();
+        Ok(err)
+    }
+}
+
 fn reserve_socket_slot(kind: AxSocketKind) -> Option<SocketId> {
     // SAFETY: single-hart early stage, socket table is serialized.
     unsafe {
@@ -897,6 +959,8 @@ fn reserve_socket_slot(kind: AxSocketKind) -> Option<SocketId> {
                 slot.kind = kind;
                 slot.local_port = 0;
                 slot.listening = false;
+                slot.connecting = false;
+                slot.last_error = None;
                 return Some(idx);
             }
         }
@@ -987,8 +1051,34 @@ fn release_socket_slot(id: SocketId) {
             slot.used = false;
             slot.local_port = 0;
             slot.listening = false;
+            slot.connecting = false;
+            slot.last_error = None;
         }
     }
+}
+
+fn set_socket_connecting(id: SocketId, connecting: bool) -> Result<(), NetError> {
+    // SAFETY: single-hart early stage, socket table is serialized.
+    unsafe {
+        let slot = SOCKET_TABLE.get_mut(id).ok_or(NetError::Invalid)?;
+        if !slot.used {
+            return Err(NetError::Invalid);
+        }
+        slot.connecting = connecting;
+    }
+    Ok(())
+}
+
+fn set_socket_error(id: SocketId, err: Option<NetError>) -> Result<(), NetError> {
+    // SAFETY: single-hart early stage, socket table is serialized.
+    unsafe {
+        let slot = SOCKET_TABLE.get_mut(id).ok_or(NetError::Invalid)?;
+        if !slot.used {
+            return Err(NetError::Invalid);
+        }
+        slot.last_error = err;
+    }
+    Ok(())
 }
 
 static mut SOCKET_STORAGE: [SocketStorage<'static>; SOCKET_STORAGE_LEN] =

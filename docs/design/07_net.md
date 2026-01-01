@@ -51,5 +51,6 @@ socket_read(fd)
 - TCP 建连与收发：iperf 基准。
 - TCP loopback：`NET=1 NET_LOOPBACK_TEST=1 make test-qemu-smoke` 观察 `net: tcp loopback ok`。
 - 用户态 TCP echo：`NET=1 TCP_ECHO_TEST=1 make test-qemu-smoke` 观察 `tcp-echo: ok`（覆盖 socket syscall 路径）。
+- 用户态 UDP echo：`NET=1 UDP_ECHO_TEST=1 make test-qemu-smoke` 观察 `udp-echo: ok`（覆盖 datagram syscall 路径）。
 - 应用层：git clone/push、redis 基本命令回归。
 - QEMU: `NET=1 EXPECT_NET=1 make test-qemu-smoke` 检查 virtio-net ready + ARP reply。

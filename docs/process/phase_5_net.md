@@ -16,6 +16,7 @@
 - 增加 TCP loopback 自测路径（内核 loopback 设备），冒烟测试可验证 accept/recv/send 语义。
 - 为本机 IPv4 目的地址注入 loopback 队列，支持用户态 `/tcp_echo` 单机互连。
 - 新增用户态 TCP echo 程序 `/tcp_echo`，冒烟测试可覆盖 socket syscall 端到端路径。
+- 新增用户态 UDP echo 程序 `/udp_echo`，冒烟测试可覆盖 datagram send/recv 路径。
 - 修正 `sockaddr_in` 地址解析的网络字节序处理，避免本机连接被解析成错误 IP。
 - 连接中（SYN 期间）持续触发 net poll，避免无中断场景下 connect 卡死。
 - idle loop 切换到独立 idle stack，避免 boot stack 溢出导致 BSS 被污染。

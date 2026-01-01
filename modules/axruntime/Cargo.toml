@@ -9,6 +9,7 @@ sched-demo = []
 ext4-write-test = []
 net-loopback-test = []
 user-tcp-echo = []
+user-udp-echo = []
 
 [dependencies]
 axfs = { path = "../axfs" }

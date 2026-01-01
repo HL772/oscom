@@ -60,13 +60,17 @@ const USER_MESSAGE_OFFSET: usize = USER_MESSAGE_VA - USER_DATA_VA;
 const USER_MESSAGE_SPLIT: usize = PAGE_SIZE - USER_MESSAGE_OFFSET;
 const USER_IOV_COUNT: usize = 2;
 const USER_POLLIN: i16 = 0x001;
-#[cfg(feature = "user-tcp-echo")]
+#[cfg(feature = "user-udp-echo")]
+const USER_PATH: &[u8] = b"/udp_echo\0";
+#[cfg(feature = "user-udp-echo")]
+const USER_ARG0: &[u8] = b"udp_echo\0";
+#[cfg(all(not(feature = "user-udp-echo"), feature = "user-tcp-echo"))]
 const USER_PATH: &[u8] = b"/tcp_echo\0";
-#[cfg(feature = "user-tcp-echo")]
+#[cfg(all(not(feature = "user-udp-echo"), feature = "user-tcp-echo"))]
 const USER_ARG0: &[u8] = b"tcp_echo\0";
-#[cfg(not(feature = "user-tcp-echo"))]
+#[cfg(all(not(feature = "user-udp-echo"), not(feature = "user-tcp-echo")))]
 const USER_PATH: &[u8] = b"/init\0";
-#[cfg(not(feature = "user-tcp-echo"))]
+#[cfg(all(not(feature = "user-udp-echo"), not(feature = "user-tcp-echo")))]
 const USER_ARG0: &[u8] = b"init\0";
 const USER_ENV0: &[u8] = b"TERM=vt100\0";
 const USER_PATH_STRIDE: usize = 16;

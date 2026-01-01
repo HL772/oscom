@@ -7,6 +7,7 @@ SIZE=${SIZE:-16M}
 WORKDIR=${WORKDIR:-"${ROOT}/build/rootfs"}
 INIT_ELF=${INIT_ELF:-"${ROOT}/build/init.elf"}
 TCP_ECHO_ELF=${TCP_ECHO_ELF:-}
+UDP_ECHO_ELF=${UDP_ECHO_ELF:-}
 
 if ! command -v mke2fs >/dev/null 2>&1; then
   echo "mke2fs not found; please install e2fsprogs." >&2
@@ -24,6 +25,13 @@ if [[ -n "${TCP_ECHO_ELF}" ]]; then
     exit 1
   fi
   cp "${TCP_ECHO_ELF}" "${WORKDIR}/tcp_echo"
+fi
+if [[ -n "${UDP_ECHO_ELF}" ]]; then
+  if [[ ! -f "${UDP_ECHO_ELF}" ]]; then
+    echo "UDP_ECHO_ELF not found: ${UDP_ECHO_ELF}" >&2
+    exit 1
+  fi
+  cp "${UDP_ECHO_ELF}" "${WORKDIR}/udp_echo"
 fi
 mkdir -p "${WORKDIR}/etc"
 printf "Aurora ext4 test\n" > "${WORKDIR}/etc/issue"

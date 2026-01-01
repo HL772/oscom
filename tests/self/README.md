@@ -9,6 +9,7 @@ Cases:
 - net: enable virtio-net and confirm ARP reply from the QEMU user-net gateway.
 - net-loopback: run the in-kernel TCP loopback self-test and confirm the loopback banner.
 - tcp-echo: build `/tcp_echo`, boot with NET=1 and an ext4 image, and confirm the user echo banner.
+- udp-echo: build `/udp_echo`, boot with NET=1 and an ext4 image, and confirm the user datagram echo banner.
 
 Notes:
 - ext4-init reads the image path from `AXFS_EXT4_IMAGE` (set by `scripts/test_oscomp.sh`).
@@ -16,6 +17,7 @@ Notes:
 - ext4 QEMU runs also verify `/etc/issue` output from `/init`.
 - ext4 QEMU runs require the `ext4: write ok` log marker from the kernel smoke test.
 - net/net-loopback/tcp-echo require `NET=1` and QEMU user-net (default in the test script).
+- udp-echo requires `NET=1` and QEMU user-net (default in the test script).
 
 Usage:
 - `make test-oscomp ARCH=riscv64 PLATFORM=qemu`

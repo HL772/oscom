@@ -18,6 +18,8 @@ NET_LOOPBACK_TEST=${NET_LOOPBACK_TEST:-0}
 EXPECT_NET_LOOPBACK=${EXPECT_NET_LOOPBACK:-0}
 TCP_ECHO_TEST=${TCP_ECHO_TEST:-0}
 EXPECT_TCP_ECHO=${EXPECT_TCP_ECHO:-0}
+UDP_ECHO_TEST=${UDP_ECHO_TEST:-0}
+EXPECT_UDP_ECHO=${EXPECT_UDP_ECHO:-0}
 EXPECT_EXT4_ISSUE=${EXPECT_EXT4_ISSUE:-}
 TARGET=riscv64gc-unknown-none-elf
 CRATE=axruntime
@@ -44,6 +46,11 @@ if [[ "${NET_LOOPBACK_TEST}" == "1" && "${NET}" != "1" ]]; then
   exit 1
 fi
 
+if [[ "${TCP_ECHO_TEST}" == "1" && "${UDP_ECHO_TEST}" == "1" ]]; then
+  echo "TCP_ECHO_TEST and UDP_ECHO_TEST are mutually exclusive." >&2
+  exit 1
+fi
+
 if [[ "${TCP_ECHO_TEST}" == "1" ]]; then
   USER_TEST=1
   NET=1
@@ -65,6 +72,27 @@ if [[ "${TCP_ECHO_TEST}" == "1" ]]; then
   fi
 fi
 
+if [[ "${UDP_ECHO_TEST}" == "1" ]]; then
+  USER_TEST=1
+  NET=1
+  if [[ -z "${FS}" ]]; then
+    UDP_ECHO_ELF="${ROOT}/build/udp_echo.elf"
+    UDP_ECHO_IMAGE="${ROOT}/build/rootfs-udp-echo.ext4"
+    MODE="${MODE}" OUT="${UDP_ECHO_ELF}" "${ROOT}/scripts/build_udp_echo.sh"
+    OUT="${UDP_ECHO_IMAGE}" UDP_ECHO_ELF="${UDP_ECHO_ELF}" "${ROOT}/scripts/mkfs_ext4.sh"
+    FS="${UDP_ECHO_IMAGE}"
+  fi
+  if [[ "${EXPECT_EXT4}" == "0" ]]; then
+    EXPECT_EXT4=1
+  fi
+  if [[ "${EXPECT_NET}" == "0" ]]; then
+    EXPECT_NET=1
+  fi
+  if [[ -z "${EXPECT_EXT4_ISSUE}" ]]; then
+    EXPECT_EXT4_ISSUE=0
+  fi
+fi
+
 if ! command -v "${QEMU_BIN}" >/dev/null 2>&1; then
   echo "QEMU binary not found: ${QEMU_BIN}" >&2
   exit 1
@@ -74,6 +102,7 @@ mkdir -p "${LOG_DIR}"
 export USER_TEST
 export NET_LOOPBACK_TEST
 export TCP_ECHO_TEST
+export UDP_ECHO_TEST
 "${ROOT}/scripts/build.sh"
 
 OUT_DIR=debug
@@ -168,6 +197,9 @@ fi
 if [[ "${TCP_ECHO_TEST}" == "1" && "${EXPECT_TCP_ECHO}" == "0" ]]; then
   EXPECT_TCP_ECHO=1
 fi
+if [[ "${UDP_ECHO_TEST}" == "1" && "${EXPECT_UDP_ECHO}" == "0" ]]; then
+  EXPECT_UDP_ECHO=1
+fi
 if [[ -z "${EXPECT_EXT4_ISSUE}" ]]; then
   if [[ "${EXPECT_EXT4}" == "1" && "${USER_TEST}" == "1" ]]; then
     EXPECT_EXT4_ISSUE=1
@@ -224,6 +256,14 @@ fi
 if [[ "${EXPECT_TCP_ECHO}" == "1" ]]; then
   if ! grep -q "tcp-echo: ok" "${LOG_FILE}"; then
     echo "Smoke test failed: TCP echo banner not found." >&2
+    cat "${LOG_FILE}" >&2
+    exit 1
+  fi
+fi
+
+if [[ "${EXPECT_UDP_ECHO}" == "1" ]]; then
+  if ! grep -q "udp-echo: ok" "${LOG_FILE}"; then
+    echo "Smoke test failed: UDP echo banner not found." >&2
     cat "${LOG_FILE}" >&2
     exit 1
   fi
