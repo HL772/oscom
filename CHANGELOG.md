@@ -120,6 +120,7 @@
 - Add minimal getppid/getuid/geteuid/getgid/getegid/getresuid/getresgid stubs.
 - Add per-process brk tracking and sys_brk to grow user heaps for Rust runtime initialization.
 - Guard wait queue mutations with IRQ masking to avoid reentrant corruption.
+- Make trap entry handle kernel-mode interrupts without swapping to user stack.
 - Add gettid and sched_yield stubs (TaskId+1 when available).
 - Add exit_group stub aligned with exit shutdown.
 - Add clock_gettime64 alias to clock_gettime stub.
