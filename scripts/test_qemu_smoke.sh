@@ -14,6 +14,8 @@ EXT4_WRITE_TEST=${EXT4_WRITE_TEST:-0}
 EXPECT_EXT4_WRITE=${EXPECT_EXT4_WRITE:-0}
 NET=${NET:-0}
 EXPECT_NET=${EXPECT_NET:-0}
+NET_LOOPBACK_TEST=${NET_LOOPBACK_TEST:-0}
+EXPECT_NET_LOOPBACK=${EXPECT_NET_LOOPBACK:-0}
 TARGET=riscv64gc-unknown-none-elf
 CRATE=axruntime
 QEMU_BIN=${QEMU_BIN:-qemu-system-riscv64}
@@ -34,12 +36,18 @@ if [[ "${EXT4_WRITE_TEST}" == "1" && -z "${FS}" ]]; then
   exit 1
 fi
 
+if [[ "${NET_LOOPBACK_TEST}" == "1" && "${NET}" != "1" ]]; then
+  echo "NET_LOOPBACK_TEST=1 requires NET=1." >&2
+  exit 1
+fi
+
 if ! command -v "${QEMU_BIN}" >/dev/null 2>&1; then
   echo "QEMU binary not found: ${QEMU_BIN}" >&2
   exit 1
 fi
 
 mkdir -p "${LOG_DIR}"
+export NET_LOOPBACK_TEST
 "${ROOT}/scripts/build.sh"
 
 OUT_DIR=debug
@@ -128,6 +136,10 @@ if [[ "${EXT4_WRITE_TEST}" == "1" && "${EXPECT_EXT4_WRITE}" == "0" ]]; then
   EXPECT_EXT4_WRITE=1
 fi
 
+if [[ "${NET_LOOPBACK_TEST}" == "1" && "${EXPECT_NET_LOOPBACK}" == "0" ]]; then
+  EXPECT_NET_LOOPBACK=1
+fi
+
 if [[ "${EXPECT_EXT4}" == "1" ]]; then
   if ! grep -q "vfs: mounted ext4 rootfs" "${LOG_FILE}"; then
     echo "Smoke test failed: ext4 mount banner not found." >&2
@@ -160,6 +172,14 @@ if [[ "${EXPECT_NET}" == "1" ]]; then
   fi
   if ! grep -q "net: arp reply from 10.0.2.2" "${LOG_FILE}"; then
     echo "Smoke test failed: ARP reply not found." >&2
+    cat "${LOG_FILE}" >&2
+    exit 1
+  fi
+fi
+
+if [[ "${EXPECT_NET_LOOPBACK}" == "1" ]]; then
+  if ! grep -q "net: tcp loopback ok" "${LOG_FILE}"; then
+    echo "Smoke test failed: TCP loopback banner not found." >&2
     cat "${LOG_FILE}" >&2
     exit 1
   fi

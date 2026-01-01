@@ -7,6 +7,7 @@ edition = "2021"
 user-test = []
 sched-demo = []
 ext4-write-test = []
+net-loopback-test = []
 
 [dependencies]
 axfs = { path = "../axfs" }

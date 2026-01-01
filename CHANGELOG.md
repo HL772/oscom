@@ -169,3 +169,4 @@
 - Log one-time virtio-net IRQ and ARP probe events for RX-path diagnostics.
 - Fix virtio-net modern header length and align TX buffer to restore ARP replies.
 - Add socket readiness tracking and poll integration for TCP accept/recv/send semantics.
+- Add TCP loopback self-test and smoke-test marker for socket semantics.

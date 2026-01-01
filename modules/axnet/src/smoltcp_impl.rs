@@ -39,6 +39,7 @@ const NET_POLLIN: u16 = 0x001;
 const NET_POLLOUT: u16 = 0x004;
 const NET_POLLERR: u16 = 0x008;
 const NET_POLLHUP: u16 = 0x010;
+const LOOPBACK_PORT: u16 = 40000;
 
 static NET_READY: AtomicBool = AtomicBool::new(false);
 static NET_NEED_POLL: AtomicBool = AtomicBool::new(false);
@@ -77,6 +78,8 @@ struct SmolRxToken {
 struct SmolTxToken<'a> {
     dev: &'a dyn NetDevice,
 }
+
+pub type SocketId = usize;
 
 impl Device for SmolDevice {
     type RxToken<'a> = SmolRxToken where Self: 'a;
@@ -289,6 +292,229 @@ pub fn poll(now_ms: u64) -> Option<NetEvent> {
     None
 }
 
+pub fn tcp_loopback_test_once() -> Result<(), NetError> {
+    if !NET_READY.load(Ordering::Acquire) {
+        return Err(NetError::NotReady);
+    }
+    run_tcp_loopback()
+}
+
+struct LoopbackQueue {
+    frames: [[u8; NET_BUF_SIZE]; 8],
+    lens: [usize; 8],
+    head: usize,
+    tail: usize,
+}
+
+impl LoopbackQueue {
+    const fn new() -> Self {
+        Self {
+            frames: [[0; NET_BUF_SIZE]; 8],
+            lens: [0; 8],
+            head: 0,
+            tail: 0,
+        }
+    }
+
+    fn push(&mut self, data: &[u8]) {
+        let next = (self.head + 1) % self.frames.len();
+        if next == self.tail {
+            return;
+        }
+        let len = core::cmp::min(data.len(), NET_BUF_SIZE);
+        self.frames[self.head][..len].copy_from_slice(&data[..len]);
+        self.lens[self.head] = len;
+        self.head = next;
+    }
+
+    fn pop(&mut self, buf: &mut [u8]) -> Option<usize> {
+        if self.tail == self.head {
+            return None;
+        }
+        let len = self.lens[self.tail];
+        let copy_len = core::cmp::min(len, buf.len());
+        buf[..copy_len].copy_from_slice(&self.frames[self.tail][..copy_len]);
+        self.tail = (self.tail + 1) % self.frames.len();
+        Some(copy_len)
+    }
+}
+
+struct LoopbackDevice {
+    queue: LoopbackQueue,
+    rx_buf: [u8; NET_BUF_SIZE],
+}
+
+impl LoopbackDevice {
+    fn new() -> Self {
+        Self {
+            queue: LoopbackQueue::new(),
+            rx_buf: [0; NET_BUF_SIZE],
+        }
+    }
+}
+
+struct LoopRxToken<'a> {
+    buf: &'a mut [u8],
+    len: usize,
+}
+
+struct LoopTxToken<'a> {
+    queue: &'a mut LoopbackQueue,
+}
+
+impl Device for LoopbackDevice {
+    type RxToken<'a> = LoopRxToken<'a> where Self: 'a;
+    type TxToken<'a> = LoopTxToken<'a> where Self: 'a;
+
+    fn capabilities(&self) -> DeviceCapabilities {
+        let mut caps = DeviceCapabilities::default();
+        caps.max_transmission_unit = NET_MTU;
+        caps.medium = Medium::Ethernet;
+        caps
+    }
+
+    fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        let len = self.queue.pop(&mut self.rx_buf)?;
+        let rx = LoopRxToken {
+            buf: &mut self.rx_buf,
+            len,
+        };
+        let tx = LoopTxToken {
+            queue: &mut self.queue,
+        };
+        Some((rx, tx))
+    }
+
+    fn transmit(&mut self, _timestamp: Instant) -> Option<Self::TxToken<'_>> {
+        Some(LoopTxToken {
+            queue: &mut self.queue,
+        })
+    }
+}
+
+impl RxToken for LoopRxToken<'_> {
+    fn consume<R, F>(self, f: F) -> R
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        f(&mut self.buf[..self.len])
+    }
+}
+
+impl TxToken for LoopTxToken<'_> {
+    fn consume<R, F>(self, len: usize, f: F) -> R
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        if len > NET_BUF_SIZE {
+            return f(&mut []);
+        }
+        let mut buf = [0u8; NET_BUF_SIZE];
+        let result = f(&mut buf[..len]);
+        self.queue.push(&buf[..len]);
+        result
+    }
+}
+
+fn run_tcp_loopback() -> Result<(), NetError> {
+    let mut device = LoopbackDevice::new();
+    let mut config = Config::new(EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]).into());
+    config.random_seed = 0x1234_5678;
+    let mut iface = Interface::new(config, &mut device, Instant::from_millis(0));
+    iface.update_ip_addrs(|addrs| {
+        let _ = addrs.push(IpCidr::new(IpAddress::v4(127, 0, 0, 1), 8));
+    });
+
+    static mut LOOPBACK_STORAGE: [SocketStorage<'static>; 2] =
+        [SocketStorage::EMPTY; 2];
+    static mut SERVER_RX_BUF: [u8; 1024] = [0; 1024];
+    static mut SERVER_TX_BUF: [u8; 1024] = [0; 1024];
+    static mut CLIENT_RX_BUF: [u8; 1024] = [0; 1024];
+    static mut CLIENT_TX_BUF: [u8; 1024] = [0; 1024];
+
+    // SAFETY: loopback buffers are static and only used by this self-test.
+    let server_rx = unsafe { TcpSocketBuffer::new(&mut SERVER_RX_BUF[..]) };
+    // SAFETY: loopback buffers are static and only used by this self-test.
+    let server_tx = unsafe { TcpSocketBuffer::new(&mut SERVER_TX_BUF[..]) };
+    // SAFETY: loopback buffers are static and only used by this self-test.
+    let client_rx = unsafe { TcpSocketBuffer::new(&mut CLIENT_RX_BUF[..]) };
+    // SAFETY: loopback buffers are static and only used by this self-test.
+    let client_tx = unsafe { TcpSocketBuffer::new(&mut CLIENT_TX_BUF[..]) };
+
+    let server_socket = TcpSocket::new(server_rx, server_tx);
+    let client_socket = TcpSocket::new(client_rx, client_tx);
+    // SAFETY: loopback storage is static and only used by this self-test.
+    let mut sockets = unsafe { SocketSet::new(&mut LOOPBACK_STORAGE[..]) };
+    let server_handle = sockets.add(server_socket);
+    let client_handle = sockets.add(client_socket);
+
+    let mut did_listen = false;
+    let mut did_connect = false;
+    let mut client_sent = false;
+    let mut server_received = false;
+    let mut server_sent = false;
+    let mut client_received = false;
+    let payload = b"aurora loopback";
+    let reply = b"ok";
+
+    let mut now_ms: i64 = 0;
+    for _ in 0..500 {
+        let now = Instant::from_millis(now_ms);
+        iface.poll(now, &mut device, &mut sockets);
+
+        {
+            let server = sockets.get_mut::<TcpSocket>(server_handle);
+            if !server.is_active() && !server.is_listening() && !did_listen {
+                server.listen(LOOPBACK_PORT).map_err(|_| NetError::Invalid)?;
+                did_listen = true;
+            }
+            if !server_received && server.can_recv() {
+                let mut buf = [0u8; 64];
+                let read = server.recv_slice(&mut buf).map_err(|_| NetError::Invalid)?;
+                if read == payload.len() && buf[..read] == payload[..] {
+                    server_received = true;
+                } else {
+                    return Err(NetError::Invalid);
+                }
+            }
+            if server_received && !server_sent && server.can_send() {
+                server.send_slice(reply).map_err(|_| NetError::Invalid)?;
+                server_sent = true;
+            }
+        }
+
+        {
+            let client = sockets.get_mut::<TcpSocket>(client_handle);
+            if !client.is_open() && !did_connect {
+                let cx = iface.context();
+                client
+                    .connect(cx, (IpAddress::v4(127, 0, 0, 1), LOOPBACK_PORT), 65000)
+                    .map_err(|_| NetError::Invalid)?;
+                did_connect = true;
+            }
+            if !client_sent && client.can_send() {
+                client.send_slice(payload).map_err(|_| NetError::Invalid)?;
+                client_sent = true;
+            }
+            if !client_received && client.can_recv() {
+                let mut buf = [0u8; 16];
+                let read = client.recv_slice(&mut buf).map_err(|_| NetError::Invalid)?;
+                if read == reply.len() && buf[..read] == reply[..] {
+                    client_received = true;
+                } else {
+                    return Err(NetError::Invalid);
+                }
+            }
+        }
+
+        if server_received && client_received {
+            return Ok(());
+        }
+        now_ms = now_ms.saturating_add(10);
+    }
+    Err(NetError::Invalid)
+}
+
 pub fn ping_gateway_once() -> Result<(), NetError> {
     if !NET_READY.load(Ordering::Acquire) {
         return Err(NetError::NotReady);
@@ -331,8 +557,6 @@ const EMPTY_SOCKET_SLOT: SocketSlot = SocketSlot {
 };
 
 static mut SOCKET_TABLE: [SocketSlot; MAX_SOCKETS] = [EMPTY_SOCKET_SLOT; MAX_SOCKETS];
-
-pub type SocketId = usize;
 
 pub fn socket_create(domain: i32, sock_type: i32, _protocol: i32) -> Result<SocketId, NetError> {
     if !NET_READY.load(Ordering::Acquire) {

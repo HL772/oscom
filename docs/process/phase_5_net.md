@@ -13,6 +13,7 @@
 - 增加 socket 表与 TCP/UDP 基础 API，系统调用入口完成 socket/bind/connect/listen/accept/sendto/recvfrom。
 - socket accept/send/recv 在阻塞模式下挂入 net 等待队列，poll 触发后唤醒重试。
 - 完善 TCP accept/recv/send 语义：监听标记区分 accept/read 语义，poll/ppoll 走 socket 就绪判定。
+- 增加 TCP loopback 自测路径（内核 loopback 设备），冒烟测试可验证 accept/recv/send 语义。
 - idle loop 切换到独立 idle stack，避免 boot stack 溢出导致 BSS 被污染。
 - 修正 virtio-net 现代特性头部长度为 12 字节，并对齐 TX 缓冲区，ARP Reply 已可观测。
 

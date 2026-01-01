@@ -86,6 +86,14 @@ pub extern "C" fn rust_main(hart_id: usize, dtb_addr: usize) -> ! {
         if axnet::init(dev).is_ok() {
             crate::println!("axnet: interface up (static 10.0.2.15/24)");
             let _ = axnet::arp_probe_gateway_once();
+            #[cfg(feature = "net-loopback-test")]
+            {
+                if axnet::tcp_loopback_test_once().is_ok() {
+                    crate::println!("net: tcp loopback ok");
+                } else {
+                    crate::println!("net: tcp loopback failed");
+                }
+            }
         }
     }
 
