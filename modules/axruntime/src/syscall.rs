@@ -3574,6 +3574,13 @@ fn poll_revents_for_fd(fd: i32, events: u16) -> u16 {
             }
             revents
         }
+        FdKind::Socket(socket_id) => {
+            match axnet::socket_poll(socket_id, events) {
+                Ok(revents) => revents,
+                Err(axnet::NetError::Invalid | axnet::NetError::NotReady) => POLLNVAL,
+                Err(_) => 0,
+            }
+        }
         _ => 0,
     }
 }

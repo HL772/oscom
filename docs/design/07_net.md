@@ -14,11 +14,13 @@
 - 先落地最小 `axnet` 抽象与 virtio-net RAW 帧读写，协议栈后续接入。
 - smoltcp 接入使用静态地址配置（QEMU user-net: 10.0.2.15/24, gw 10.0.2.2），轮询在空闲上下文触发。
 - 启动后发送一次 ARP probe 探测网关，收到应答即认为 RX/IRQ 路径可用。
+- socket 就绪判定通过 `SocketTable` 的监听标记区分 `accept` 与 `recv` 语义，`poll/ppoll` 走统一判定入口。
 
 ## 关键数据结构
 - `NetDevice`：网卡设备抽象（send/recv/irq）。
 - `PacketBuffer`：包缓冲与引用计数。
 - `SocketTable`：socket 句柄管理与 fd 映射。
+- `SocketSlot`：记录 socket 句柄、端口与是否处于监听状态。
 - `NetConfig`：IP/网关/掩码等配置。
 - `VirtioNetQueue`：virtio-net 描述符/avail/used 队列。
 

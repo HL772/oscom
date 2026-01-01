@@ -10,7 +10,7 @@ use smoltcp::socket::icmp::{
     Endpoint as IcmpEndpoint, PacketBuffer as IcmpPacketBuffer, PacketMetadata as IcmpPacketMetadata,
     Socket as IcmpSocket,
 };
-use smoltcp::socket::tcp::{Socket as TcpSocket, SocketBuffer as TcpSocketBuffer};
+use smoltcp::socket::tcp::{Socket as TcpSocket, SocketBuffer as TcpSocketBuffer, State as TcpState};
 use smoltcp::socket::udp::{PacketBuffer as UdpPacketBuffer, PacketMetadata as UdpPacketMetadata, Socket as UdpSocket};
 use smoltcp::time::Instant;
 use smoltcp::wire::{
@@ -34,6 +34,11 @@ const ARP_POLL_RETRY: u16 = 8;
 const NET_IPV4_ADDR: [u8; 4] = [10, 0, 2, 15];
 const NET_IPV4_GATEWAY: [u8; 4] = [10, 0, 2, 2];
 const NET_IPV4_PREFIX: u8 = 24;
+// poll/ppoll 事件位与 syscall 侧保持一致。
+const NET_POLLIN: u16 = 0x001;
+const NET_POLLOUT: u16 = 0x004;
+const NET_POLLERR: u16 = 0x008;
+const NET_POLLHUP: u16 = 0x010;
 
 static NET_READY: AtomicBool = AtomicBool::new(false);
 static NET_NEED_POLL: AtomicBool = AtomicBool::new(false);
@@ -313,6 +318,7 @@ struct SocketSlot {
     used: bool,
     kind: AxSocketKind,
     local_port: u16,
+    listening: bool,
     handle: MaybeUninit<SocketHandle>,
 }
 
@@ -320,6 +326,7 @@ const EMPTY_SOCKET_SLOT: SocketSlot = SocketSlot {
     used: false,
     kind: AxSocketKind::Tcp,
     local_port: 0,
+    listening: false,
     handle: MaybeUninit::uninit(),
 };
 
@@ -389,6 +396,7 @@ pub fn socket_connect(id: SocketId, addr: IpAddress, port: u16) -> Result<(), Ne
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
     match kind {
         AxSocketKind::Tcp => {
+            set_socket_listening(id, false)?;
             let local_port = socket_local_port(id)?;
             let socket = state.sockets.get_mut::<TcpSocket>(handle);
             let local = IpListenEndpoint {
@@ -415,6 +423,7 @@ pub fn socket_listen(id: SocketId, _backlog: usize) -> Result<(), NetError> {
             socket
                 .listen(IpListenEndpoint { addr: None, port: local_port })
                 .map_err(|_| NetError::Invalid)?;
+            set_socket_listening(id, true)?;
             NET_NEED_POLL.store(true, Ordering::Release);
             Ok(())
         }
@@ -428,15 +437,18 @@ pub fn socket_accept(id: SocketId) -> Result<(SocketId, SocketId, Option<(IpAddr
     let AxSocketKind::Tcp = kind else {
         return Err(NetError::Unsupported);
     };
+    if !socket_is_listening(id)? {
+        return Err(NetError::Invalid);
+    }
     let socket = state.sockets.get_mut::<TcpSocket>(handle);
-    if socket.is_listening() || socket.state() == smoltcp::socket::tcp::State::SynReceived {
+    let tcp_state = socket.state();
+    if socket.is_listening() || tcp_state == TcpState::SynReceived {
+        NET_NEED_POLL.store(true, Ordering::Release);
         return Err(NetError::WouldBlock);
     }
-    let tcp_state = socket.state();
-    if tcp_state != smoltcp::socket::tcp::State::Established
-        && tcp_state != smoltcp::socket::tcp::State::CloseWait
+    if tcp_state != TcpState::Established && tcp_state != TcpState::CloseWait
     {
-        return Err(NetError::WouldBlock);
+        return Err(NetError::Invalid);
     }
     let remote = socket.remote_endpoint().map(|ep| (ep.addr, ep.port));
     let local_port = socket_local_port(id)?;
@@ -450,6 +462,8 @@ pub fn socket_accept(id: SocketId) -> Result<(SocketId, SocketId, Option<(IpAddr
     listener
         .listen(IpListenEndpoint { addr: None, port: local_port })
         .map_err(|_| NetError::Invalid)?;
+    set_socket_listening(id, false)?;
+    set_socket_listening(listener_id, true)?;
     NET_NEED_POLL.store(true, Ordering::Release);
     Ok((id, listener_id, remote))
 }
@@ -460,6 +474,18 @@ pub fn socket_send(id: SocketId, buf: &[u8], addr: Option<(IpAddress, u16)>) -> 
     let sent = match kind {
         AxSocketKind::Tcp => {
             let socket = state.sockets.get_mut::<TcpSocket>(handle);
+            let tcp_state = socket.state();
+            if matches!(tcp_state, TcpState::Listen | TcpState::Closed) {
+                return Err(NetError::Invalid);
+            }
+            if matches!(tcp_state, TcpState::SynSent | TcpState::SynReceived) {
+                NET_NEED_POLL.store(true, Ordering::Release);
+                return Err(NetError::WouldBlock);
+            }
+            if !socket.can_send() {
+                NET_NEED_POLL.store(true, Ordering::Release);
+                return Err(NetError::WouldBlock);
+            }
             match socket.send_slice(buf) {
                 Ok(0) => return Err(NetError::WouldBlock),
                 Ok(size) => size,
@@ -492,6 +518,14 @@ pub fn socket_recv(
     match kind {
         AxSocketKind::Tcp => {
             let socket = state.sockets.get_mut::<TcpSocket>(handle);
+            let tcp_state = socket.state();
+            if matches!(tcp_state, TcpState::Listen | TcpState::Closed) {
+                return Err(NetError::Invalid);
+            }
+            if matches!(tcp_state, TcpState::SynSent | TcpState::SynReceived) {
+                NET_NEED_POLL.store(true, Ordering::Release);
+                return Err(NetError::WouldBlock);
+            }
             let size = match socket.recv_slice(buf) {
                 Ok(0) => return Err(NetError::WouldBlock),
                 Ok(size) => size,
@@ -516,6 +550,51 @@ pub fn socket_recv(
     }
 }
 
+pub fn socket_poll(id: SocketId, events: u16) -> Result<u16, NetError> {
+    let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
+    let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
+    let mut revents = 0u16;
+    match kind {
+        AxSocketKind::Tcp => {
+            let listening = socket_is_listening(id)?;
+            let socket = state.sockets.get_mut::<TcpSocket>(handle);
+            let tcp_state = socket.state();
+            if (events & NET_POLLIN) != 0 {
+                if listening {
+                    // 监听 socket 就绪：连接完成后转为 Established/CloseWait。
+                    if matches!(tcp_state, TcpState::Established | TcpState::CloseWait) {
+                        revents |= NET_POLLIN;
+                    }
+                } else {
+                    if socket.can_recv() {
+                        revents |= NET_POLLIN;
+                    } else if tcp_state == TcpState::CloseWait {
+                        revents |= NET_POLLIN | NET_POLLHUP;
+                    }
+                }
+            }
+            if (events & NET_POLLOUT) != 0 {
+                if !listening && tcp_state == TcpState::Established && socket.can_send() {
+                    revents |= NET_POLLOUT;
+                }
+            }
+            if tcp_state == TcpState::Closed {
+                revents |= NET_POLLHUP;
+            }
+        }
+        AxSocketKind::Udp => {
+            let socket = state.sockets.get_mut::<UdpSocket>(handle);
+            if (events & NET_POLLIN) != 0 && socket.can_recv() {
+                revents |= NET_POLLIN;
+            }
+            if (events & NET_POLLOUT) != 0 && socket.can_send() {
+                revents |= NET_POLLOUT;
+            }
+        }
+    }
+    Ok(revents)
+}
+
 pub fn socket_close(id: SocketId) -> Result<(), NetError> {
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
@@ -535,6 +614,7 @@ fn reserve_socket_slot(kind: AxSocketKind) -> Option<SocketId> {
                 slot.used = true;
                 slot.kind = kind;
                 slot.local_port = 0;
+                slot.listening = false;
                 return Some(idx);
             }
         }
@@ -561,6 +641,31 @@ fn set_socket_local_port(id: SocketId, port: u16) -> Result<(), NetError> {
         }
         slot.local_port = port;
         Ok(())
+    }
+}
+
+fn set_socket_listening(id: SocketId, listening: bool) -> Result<(), NetError> {
+    unsafe {
+        let Some(slot) = SOCKET_TABLE.get_mut(id) else {
+            return Err(NetError::Invalid);
+        };
+        if !slot.used {
+            return Err(NetError::Invalid);
+        }
+        slot.listening = listening;
+        Ok(())
+    }
+}
+
+fn socket_is_listening(id: SocketId) -> Result<bool, NetError> {
+    unsafe {
+        let Some(slot) = SOCKET_TABLE.get(id) else {
+            return Err(NetError::Invalid);
+        };
+        if !slot.used {
+            return Err(NetError::Invalid);
+        }
+        Ok(slot.listening)
     }
 }
 
@@ -599,6 +704,7 @@ fn release_socket_slot(id: SocketId) {
         if let Some(slot) = SOCKET_TABLE.get_mut(id) {
             slot.used = false;
             slot.local_port = 0;
+            slot.listening = false;
         }
     }
 }
