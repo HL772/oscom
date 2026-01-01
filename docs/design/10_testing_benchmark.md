@@ -37,8 +37,10 @@ make test-* -> scripts/test_*.sh
 - NET=1 TCP_ECHO_TEST=1 EXPECT_TCP_ECHO=1 make test-qemu-smoke (用户态 TCP echo 覆盖 socket syscall 路径)
 - NET=1 UDP_ECHO_TEST=1 EXPECT_UDP_ECHO=1 make test-qemu-smoke (用户态 UDP echo 覆盖 datagram syscall 路径)
 - make test-oscomp（运行 tests/self 用例：ramdisk + ext4 + ext4-init + net + net-loopback + tcp-echo + udp-echo）
+- make test-net-baseline（顺序执行 net/net-loopback/tcp-echo/udp-echo 并记录日志）
 
 ## 网络基准计划
 - 连通性基线：ARP reply 与 UDP echo 持续通过，作为 RX/IRQ 健康指标。
 - TCP 基线：tcp_echo 覆盖非阻塞 connect + ppoll + SO_ERROR + sendmsg/recvmsg iovec。
 - 性能基线：预留 iperf3 端到端吞吐测试（后续加入脚本与记录模板）。
+- 基准脚本：`scripts/net_baseline.sh` 生成 `build/net-baseline/*.log`。

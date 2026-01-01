@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help fmt clippy build run gdb test-host test-qemu-smoke test-oscomp rootfs-ext4 clean
+.PHONY: help fmt clippy build run gdb test-host test-qemu-smoke test-oscomp test-net-baseline rootfs-ext4 clean
 
 help:
 	@printf "Project Aurora build/test entrypoints\n\n"
@@ -16,6 +16,7 @@ help:
 	@printf "  make test-host\n"
 	@printf "  make test-qemu-smoke ARCH=riscv64 PLATFORM=qemu [FS=path/to/ext4.img]\n"
 	@printf "  make test-oscomp ARCH=riscv64 PLATFORM=qemu [FS=path/to/ext4.img] [EXPECT_INIT=1]\n"
+	@printf "  make test-net-baseline ARCH=riscv64 PLATFORM=qemu\n"
 	@printf "  make rootfs-ext4 OUT=build/rootfs.ext4 SIZE=16M\n"
 	@printf "  make clean\n"
 	@printf "\nOptions:\n"
@@ -48,6 +49,9 @@ test-qemu-smoke:
 
 test-oscomp:
 	@./scripts/test_oscomp.sh
+
+test-net-baseline:
+	@./scripts/net_baseline.sh
 
 rootfs-ext4:
 	@./scripts/mkfs_ext4.sh
