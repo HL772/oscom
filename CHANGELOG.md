@@ -167,3 +167,4 @@
 - Add blocking accept/send/recv paths for sockets with net wait queue wakeups.
 - Switch idle loop to a dedicated idle stack to avoid boot stack overflows.
 - Log one-time virtio-net IRQ and ARP probe events for RX-path diagnostics.
+- Fix virtio-net modern header length and align TX buffer to restore ARP replies.

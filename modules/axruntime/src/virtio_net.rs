@@ -46,7 +46,7 @@ const STATUS_FAILED: u32 = 128;
 
 const QUEUE_SIZE: usize = 8;
 const NET_BUF_SIZE: usize = 2048;
-const VIRTIO_NET_HDR_LEN: usize = 10;
+const VIRTIO_NET_HDR_LEN: usize = 12;
 const RX_QUEUE_INDEX: u32 = 0;
 const TX_QUEUE_INDEX: u32 = 1;
 
@@ -190,8 +190,13 @@ static VIRTIO_NET_TX_QUEUE: QueueCell = QueueCell::new();
 
 // SAFETY: RX buffer 只在锁保护下读写。
 static mut RX_BUFFER_PTRS: [usize; QUEUE_SIZE] = [0; QUEUE_SIZE];
+#[repr(C, align(4096))]
+struct TxBuffer {
+    data: [u8; NET_BUF_SIZE],
+}
+
 // SAFETY: TX buffer 只在锁保护下使用。
-static mut VIRTIO_NET_TX_BUF: [u8; NET_BUF_SIZE] = [0; NET_BUF_SIZE];
+static mut VIRTIO_NET_TX_BUF: TxBuffer = TxBuffer { data: [0; NET_BUF_SIZE] };
 
 pub struct VirtioNetDevice;
 
@@ -270,12 +275,13 @@ impl NetDevice for VirtioNetDevice {
         let queue = VIRTIO_NET_TX_QUEUE.get();
         // SAFETY: TX buffer 只在锁保护下使用。
         unsafe {
-            VIRTIO_NET_TX_BUF[..VIRTIO_NET_HDR_LEN].fill(0);
-            VIRTIO_NET_TX_BUF[VIRTIO_NET_HDR_LEN..VIRTIO_NET_HDR_LEN + buf.len()]
+            VIRTIO_NET_TX_BUF.data[..VIRTIO_NET_HDR_LEN].fill(0);
+            VIRTIO_NET_TX_BUF.data[VIRTIO_NET_HDR_LEN..VIRTIO_NET_HDR_LEN + buf.len()]
                 .copy_from_slice(buf);
         }
         let desc_id = 0;
-        let addr = mm::kernel_virt_to_phys(unsafe { VIRTIO_NET_TX_BUF.as_ptr() } as usize) as u64;
+        let addr =
+            mm::kernel_virt_to_phys(unsafe { VIRTIO_NET_TX_BUF.data.as_ptr() } as usize) as u64;
         queue.desc[desc_id].addr = addr;
         queue.desc[desc_id].len = (buf.len() + VIRTIO_NET_HDR_LEN) as u32;
         queue.desc[desc_id].flags = 0;

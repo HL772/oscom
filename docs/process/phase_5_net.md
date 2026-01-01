@@ -13,13 +13,14 @@
 - 增加 socket 表与 TCP/UDP 基础 API，系统调用入口完成 socket/bind/connect/listen/accept/sendto/recvfrom。
 - socket accept/send/recv 在阻塞模式下挂入 net 等待队列，poll 触发后唤醒重试。
 - idle loop 切换到独立 idle stack，避免 boot stack 溢出导致 BSS 被污染。
+- 修正 virtio-net 现代特性头部长度为 12 字节，并对齐 TX 缓冲区，ARP Reply 已可观测。
 
 ## 问题与定位
-- QEMU user-net 环境下 ARP probe 已发送，IRQ 触发可见，但 RX 帧未观察到（暂未捕获 ARP Reply）。
+- QEMU user-net 下 ARP probe 已发送但 RX 帧未进入，定位为 virtio 现代特性头部长度不匹配导致帧损坏。
 
 ## 解决与验证
 - `NET=1 EXPECT_NET=1 make test-qemu-smoke ARCH=riscv64 PLATFORM=qemu`
-- 当前日志包含 virtio-net ready、axnet interface up、net: arp probe sent、virtio-net: irq received；ARP Reply 尚未观测，需进一步排查 RX 路径。
+- 日志包含 virtio-net ready、net: arp probe sent、net: arp reply from 10.0.2.2，ARP 路径恢复正常。
 - 待协议栈接入后补充 ping/iperf/redis 基准验证。
 
 ## 下一步
