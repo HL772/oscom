@@ -11,6 +11,7 @@ PERF_EXPECT=${PERF_EXPECT:-}
 
 FS_IMAGE="${OUT_DIR}/rootfs-perf.ext4"
 LOG="${OUT_DIR}/perf.log"
+QEMU_LOG="${OUT_DIR}/qemu-smoke.log"
 
 mkdir -p "${OUT_DIR}"
 
@@ -31,16 +32,16 @@ if [[ ! -d "${PERF_ROOTFS_DIR}" ]]; then
   exit 1
 fi
 
-OUT="${FS_IMAGE}" INIT_ELF="${PERF_INIT_ELF}" EXTRA_ROOTFS_DIR="${PERF_ROOTFS_DIR}" \
+OUT="${FS_IMAGE}" INIT_ELF="${PERF_INIT_ELF}" INIT_ELF_SKIP_BUILD=1 EXTRA_ROOTFS_DIR="${PERF_ROOTFS_DIR}" \
   "${ROOT}/scripts/mkfs_ext4.sh"
 
-NET=1 EXPECT_NET=1 FS="${FS_IMAGE}" \
+NET=1 EXPECT_NET=1 USER_TEST=1 EXPECT_EXT4=1 EXPECT_EXT4_ISSUE=0 FS="${FS_IMAGE}" LOG_FILE="${QEMU_LOG}" \
   "${ROOT}/scripts/test_qemu_smoke.sh" 2>&1 | tee "${LOG}"
 
 if [[ -n "${PERF_EXPECT}" ]]; then
   IFS=',' read -r -a markers <<< "${PERF_EXPECT}"
   for marker in "${markers[@]}"; do
-    if ! rg -F "${marker}" "${LOG}" >/dev/null; then
+    if ! rg -F "${marker}" "${QEMU_LOG}" >/dev/null; then
       echo "missing marker: ${marker}" >&2
       exit 1
     fi
@@ -48,3 +49,4 @@ if [[ -n "${PERF_EXPECT}" ]]; then
 fi
 
 echo "net perf log: ${LOG}"
+echo "qemu log: ${QEMU_LOG}"

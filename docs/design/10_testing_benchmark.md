@@ -38,7 +38,7 @@ make test-* -> scripts/test_*.sh
 - NET=1 UDP_ECHO_TEST=1 EXPECT_UDP_ECHO=1 make test-qemu-smoke (用户态 UDP echo 覆盖 datagram syscall 路径)
 - make test-oscomp（运行 tests/self 用例：ramdisk + ext4 + ext4-init + net + net-loopback + tcp-echo + udp-echo）
 - make test-net-baseline（顺序执行 net/net-loopback/tcp-echo/udp-echo 并记录日志）
-- make test-net-perf（需要自定义 /init 与用户态二进制，记录性能基线日志）
+- make test-net-perf（需要自定义 /init 与用户态二进制，脚本启用 USER_TEST 触发 execve，记录性能基线日志）
 - PERF_INIT_ELF=build/net_bench.elf PERF_ROOTFS_DIR=apps/net_bench/rootfs make test-net-perf（net_bench 作为临时吞吐接收端，使用 `scripts/build_net_bench.sh` 生成 ELF）
 
 ## 网络基准计划

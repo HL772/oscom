@@ -79,6 +79,10 @@
 - Route openat/newfstatat path resolution through memfs metadata.
 - Add memfs unit tests for path resolution and metadata.
 - Add `apps/net_bench` and `scripts/build_net_bench.sh` as a lightweight TCP throughput sink for the net perf harness.
+- Update net perf baseline script to enable USER_TEST and ext4 mount checks so `/init` executes under QEMU.
+- Add INIT_ELF_SKIP_BUILD to mkfs_ext4 so custom `/init` binaries are not overwritten.
+- Teach net perf baseline to archive the QEMU log and validate PERF_EXPECT markers against it.
+- Record net-perf baseline run with net_bench in docs/process/net_perf_baseline_2026-01-01.md.
 - Route faccessat/statx/readlinkat path resolution through memfs.
 - Route statfs path resolution through memfs.
 - Route path-based stub syscalls (mkdirat/unlinkat/linkat/renameat* and chmod/chown/utimensat) through memfs.

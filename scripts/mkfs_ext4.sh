@@ -9,13 +9,21 @@ INIT_ELF=${INIT_ELF:-"${ROOT}/build/init.elf"}
 TCP_ECHO_ELF=${TCP_ECHO_ELF:-}
 UDP_ECHO_ELF=${UDP_ECHO_ELF:-}
 EXTRA_ROOTFS_DIR=${EXTRA_ROOTFS_DIR:-}
+INIT_ELF_SKIP_BUILD=${INIT_ELF_SKIP_BUILD:-0}
 
 if ! command -v mke2fs >/dev/null 2>&1; then
   echo "mke2fs not found; please install e2fsprogs." >&2
   exit 1
 fi
 
-python3 "${ROOT}/tools/build_init_elf.py" --out "${INIT_ELF}"
+if [[ "${INIT_ELF_SKIP_BUILD}" != "1" ]]; then
+  python3 "${ROOT}/tools/build_init_elf.py" --out "${INIT_ELF}"
+else
+  if [[ ! -f "${INIT_ELF}" ]]; then
+    echo "INIT_ELF not found: ${INIT_ELF}" >&2
+    exit 1
+  fi
+fi
 
 rm -rf "${WORKDIR}"
 mkdir -p "${WORKDIR}"

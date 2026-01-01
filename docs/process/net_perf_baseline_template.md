@@ -33,11 +33,17 @@ PERF_EXPECT="net-bench: ready" \
 make test-net-perf ARCH=riscv64 PLATFORM=qemu
 ```
 
+备注：
+- `scripts/net_perf_baseline.sh` 会自动设置 `USER_TEST=1`、`EXPECT_EXT4=1`、`EXPECT_EXT4_ISSUE=0` 以确保 `/init` 运行且不强制 `/etc/issue` 输出。
+- `scripts/net_perf_baseline.sh` 会传递 `INIT_ELF_SKIP_BUILD=1`，避免 `mkfs_ext4.sh` 覆盖自定义 `/init`。
+
 ## 结果
 - iperf3 吞吐：
 - redis 基线：
 - net_bench 字节统计（若使用）：
 - 日志路径：
+  - perf.log：
+  - qemu-smoke.log：
 
 ## 备注
 - 记录失败原因与复现步骤。
