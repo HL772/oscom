@@ -54,3 +54,8 @@ socket_read(fd)
 - 用户态 UDP echo：`NET=1 UDP_ECHO_TEST=1 make test-qemu-smoke` 观察 `udp-echo: ok`（覆盖 datagram syscall 路径）。
 - 应用层：git clone/push、redis 基本命令回归。
 - QEMU: `NET=1 EXPECT_NET=1 make test-qemu-smoke` 检查 virtio-net ready + ARP reply。
+
+## 基准计划
+- 连通性基线：在 QEMU user-net 下保持 ARP reply 与 UDP echo 通过，作为网卡 RX 健康指标。
+- TCP 基线：内核 loopback + 用户态 tcp_echo 覆盖 connect/accept/send/recv + iovec。
+- 性能基线：iperf3 (或简化吞吐脚本) 记录吞吐与 CPU 利用率，用于回归对比。
