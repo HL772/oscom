@@ -4762,10 +4762,11 @@ fn set_fd_flags(fd: usize, flags: usize) -> Result<(), Errno> {
         // SAFETY: 单核早期阶段访问重定向表/标志。
         unsafe {
             if let Some(mut entry) = STDIO_REDIRECT[proc_idx][fd] {
-                entry.flags = (entry.flags & O_ACCMODE) | flags;
+                entry.flags = (entry.flags & (O_ACCMODE | O_CLOEXEC)) | flags;
                 STDIO_REDIRECT[proc_idx][fd] = Some(entry);
             } else {
-                STDIO_FLAGS[proc_idx][fd] = (STDIO_FLAGS[proc_idx][fd] & O_ACCMODE) | flags;
+                STDIO_FLAGS[proc_idx][fd] =
+                    (STDIO_FLAGS[proc_idx][fd] & (O_ACCMODE | O_CLOEXEC)) | flags;
             }
         }
         return Ok(());
@@ -4776,7 +4777,8 @@ fn set_fd_flags(fd: usize, flags: usize) -> Result<(), Errno> {
         if FD_TABLES[proc_idx][idx].object == FdObject::Empty {
             return Err(Errno::Badf);
         }
-        FD_TABLES[proc_idx][idx].flags = (FD_TABLES[proc_idx][idx].flags & O_ACCMODE) | flags;
+        FD_TABLES[proc_idx][idx].flags =
+            (FD_TABLES[proc_idx][idx].flags & (O_ACCMODE | O_CLOEXEC)) | flags;
     }
     Ok(())
 }
