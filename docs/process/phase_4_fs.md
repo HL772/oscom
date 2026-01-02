@@ -81,5 +81,6 @@
 - `EXPECT_FAT32=1 USER_TEST=1 make test-qemu-smoke ARCH=riscv64 PLATFORM=qemu`
 
 ## 下一步
-- 补齐 ext4 extent tree(depth>0) 写入与 extent 扩容路径。
-- 引入 page cache/writeback 的最小框架，补足 FS 缓存一致性设计。
+- 扩展 ext4 extent tree(depth>2) 与 extent 伸缩/合并场景，覆盖更大目录与文件写入。
+- 将 writeback 策略与 VFS 层写回触发点联动（周期/显式 sync/close）。
+- 补齐 FAT32 目录更新与簇链回收路径，完善删除/重命名一致性。
