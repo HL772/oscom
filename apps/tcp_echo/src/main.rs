@@ -28,10 +28,13 @@ const SOL_SOCKET: usize = 1;
 const SO_ERROR: usize = 4;
 
 const EINPROGRESS: isize = -115;
+const ECONNREFUSED: isize = -111;
+const ENETUNREACH: isize = -101;
 
 const LOCAL_IP: [u8; 4] = [10, 0, 2, 15];
 const SERVER_PORT: u16 = 22345;
 const CLIENT_PORT: u16 = 22346;
+const FAIL_PORT: u16 = 22347;
 
 const OK_MSG: &[u8] = b"tcp-echo: ok\n";
 const FAIL_MSG: &[u8] = b"tcp-echo: fail\n";
@@ -174,6 +177,20 @@ fn syscall_connect_nonblock(fd: usize, addr: &SockAddrIn) {
     }
     if ret < 0 {
         fail();
+    }
+}
+
+fn syscall_connect(fd: usize, addr: &SockAddrIn) -> isize {
+    unsafe {
+        syscall6(
+            SYS_CONNECT,
+            fd,
+            addr as *const SockAddrIn as usize,
+            core::mem::size_of::<SockAddrIn>(),
+            0,
+            0,
+            0,
+        )
     }
 }
 
@@ -323,13 +340,47 @@ fn sockaddr_matches(addr: &SockAddrIn, ip: [u8; 4], port: u16) -> bool {
 pub extern "C" fn _start() -> ! {
     let server = syscall_socket(AF_INET, SOCK_STREAM, 0);
     let client = syscall_socket(AF_INET, SOCK_STREAM, 0);
+    let fail_client = syscall_socket(AF_INET, SOCK_STREAM, 0);
 
     let server_addr = sockaddr(LOCAL_IP, SERVER_PORT);
     let client_addr = sockaddr(LOCAL_IP, CLIENT_PORT);
+    let fail_addr = sockaddr(LOCAL_IP, FAIL_PORT);
 
     syscall_bind(server, &server_addr);
     syscall_listen(server, 1);
     syscall_bind(client, &client_addr);
+
+    syscall_fcntl(fail_client, F_SETFL, O_NONBLOCK);
+    let ret = syscall_connect(fail_client, &fail_addr);
+    if ret == EINPROGRESS {
+        let mut fail_poll = [PollFd {
+            fd: fail_client as i32,
+            events: POLLOUT,
+            revents: 0,
+        }];
+        let timeout = Timespec {
+            tv_sec: 1,
+            tv_nsec: 0,
+        };
+        let polled = syscall_ppoll(&mut fail_poll, &timeout);
+        if polled <= 0 {
+            fail();
+        }
+        let mut so_error: i32 = -1;
+        let mut so_len = core::mem::size_of::<i32>();
+        syscall_getsockopt(fail_client, SOL_SOCKET, SO_ERROR, &mut so_error, &mut so_len);
+        if so_error != -ECONNREFUSED as i32 && so_error != -ENETUNREACH as i32 {
+            fail();
+        }
+    } else if ret < 0 {
+        if ret != ECONNREFUSED && ret != ENETUNREACH {
+            fail();
+        }
+    } else {
+        fail();
+    }
+    syscall_close(fail_client);
+
     syscall_fcntl(client, F_SETFL, O_NONBLOCK);
     syscall_connect_nonblock(client, &server_addr);
 
