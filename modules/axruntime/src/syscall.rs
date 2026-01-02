@@ -824,9 +824,6 @@ fn sys_mmap(
     if len == 0 {
         return Err(Errno::Inval);
     }
-    if (flags & MAP_FIXED) != 0 {
-        return Err(Errno::Inval);
-    }
     if (flags & MAP_ANON) == 0 || (flags & MAP_PRIVATE) == 0 || (flags & MAP_SHARED) != 0 {
         return Err(Errno::Inval);
     }
@@ -835,12 +832,21 @@ fn sys_mmap(
     }
     let task_id = crate::runtime::current_task_id().ok_or(Errno::Fault)?;
     let heap_top = crate::task::heap_top(task_id).ok_or(Errno::Fault)?;
+    let fixed = (flags & MAP_FIXED) != 0;
+    if fixed {
+        if addr == 0 || (addr & (mm::PAGE_SIZE - 1)) != 0 {
+            return Err(Errno::Inval);
+        }
+    }
     let start = if addr != 0 {
         align_up(addr, mm::PAGE_SIZE)
     } else {
         align_up(heap_top, mm::PAGE_SIZE)
     };
     let map_len = align_up(len, mm::PAGE_SIZE);
+    if map_len == 0 {
+        return Err(Errno::Inval);
+    }
     let end = start.checked_add(map_len).ok_or(Errno::Inval)?;
     let flags_map = mm::UserMapFlags {
         read: (prot & PROT_READ) != 0,
@@ -858,6 +864,14 @@ fn sys_mmap(
     if root_pa == 0 {
         return Err(Errno::Fault);
     }
+    if fixed {
+        let mut va = start;
+        while va < end {
+            let _ = mm::unmap_user_page(root_pa, va);
+            va = va.wrapping_add(mm::PAGE_SIZE);
+        }
+    }
+
     let mut va = start;
     while va < end {
         if mm::user_page_mapped(root_pa, va) {
@@ -873,7 +887,7 @@ fn sys_mmap(
         }
         va = va.wrapping_add(mm::PAGE_SIZE);
     }
-    if end > heap_top {
+    if !fixed && end > heap_top {
         let _ = crate::task::set_heap_top(task_id, end);
     }
     Ok(start)

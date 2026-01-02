@@ -689,9 +689,22 @@ pub fn user_page_mapped(root_pa: usize, va: usize) -> bool {
 }
 
 pub fn unmap_user_page(root_pa: usize, va: usize) -> bool {
-    let Some(entry) = lookup_user_pte_mut(root_pa, va) else {
+    if root_pa == 0 {
         return false;
-    };
+    }
+    let l2 = unsafe { &mut *(root_pa as *mut PageTable) };
+    let [l2_idx, l1_idx, l0_idx] = VirtAddr::new(va).sv39_indexes();
+    let l2e = l2.entries[l2_idx];
+    if !l2e.is_valid() || l2e.is_leaf() {
+        return false;
+    }
+    let l1 = unsafe { &mut *(l2e.ppn().addr().as_usize() as *mut PageTable) };
+    let l1e = l1.entries[l1_idx];
+    if !l1e.is_valid() || l1e.is_leaf() {
+        return false;
+    }
+    let l0 = unsafe { &mut *(l1e.ppn().addr().as_usize() as *mut PageTable) };
+    let entry = &mut l0.entries[l0_idx];
     if !entry.is_valid() || !entry.is_leaf() {
         return false;
     }
@@ -701,6 +714,17 @@ pub fn unmap_user_page(root_pa: usize, va: usize) -> bool {
     let pa = entry.ppn().addr().as_usize();
     *entry = PageTableEntry::empty();
     let _ = release_frame(pa);
+
+    if table_empty(l0) {
+        let l0_pa = l1e.ppn().addr().as_usize();
+        l1.entries[l1_idx] = PageTableEntry::empty();
+        let _ = release_frame(l0_pa);
+        if table_empty(l1) {
+            let l1_pa = l2e.ppn().addr().as_usize();
+            l2.entries[l2_idx] = PageTableEntry::empty();
+            let _ = release_frame(l1_pa);
+        }
+    }
     true
 }
 
@@ -1114,6 +1138,10 @@ fn lookup_user_pte_mut(root_pa: usize, va: usize) -> Option<&'static mut PageTab
     }
     let l0 = unsafe { &mut *(l1e.ppn().addr().as_usize() as *mut PageTable) };
     Some(&mut l0.entries[l0_idx])
+}
+
+fn table_empty(table: &PageTable) -> bool {
+    table.entries.iter().all(|entry| !entry.is_valid())
 }
 
 fn map_device_regions(root_pa: usize, regions: &[MemoryRegion]) {
