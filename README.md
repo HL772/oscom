@@ -1,18 +1,18 @@
 $$
-\\begin{array}{l}
-\\textcolor{#2cc9c9}{\\texttt{~~~~~~~~~~~~~~~~~.::::::.}} \\\\
-\\textcolor{#34d3d3}{\\texttt{~~~~~~~~~~~~~~.::::::::::::.}} \\\\
-\\textcolor{#4a91ff}{\\texttt{~~~~~~~~~~~~.::::::----::::::.}} \\\\
-\\textcolor{#6b7bff}{\\texttt{~~~~~~~~~~.::::::--------::::::.}} \\\\
-\\textcolor{#8a69ff}{\\texttt{~~~~~~~~.::::::----====----::::::.}} \\\\
-\\textcolor{#a55bff}{\\texttt{~~~~~~.::::::----========----::::::.}} \\\\
-\\textcolor{#b14cff}{\\texttt{~~~~.::::::----==========----::::::.}} \\\\
-\\textcolor{#b14cff}{\\texttt{~~~::::::----====++++====----::::::}} \\\\
-\\textcolor{#a55bff}{\\texttt{~~~'::::----====++++====----::::'}} \\\\
-\\textcolor{#8a69ff}{\\texttt{~~~~~'::----====++++====----::'}} \\\\
-\\textcolor{#4a91ff}{\\texttt{~~~~~~~'--====++++++++====--'}} \\\\
-\\textcolor{#34d3d3}{\\texttt{~~~~~~~~~~~'==++++++++=='}} \\\\
-\\textcolor{#2cc9c9}{\\texttt{~~~~~~~~~~~~~~~'===='}}
+\\begin{array}{@{}l@{}}
+\\hspace*{-3em}\\textcolor{#2cc9c9}{\\texttt{~~~~~~~~~~~~~~~~~.::::::.}} \\\\
+\\hspace*{-3em}\\textcolor{#34d3d3}{\\texttt{~~~~~~~~~~~~~~.::::::::::::.}} \\\\
+\\hspace*{-3em}\\textcolor{#4a91ff}{\\texttt{~~~~~~~~~~~~.::::::----::::::.}} \\\\
+\\hspace*{-3em}\\textcolor{#6b7bff}{\\texttt{~~~~~~~~~~.::::::--------::::::.}} \\\\
+\\hspace*{-3em}\\textcolor{#8a69ff}{\\texttt{~~~~~~~~.::::::----====----::::::.}} \\\\
+\\hspace*{-3em}\\textcolor{#a55bff}{\\texttt{~~~~~~.::::::----========----::::::.}} \\\\
+\\hspace*{-3em}\\textcolor{#b14cff}{\\texttt{~~~~.::::::----==========----::::::.}} \\\\
+\\hspace*{-3em}\\textcolor{#b14cff}{\\texttt{~~~::::::----====++++====----::::::}} \\\\
+\\hspace*{-3em}\\textcolor{#a55bff}{\\texttt{~~~'::::----====++++====----::::'}} \\\\
+\\hspace*{-3em}\\textcolor{#8a69ff}{\\texttt{~~~~~'::----====++++====----::'}} \\\\
+\\hspace*{-3em}\\textcolor{#4a91ff}{\\texttt{~~~~~~~'--====++++++++====--'}} \\\\
+\\hspace*{-3em}\\textcolor{#34d3d3}{\\texttt{~~~~~~~~~~~'==++++++++=='}} \\\\
+\\hspace*{-3em}\\textcolor{#2cc9c9}{\\texttt{~~~~~~~~~~~~~~~'===='}}
 \\end{array}
 $$
 
