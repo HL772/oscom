@@ -59,3 +59,4 @@ socket_read(fd)
 - 连通性基线：在 QEMU user-net 下保持 ARP reply 与 UDP echo 通过，作为网卡 RX 健康指标。
 - TCP 基线：内核 loopback + 用户态 tcp_echo 覆盖 connect/accept/send/recv + iovec。
 - 性能基线：iperf3 (或简化吞吐脚本) 记录吞吐与 CPU 利用率，用于回归对比。
+- 用户态应用适配路线：见 `docs/design/11_userland_apps.md`，按 syscall 覆盖矩阵推进 iperf3/redis。

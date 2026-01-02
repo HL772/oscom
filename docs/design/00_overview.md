@@ -10,6 +10,7 @@
 - Apps / Modules / Core / HAL 四层，依赖方向从上到下。
 - 模块间通过 Trait/接口解耦，避免穿透调用与全局可变状态。
 - 跨平台差异通过 platforms/ 配置与 arch/ 入口隔离。
+- 用户态应用适配路线见 `docs/design/11_userland_apps.md`。
 
 ## 关键数据结构
 - BootInfo/PlatformDesc：启动参数与平台能力描述。

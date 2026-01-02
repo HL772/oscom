@@ -218,3 +218,4 @@
 - Allow net-perf to override host sender I/O timeout via PERF_IO_TIMEOUT.
 - Increase TCP socket buffers to 16KB and shorten idle net poll interval.
 - Add MAP_FIXED support and page-table cleanup for anonymous mmap/munmap.
+- Add userland app adaptation plan document (iperf3/redis).
