@@ -27,6 +27,7 @@
 - 修正 virtio-net 现代特性头部长度为 12 字节，并对齐 TX 缓冲区，ARP Reply 已可观测。
 - 增加 getsockname/getpeername 与 SO_ERROR/setsockopt/shutdown 最小实现，补齐用户态 socket 语义。
 - 支持 SO_RCVTIMEO/SO_SNDTIMEO 并在 send/recv/accept 阻塞路径中应用超时。
+- sys_connect 在阻塞模式下遵循 SO_SNDTIMEO 超时设置。
 - 增加 sendmsg/recvmsg 最小实现，支持 iovec 聚散发送与接收。
 - 增加 sendmmsg/recvmmsg 批量收发支持，UDP 自测覆盖多包路径。
 - UDP 自测补充 SO_RCVTIMEO 超时校验，覆盖超时错误码路径。

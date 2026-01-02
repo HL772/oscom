@@ -1099,6 +1099,7 @@ fn sys_connect(fd: usize, addr: usize, len: usize) -> Result<usize, Errno> {
     let root_pa = mm::current_root_pa();
     let (socket_id, entry) = resolve_socket_entry(fd)?;
     let nonblock = (entry.flags & O_NONBLOCK) != 0;
+    let timeout_ms = entry.send_timeout_ms;
     if cfg!(feature = "user-tcp-echo") && TCP_CONNECT_LOGGED.swap(1, Ordering::Relaxed) == 0 {
         crate::println!("sys_connect: fd={} nonblock={}", fd, nonblock);
     }
@@ -1139,7 +1140,13 @@ fn sys_connect(fd: usize, addr: usize, len: usize) -> Result<usize, Errno> {
         if cfg!(feature = "user-tcp-echo") && TCP_CONNECT_LOGGED.swap(2, Ordering::Relaxed) == 1 {
             crate::println!("sys_connect: blocking");
         }
-        crate::runtime::block_current(crate::runtime::net_wait_queue());
+        if timeout_ms == 0 {
+            crate::runtime::block_current(crate::runtime::net_wait_queue());
+        } else if crate::runtime::wait_timeout_ms(crate::runtime::net_wait_queue(), timeout_ms)
+            == crate::wait::WaitResult::Timeout
+        {
+            return Err(Errno::TimedOut);
+        }
     }
 }
 
