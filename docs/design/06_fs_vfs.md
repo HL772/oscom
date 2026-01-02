@@ -23,7 +23,7 @@
 - 页缓存以页为单位缓存文件数据，写入采用 write-back + 定期刷盘。
 - 块设备通过 `BlockDevice` 抽象接入 virtio-block，BlockCache 提供固定行数的直映写回缓存，用于吸收热读写与回写脏块。
 - FAT32 完成 BPB 解析、簇链遍历与目录项解析，实现只读文件读取与根目录枚举。
-- FAT32 支持写路径更新目录项大小与扩展簇链，覆盖文件增长与多簇写入。
+- FAT32 支持写路径更新目录项大小与扩展簇链，覆盖文件增长与多簇写入；truncate 可扩展文件并零填充新增区域。
 - ext4 完成 superblock + 组描述符 + inode 表读取，支持目录查找与只读文件读取（含 extent 树与间接块读路径，空洞读取零填充以支持稀疏文件）。
 - ext4 提供最小写路径骨架（create/write/truncate），支持 direct + single-indirect blocks、inode 内 extent(depth=0) 与 extent tree(depth=1) 写入；单组 bitmap 分配，暂不支持 extent tree 深度>1 与 journaling。
 - 打开文件时支持 `O_TRUNC` 与 `ftruncate`，统一走 VFS truncate。

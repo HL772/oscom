@@ -30,6 +30,7 @@
 - VFS trait 增加 `read_dir` 目录枚举接口，`getdents64` 走统一目录遍历返回。
 - FAT32 完成目录项解析 + 簇链读取，支持 `/init` 文件读取与根目录枚举。
 - FAT32 写路径支持更新目录项大小与扩展簇链，覆盖文件增长与多簇写入。
+- FAT32 truncate 支持扩展文件并零填充新增区域，新增 host 侧 `truncate_grow_file` 自测。
 - FAT32 目录项更新支持子目录查找，新增子目录写入回读的 host 测试。
 - 使用内存块设备构建 FAT32 ramdisk 挂载为 rootfs，`/init` 通过 VFS 读取。
 - ext4 增加组描述符 + inode 表读取，目录查找与只读读路径打通。

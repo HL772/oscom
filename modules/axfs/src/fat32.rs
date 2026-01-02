@@ -1100,6 +1100,93 @@ impl VfsOps for Fat32Fs<'_> {
         Ok(written)
     }
 
+    fn truncate(&self, inode: InodeId, size: u64) -> VfsResult<()> {
+        if inode_is_dir(inode) {
+            return Err(VfsError::NotDir);
+        }
+        let mut entry = match self.find_entry_by_cluster(inode_cluster(inode))? {
+            Some(entry) => entry,
+            None => return Err(VfsError::NotFound),
+        };
+        let new_size = size as usize;
+        let mut cur_size = entry.size as usize;
+        if new_size == cur_size {
+            return Ok(());
+        }
+        let cluster_size = self.cluster_size();
+        if new_size < cur_size {
+            entry.size = new_size as u32;
+            return self.update_dir_entry(&entry, entry.cluster, entry.size);
+        }
+        if entry.cluster < 2 {
+            return Ok(());
+        }
+        let required_clusters = if new_size == 0 {
+            0
+        } else {
+            (new_size + cluster_size - 1) / cluster_size
+        };
+        let mut chain_len = 1usize;
+        let mut last_cluster = entry.cluster;
+        loop {
+            match self.next_cluster(last_cluster)? {
+                Some(next) => {
+                    last_cluster = next;
+                    chain_len += 1;
+                }
+                None => break,
+            }
+        }
+        while chain_len < required_clusters {
+            let next = self.alloc_cluster()?;
+            self.write_fat_entry(last_cluster, next)?;
+            last_cluster = next;
+            chain_len += 1;
+        }
+        if cur_size < new_size {
+            let mut remaining = new_size - cur_size;
+            let mut cluster = entry.cluster;
+            let mut skip = cur_size / cluster_size;
+            let mut in_cluster = cur_size % cluster_size;
+            while skip > 0 {
+                match self.next_cluster(cluster)? {
+                    Some(next) => cluster = next,
+                    None => return Ok(()),
+                }
+                skip -= 1;
+            }
+            let zero = [0u8; FAT_SCRATCH_SIZE];
+            while remaining > 0 {
+                let chunk = core::cmp::min(remaining, cluster_size - in_cluster);
+                let mut written = 0usize;
+                while written < chunk {
+                    let step = core::cmp::min(chunk - written, zero.len());
+                    let wrote = self.write_cluster_bytes(
+                        cluster,
+                        in_cluster + written,
+                        &zero[..step],
+                    )?;
+                    if wrote == 0 {
+                        break;
+                    }
+                    written += wrote;
+                }
+                remaining -= chunk;
+                in_cluster = 0;
+                if remaining == 0 {
+                    break;
+                }
+                match self.next_cluster(cluster)? {
+                    Some(next) => cluster = next,
+                    None => break,
+                }
+            }
+        }
+        cur_size = new_size;
+        entry.size = cur_size as u32;
+        self.update_dir_entry(&entry, entry.cluster, entry.size)
+    }
+
     fn flush(&self) -> VfsResult<()> {
         self.cache.flush()
     }
@@ -1317,5 +1404,34 @@ mod tests {
         assert_eq!(&buf[..read], payload);
         let meta = fs.metadata(inode).unwrap();
         assert_eq!(meta.size as usize, payload.len());
+    }
+
+    #[test]
+    fn truncate_grow_file() {
+        let mut data = [0u8; IMAGE_SIZE];
+        let file_data = b"init-data";
+        build_minimal_image(&mut data, "init", file_data).unwrap();
+        let dev = TestBlockDevice {
+            block_size: 512,
+            data: RefCell::new(data),
+        };
+        let fs = Fat32Fs::new(&dev).unwrap();
+        let root = fs.root().unwrap();
+        let inode = fs.lookup(root, "fatlog.txt").unwrap().unwrap();
+        fs.truncate(inode, 1024).unwrap();
+        let mut buf = [1u8; 16];
+        let read = fs.read_at(inode, 0, &mut buf).unwrap();
+        assert_eq!(read, buf.len());
+        assert!(buf.iter().all(|&b| b == 0));
+        let meta = fs.metadata(inode).unwrap();
+        assert_eq!(meta.size as usize, 1024);
+        let payload = b"hi";
+        let written = fs.write_at(inode, 0, payload).unwrap();
+        assert_eq!(written, payload.len());
+        fs.truncate(inode, 1).unwrap();
+        let mut out = [0u8; 4];
+        let read = fs.read_at(inode, 0, &mut out).unwrap();
+        assert_eq!(read, 1);
+        assert_eq!(&out[..read], &payload[..1]);
     }
 }

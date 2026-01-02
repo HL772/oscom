@@ -238,3 +238,4 @@
 - Add ext4 inode extent(depth=0) and extent tree(depth=1) write support with sparse/depth1 host tests.
 - Add direct-mapped block cache with writeback flush behavior for block devices.
 - Add sync syscall to flush mounted VFS caches.
+- Add FAT32 truncate support with zero-fill growth test.
