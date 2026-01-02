@@ -13,7 +13,7 @@
 - TCP 缓冲区上调至 16KB、idle net poll 间隔调整为 20ms，作为性能调优基线。
 - 4MiB net-perf 基线调优后耗时约 3.4s（见 net_perf_baseline_2026-01-01.md）。
 - 8MiB/16MiB net-perf 扩展基线分别约 33.4s/80.4s（见 net_perf_baseline_2026-01-01.md）。
-- 增加 mmap/munmap/mprotect 最小兼容实现（匿名私有映射），为后续 libc/应用适配打底。
+- 增加 mmap/munmap/mprotect 最小兼容实现（匿名私有映射 + munmap 回收 + mprotect 权限更新），为后续 libc/应用适配打底。
 
 ## 问题与定位
 - 尚未进入测例加固阶段，暂无问题记录。

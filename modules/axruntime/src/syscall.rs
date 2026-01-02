@@ -842,11 +842,12 @@ fn sys_mmap(
     };
     let map_len = align_up(len, mm::PAGE_SIZE);
     let end = start.checked_add(map_len).ok_or(Errno::Inval)?;
-    let mut flags_map = mm::UserMapFlags {
+    let flags_map = mm::UserMapFlags {
         read: (prot & PROT_READ) != 0,
         write: (prot & PROT_WRITE) != 0,
         exec: (prot & PROT_EXEC) != 0,
     };
+    let mut flags_map = flags_map;
     if !flags_map.read && !flags_map.write && !flags_map.exec {
         return Err(Errno::Inval);
     }
@@ -859,7 +860,7 @@ fn sys_mmap(
     }
     let mut va = start;
     while va < end {
-        if mm::translate_user_ptr(root_pa, va, 1, UserAccess::Read).is_some() {
+        if mm::user_page_mapped(root_pa, va) {
             return Err(Errno::Inval);
         }
         let frame = mm::alloc_frame().ok_or(Errno::NoMem)?;
@@ -882,7 +883,17 @@ fn sys_munmap(addr: usize, len: usize) -> Result<usize, Errno> {
     if len == 0 || (addr & (mm::PAGE_SIZE - 1)) != 0 {
         return Err(Errno::Inval);
     }
-    // TODO: track mappings and release frames; early implementation is a no-op.
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    let end = addr.checked_add(align_up(len, mm::PAGE_SIZE)).ok_or(Errno::Inval)?;
+    let mut va = addr;
+    while va < end {
+        let _ = mm::unmap_user_page(root_pa, va);
+        va = va.wrapping_add(mm::PAGE_SIZE);
+    }
+    mm::flush_tlb();
     Ok(0)
 }
 
@@ -893,7 +904,25 @@ fn sys_mprotect(addr: usize, len: usize, prot: usize) -> Result<usize, Errno> {
     if (prot & (PROT_READ | PROT_WRITE | PROT_EXEC)) == 0 {
         return Err(Errno::Inval);
     }
-    // TODO: adjust PTE permissions; keep as no-op for now.
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    let mut flags_map = mm::UserMapFlags {
+        read: (prot & PROT_READ) != 0,
+        write: (prot & PROT_WRITE) != 0,
+        exec: (prot & PROT_EXEC) != 0,
+    };
+    if flags_map.exec && !flags_map.read {
+        flags_map.read = true;
+    }
+    let end = addr.checked_add(align_up(len, mm::PAGE_SIZE)).ok_or(Errno::Inval)?;
+    let mut va = addr;
+    while va < end {
+        let _ = mm::protect_user_page(root_pa, va, flags_map);
+        va = va.wrapping_add(mm::PAGE_SIZE);
+    }
+    mm::flush_tlb();
     Ok(0)
 }
 

@@ -18,7 +18,7 @@
 - 早期实现 `execve`：通过 VFS 读取 `/init` ELF 镜像，完成最小 ELF 解析与段映射，并构建 argv/envp 栈布局。
 - execve 失败路径释放新地址空间，避免页表页与用户页泄漏。
 - 早期实现 `brk`：为每个进程维护 heap_top，按页扩展时分配并清零用户页，满足 Rust runtime 初始化需求。
-- 早期实现 `mmap/munmap/mprotect`：仅支持匿名私有映射（MAP_PRIVATE|MAP_ANON，addr=0/提示位）；mprotect/munmap 为 no-op 占位，用于提升用户态兼容性。
+- 早期实现 `mmap/munmap/mprotect`：支持匿名私有映射（MAP_PRIVATE|MAP_ANON，addr=0/提示位），munmap 回收页帧，mprotect 更新 PTE 权限（COW 页保持只读），用于提升用户态兼容性。
 - 早期实现 `wait4/waitpid`：使用最小进程表与父进程等待队列，支持 WNOHANG 与退出码回收。
 - waitpid 采用循环阻塞重试，避免递归等待带来的栈增长。
 - 早期实现 `clone`：使用 fork 语义创建子进程，支持 CLONE_PARENT_SETTID/CLONE_CHILD_SETTID/CLONE_CHILD_CLEARTID；其余 flags 返回 EINVAL；返回子 PID 并结合 CoW 页表。

@@ -681,6 +681,59 @@ pub fn map_user_page(root_pa: usize, va: usize, pa: usize, flags: UserMapFlags) 
     map_page(root_pa, va, pa, pte_flags)
 }
 
+pub fn user_page_mapped(root_pa: usize, va: usize) -> bool {
+    let Some(entry) = lookup_user_pte(root_pa, va) else {
+        return false;
+    };
+    entry.is_valid() && entry.is_leaf() && (entry.flags() & PTE_U) != 0
+}
+
+pub fn unmap_user_page(root_pa: usize, va: usize) -> bool {
+    let Some(entry) = lookup_user_pte_mut(root_pa, va) else {
+        return false;
+    };
+    if !entry.is_valid() || !entry.is_leaf() {
+        return false;
+    }
+    if (entry.flags() & PTE_U) == 0 {
+        return false;
+    }
+    let pa = entry.ppn().addr().as_usize();
+    *entry = PageTableEntry::empty();
+    let _ = release_frame(pa);
+    true
+}
+
+pub fn protect_user_page(root_pa: usize, va: usize, flags: UserMapFlags) -> bool {
+    let Some(entry) = lookup_user_pte_mut(root_pa, va) else {
+        return false;
+    };
+    if !entry.is_valid() || !entry.is_leaf() {
+        return false;
+    }
+    if (entry.flags() & PTE_U) == 0 {
+        return false;
+    }
+    let mut pte_flags = PTE_V | PTE_U | PTE_A;
+    if flags.read {
+        pte_flags |= PTE_R;
+    }
+    if flags.write {
+        pte_flags |= PTE_W | PTE_D;
+    }
+    if flags.exec {
+        pte_flags |= PTE_X;
+    }
+    let old_flags = entry.flags();
+    if (old_flags & PTE_COW) != 0 {
+        pte_flags |= PTE_COW;
+        pte_flags &= !PTE_W;
+        pte_flags &= !PTE_D;
+    }
+    *entry = PageTableEntry::new(entry.ppn(), pte_flags);
+    true
+}
+
 pub fn alloc_user_root() -> Option<usize> {
     let kernel_root_pa = kernel_root_pa();
     if kernel_root_pa == 0 {
@@ -1031,6 +1084,36 @@ fn map_page(root_pa: usize, va: usize, pa: usize, flags: usize) -> bool {
     }
     *entry = PageTableEntry::new(PhysPageNum::new(pa >> PAGE_SHIFT), flags);
     true
+}
+
+fn lookup_user_pte(root_pa: usize, va: usize) -> Option<PageTableEntry> {
+    let entry = lookup_user_pte_mut(root_pa, va)?;
+    Some(*entry)
+}
+
+fn lookup_user_pte_mut(root_pa: usize, va: usize) -> Option<&'static mut PageTableEntry> {
+    if root_pa == 0 {
+        return None;
+    }
+    let l2 = unsafe { &mut *(root_pa as *mut PageTable) };
+    let [l2_idx, l1_idx, l0_idx] = VirtAddr::new(va).sv39_indexes();
+    let l2e = l2.entries[l2_idx];
+    if !l2e.is_valid() {
+        return None;
+    }
+    if l2e.is_leaf() {
+        return Some(&mut l2.entries[l2_idx]);
+    }
+    let l1 = unsafe { &mut *(l2e.ppn().addr().as_usize() as *mut PageTable) };
+    let l1e = l1.entries[l1_idx];
+    if !l1e.is_valid() {
+        return None;
+    }
+    if l1e.is_leaf() {
+        return Some(&mut l1.entries[l1_idx]);
+    }
+    let l0 = unsafe { &mut *(l1e.ppn().addr().as_usize() as *mut PageTable) };
+    Some(&mut l0.entries[l0_idx])
 }
 
 fn map_device_regions(root_pa: usize, regions: &[MemoryRegion]) {
