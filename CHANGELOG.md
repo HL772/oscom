@@ -216,3 +216,4 @@
 - Extend tcp_echo to validate connect failure via SO_ERROR.
 - Allow net-perf to override QEMU timeout via PERF_QEMU_TIMEOUT.
 - Allow net-perf to override host sender I/O timeout via PERF_IO_TIMEOUT.
+- Increase TCP socket buffers to 16KB and shorten idle net poll interval.

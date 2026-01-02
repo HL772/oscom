@@ -563,7 +563,7 @@ pub fn wake_all(queue: &TaskWaitQueue) -> usize {
 }
 
 pub fn idle_loop() -> ! {
-    const NET_POLL_INTERVAL_MS: u64 = 50;
+    const NET_POLL_INTERVAL_MS: u64 = 20;
     let mut last_net_poll_ms = 0u64;
     loop {
         let now_ms = crate::time::uptime_ms();

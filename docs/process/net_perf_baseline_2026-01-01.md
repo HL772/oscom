@@ -50,6 +50,7 @@ make test-net-perf ARCH=riscv64 PLATFORM=qemu
 - 64K 基线（PERF_QEMU_TIMEOUT=20）：rx_bytes=65536，sent_bytes=65536，duration_ms=1。
 - 1MiB 扩展（PERF_QEMU_TIMEOUT=30）：rx_bytes=1048576，sent_bytes=1048576，duration_ms=245。
 - 4MiB 扩展（PERF_QEMU_TIMEOUT=60 + PERF_IO_TIMEOUT=20）：rx_bytes=4194304，sent_bytes=4194304，duration_ms=11635。
+- 4MiB 调优（TCP_BUF_LEN=16KB + poll 20ms）：rx_bytes=4194304，sent_bytes=4194304，duration_ms=3444。
 - 日志路径：
   - perf.log：build/net-perf/perf.log
   - qemu-smoke.log：build/net-perf/qemu-smoke.log
