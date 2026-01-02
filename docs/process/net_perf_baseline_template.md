@@ -33,6 +33,7 @@ PERF_EXPECT="net-bench: ready" \
 PERF_SEND_BYTES=65536 \
 PERF_HOST_PORT=auto \
 PERF_READY_TIMEOUT=5 \
+PERF_QEMU_TIMEOUT=20 \
 make test-net-perf ARCH=riscv64 PLATFORM=qemu
 ```
 
@@ -41,9 +42,10 @@ make test-net-perf ARCH=riscv64 PLATFORM=qemu
 - `scripts/net_perf_baseline.sh` 会传递 `INIT_ELF_SKIP_BUILD=1`，避免 `mkfs_ext4.sh` 覆盖自定义 `/init`。
 - `scripts/net_perf_send.py` 会通过 hostfwd 连接 `PERF_HOST_PORT` 并发送 `PERF_SEND_BYTES`。
 - 当前默认 `PERF_SEND_BYTES=65536`，用于覆盖长流量窗口更新路径；可手动调大继续验证吞吐上限。
-- 若使用 1MiB 及以上负载，请增大 TIMEOUT（例如 `TIMEOUT=20`）。
+- 若使用 1MiB 及以上负载，请增大 `PERF_QEMU_TIMEOUT`（例如 20）。
 - `PERF_HOST_PORT=auto` 会自动选择一个可用端口，避免 hostfwd 端口冲突。
 - `PERF_READY_TIMEOUT` 控制等待 `net-bench: ready` 的上限（秒）。
+- `PERF_QEMU_TIMEOUT` 传递给 QEMU 的整体超时（秒）。
 - `net_bench` 期望收到 8 字节大端长度头（由 `net_perf_send.py` 自动发送）。
 
 ## 结果
