@@ -417,6 +417,16 @@ make test-net-perf ARCH=riscv64 PLATFORM=qemu \
 
 ---
 
+## 参考项目
+
+以下项目为架构与工程实践的参考来源（非代码直接拷贝）：
+- ArceOS（Rust 组件化 OS，模块划分与接口设计参考）
+- Unikraft（unikernel 构建理念与最小化路径参考）
+- Linux Kernel（syscall/errno 语义与接口行为参考）
+- smoltcp（嵌入式网络栈实现风格参考）
+
+---
+
 ## 提交规范与协作约定
 
 - Commit message：Angular 规范（例如 `feat(runtime): ...`）
