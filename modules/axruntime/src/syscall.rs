@@ -100,6 +100,16 @@ fn dispatch(tf: &mut TrapFrame, ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_EXECVE => sys_execve(tf, ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_CLONE => sys_clone(tf, ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3], ctx.args[4]),
         SYS_BRK => sys_brk(ctx.args[0]),
+        SYS_MMAP => sys_mmap(
+            ctx.args[0],
+            ctx.args[1],
+            ctx.args[2],
+            ctx.args[3],
+            ctx.args[4],
+            ctx.args[5],
+        ),
+        SYS_MUNMAP => sys_munmap(ctx.args[0], ctx.args[1]),
+        SYS_MPROTECT => sys_mprotect(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_READ => sys_read(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_WRITE => sys_write(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_READV => sys_readv(ctx.args[0], ctx.args[1], ctx.args[2]),
@@ -205,6 +215,9 @@ const SYS_EXIT_GROUP: usize = 94;
 const SYS_CLONE: usize = 220;
 const SYS_EXECVE: usize = 221;
 const SYS_BRK: usize = 214;
+const SYS_MUNMAP: usize = 215;
+const SYS_MMAP: usize = 222;
+const SYS_MPROTECT: usize = 226;
 const SYS_READ: usize = 63;
 const SYS_WRITE: usize = 64;
 const SYS_READV: usize = 65;
@@ -318,6 +331,14 @@ const CLOCK_MONOTONIC_COARSE: usize = 6;
 const CLOCK_MONOTONIC_RAW: usize = 4;
 const CLOCK_BOOTTIME: usize = 7;
 const IOV_MAX: usize = 1024;
+
+const PROT_READ: usize = 0x1;
+const PROT_WRITE: usize = 0x2;
+const PROT_EXEC: usize = 0x4;
+const MAP_SHARED: usize = 0x01;
+const MAP_PRIVATE: usize = 0x02;
+const MAP_FIXED: usize = 0x10;
+const MAP_ANON: usize = 0x20;
 const S_IFCHR: u32 = 0o020000;
 const S_IFBLK: u32 = 0o060000;
 const S_IFDIR: u32 = 0o040000;
@@ -790,6 +811,90 @@ fn sys_brk(addr: usize) -> Result<usize, Errno> {
     }
     crate::task::set_heap_top(task_id, new_brk);
     Ok(new_brk)
+}
+
+fn sys_mmap(
+    addr: usize,
+    len: usize,
+    prot: usize,
+    flags: usize,
+    fd: usize,
+    offset: usize,
+) -> Result<usize, Errno> {
+    if len == 0 {
+        return Err(Errno::Inval);
+    }
+    if (flags & MAP_FIXED) != 0 {
+        return Err(Errno::Inval);
+    }
+    if (flags & MAP_ANON) == 0 || (flags & MAP_PRIVATE) == 0 || (flags & MAP_SHARED) != 0 {
+        return Err(Errno::Inval);
+    }
+    if fd != usize::MAX || offset != 0 {
+        return Err(Errno::Inval);
+    }
+    let task_id = crate::runtime::current_task_id().ok_or(Errno::Fault)?;
+    let heap_top = crate::task::heap_top(task_id).ok_or(Errno::Fault)?;
+    let start = if addr != 0 {
+        align_up(addr, mm::PAGE_SIZE)
+    } else {
+        align_up(heap_top, mm::PAGE_SIZE)
+    };
+    let map_len = align_up(len, mm::PAGE_SIZE);
+    let end = start.checked_add(map_len).ok_or(Errno::Inval)?;
+    let mut flags_map = mm::UserMapFlags {
+        read: (prot & PROT_READ) != 0,
+        write: (prot & PROT_WRITE) != 0,
+        exec: (prot & PROT_EXEC) != 0,
+    };
+    if !flags_map.read && !flags_map.write && !flags_map.exec {
+        return Err(Errno::Inval);
+    }
+    if flags_map.exec && !flags_map.read {
+        flags_map.read = true;
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    let mut va = start;
+    while va < end {
+        if mm::translate_user_ptr(root_pa, va, 1, UserAccess::Read).is_some() {
+            return Err(Errno::Inval);
+        }
+        let frame = mm::alloc_frame().ok_or(Errno::NoMem)?;
+        let pa = frame.addr().as_usize();
+        unsafe {
+            core::ptr::write_bytes(pa as *mut u8, 0, mm::PAGE_SIZE);
+        }
+        if !mm::map_user_page(root_pa, va, pa, flags_map) {
+            return Err(Errno::NoMem);
+        }
+        va = va.wrapping_add(mm::PAGE_SIZE);
+    }
+    if end > heap_top {
+        let _ = crate::task::set_heap_top(task_id, end);
+    }
+    Ok(start)
+}
+
+fn sys_munmap(addr: usize, len: usize) -> Result<usize, Errno> {
+    if len == 0 || (addr & (mm::PAGE_SIZE - 1)) != 0 {
+        return Err(Errno::Inval);
+    }
+    // TODO: track mappings and release frames; early implementation is a no-op.
+    Ok(0)
+}
+
+fn sys_mprotect(addr: usize, len: usize, prot: usize) -> Result<usize, Errno> {
+    if len == 0 || (addr & (mm::PAGE_SIZE - 1)) != 0 {
+        return Err(Errno::Inval);
+    }
+    if (prot & (PROT_READ | PROT_WRITE | PROT_EXEC)) == 0 {
+        return Err(Errno::Inval);
+    }
+    // TODO: adjust PTE permissions; keep as no-op for now.
+    Ok(0)
 }
 
 const EXECVE_IMAGE_MAX: usize = 0x100000;
