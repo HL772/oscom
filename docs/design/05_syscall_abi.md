@@ -39,6 +39,7 @@
 - 早期实现 `poll/ppoll`，支持 pipe 可读/可写事件与 stdin 就绪检测、单 fd 阻塞等待；多 fd 采用 sleep-retry 轮询重扫，pipe 读写/关闭会唤醒等待者；`nfds=0` 作为睡眠路径，占位忽略 signal mask。
 - 早期实现 `socket/bind/connect/listen/accept/sendto/recvfrom` 骨架：socket fd 纳入 fd 表并映射到 axnet socket 句柄；阻塞模式下通过 net 等待队列休眠；`connect` 非阻塞返回 EINPROGRESS，重复 connect 返回 EALREADY，失败映射 ECONNREFUSED/ENETUNREACH；其余非阻塞返回 EAGAIN；`MSG_DONTWAIT` 在 send/recv 系列路径生效。
 - socket 支持 `SOCK_NONBLOCK`/`SOCK_CLOEXEC` 标志位解析，fd 表记录对应状态。
+- accept4 支持 `SOCK_NONBLOCK`/`SOCK_CLOEXEC` 标志位。
 - 早期实现 `uname`，返回最小可用的系统信息占位。
 - 早期实现 `getpid/getppid/getuid/geteuid/getgid/getegid/getresuid/getresgid` 等身份信息占位。
 - 早期实现 `gettid` 与 `sched_yield`，任务上下文可用时返回 TaskId+1。

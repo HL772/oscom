@@ -34,6 +34,7 @@
 - sendto/recvfrom/sendmsg/recvmsg 支持 MSG_DONTWAIT，单次调用可覆盖阻塞语义。
 - udp_echo 覆盖 MSG_DONTWAIT 返回 EAGAIN。
 - socket 支持 SOCK_NONBLOCK/SOCK_CLOEXEC 标志位解析并落入 fd 状态。
+- accept4 支持 SOCK_NONBLOCK/SOCK_CLOEXEC 标志位。
 - tcp_echo 覆盖 SOCK_NONBLOCK 与 SOCK_CLOEXEC 的 fd 标志回读。
 - 增加 sendmsg/recvmsg 最小实现，支持 iovec 聚散发送与接收。
 - 增加 sendmmsg/recvmmsg 批量收发支持，UDP 自测覆盖多包路径。

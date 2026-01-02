@@ -233,6 +233,7 @@ fn dispatch(tf: &mut TrapFrame, ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_SHUTDOWN => sys_shutdown(ctx.args[0], ctx.args[1]),
         SYS_LISTEN => sys_listen(ctx.args[0], ctx.args[1]),
         SYS_ACCEPT => sys_accept(ctx.args[0], ctx.args[1], ctx.args[2]),
+        SYS_ACCEPT4 => sys_accept4(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_SENDTO => sys_sendto(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3], ctx.args[4], ctx.args[5]),
         SYS_RECVFROM => sys_recvfrom(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3], ctx.args[4], ctx.args[5]),
         SYS_SYNC => sys_sync(),
@@ -323,6 +324,7 @@ const SYS_GETSOCKNAME: usize = 204;
 const SYS_GETPEERNAME: usize = 205;
 const SYS_LISTEN: usize = 201;
 const SYS_ACCEPT: usize = 202;
+const SYS_ACCEPT4: usize = 242;
 const SYS_CONNECT: usize = 203;
 const SYS_SETSOCKOPT: usize = 208;
 const SYS_GETSOCKOPT: usize = 209;
@@ -2123,6 +2125,20 @@ fn sys_accept(fd: usize, addr: usize, addrlen: usize) -> Result<usize, Errno> {
             Err(err) => return Err(map_net_err(err)),
         }
     }
+}
+
+fn sys_accept4(fd: usize, addr: usize, addrlen: usize, flags: usize) -> Result<usize, Errno> {
+    if flags & !(SOCK_NONBLOCK | SOCK_CLOEXEC) != 0 {
+        return Err(Errno::Inval);
+    }
+    let newfd = sys_accept(fd, addr, addrlen)?;
+    if (flags & SOCK_NONBLOCK) != 0 {
+        set_fd_flags(newfd, O_NONBLOCK)?;
+    }
+    if (flags & SOCK_CLOEXEC) != 0 {
+        set_fd_cloexec(newfd, true)?;
+    }
+    Ok(newfd)
 }
 
 fn sys_sendto(
