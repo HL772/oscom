@@ -236,3 +236,4 @@
 - Add userland staging script for iperf3/redis rootfs injection.
 - Add iperf3/redis cross-build helper scripts for static binaries.
 - Add ext4 inode extent(depth=0) and extent tree(depth=1) write support with sparse/depth1 host tests.
+- Add direct-mapped block cache with writeback flush behavior for block devices.
