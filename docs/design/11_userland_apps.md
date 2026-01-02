@@ -15,6 +15,20 @@
 - DNS/配置依赖：优先使用 IP 直连，避免依赖 `/etc/resolv.conf` 与复杂 NSS。
 - 网络测试：iperf3 作为吞吐基线，redis 作为请求/响应基线（get/set、pipeline）。
 
+## 覆盖矩阵（待填充）
+| syscall | iperf3 | redis | 备注 |
+| --- | --- | --- | --- |
+| read/write/open/close | - | - | 基础 I/O |
+| socket/connect/bind/listen/accept | - | - | 网络核心路径 |
+| mmap/munmap/mprotect | - | - | 内存映射 |
+| epoll/eventfd/timerfd | - | - | 事件与定时器 |
+| futex/clone | - | - | 线程/同步 |
+| clock_gettime/nanosleep | - | - | 时间 |
+
+## 采集状态
+- 当前主机未检测到 `strace`/`iperf3`/`redis-server`，需要安装后再生成覆盖矩阵。
+- 采集脚本：`scripts/collect_syscall_matrix.sh`。
+
 ## 关键数据结构
 - `SyscallCoverageMatrix`：记录 syscall -> 状态/风险/测试点。
 - `AppProfile`：每个应用的构建方式、依赖与运行参数。

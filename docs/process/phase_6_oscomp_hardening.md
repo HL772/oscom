@@ -15,6 +15,7 @@
 - 8MiB/16MiB net-perf 扩展基线分别约 33.4s/80.4s（见 net_perf_baseline_2026-01-01.md）。
 - 增加 mmap/munmap/mprotect 最小兼容实现（匿名私有映射 + MAP_FIXED + munmap 回收与空表清理 + mprotect 权限更新），为后续 libc/应用适配打底。
 - 输出用户态应用适配路线草案（iperf3/redis），建立 syscall 覆盖矩阵计划。
+- 新增 `scripts/collect_syscall_matrix.sh`，用于 host 侧采集 iperf3/redis syscall 覆盖清单；当前环境缺少 strace/iperf3/redis-server，待补齐后执行。
 
 ## 问题与定位
 - 尚未进入测例加固阶段，暂无问题记录。
