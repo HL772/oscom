@@ -27,8 +27,8 @@
 | clock_gettime/nanosleep | - | - | 需要运行态采集 |
 | access | ✓ | ✓ | 已实现（access→faccessat） |
 | pread64 | ✓ | ✓ | 已实现（仅 VFS 普通文件，非 seekable 返回 ESPIPE） |
-| rseq | ✓ | ✓ | 缺失（可暂时返回 ENOSYS） |
-| arch_prctl | ✓ | ✓ | riscv 可返回 ENOSYS |
+| rseq | ✓ | ✓ | 已占位，返回 ENOSYS |
+| arch_prctl | ✓ | ✓ | riscv 无该 syscall，保持 ENOSYS |
 | madvise | - | ✓ | 已实现占位（返回 0） |
 | readlink | - | ✓ | 已实现（readlink→readlinkat，symlink 仍未支持） |
 | prlimit64 | ✓ | ✓ | 已支持 |
@@ -48,7 +48,7 @@
 
 ### 缺口分析（初步）
 - 已补齐：access/pread64/readlink/madvise（详见 syscall 覆盖矩阵）。
-- 可暂时返回 ENOSYS：arch_prctl（riscv）、rseq（若应用未启用线程/注册）。
+- 可暂时返回 ENOSYS：arch_prctl（riscv 无该 syscall）、rseq（若应用未启用线程/注册）。
 - 运行态后续补齐：epoll/eventfd/timerfd、socket 路径与时间相关 syscall。
 
 ## 关键数据结构

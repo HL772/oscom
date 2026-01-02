@@ -111,6 +111,7 @@ fn dispatch(tf: &mut TrapFrame, ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_MUNMAP => sys_munmap(ctx.args[0], ctx.args[1]),
         SYS_MPROTECT => sys_mprotect(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_MADVISE => sys_madvise(ctx.args[0], ctx.args[1], ctx.args[2]),
+        SYS_RSEQ => sys_rseq(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_READ => sys_read(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_PREAD64 => sys_pread64(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_WRITE => sys_write(ctx.args[0], ctx.args[1], ctx.args[2]),
@@ -223,6 +224,7 @@ const SYS_MUNMAP: usize = 215;
 const SYS_MMAP: usize = 222;
 const SYS_MPROTECT: usize = 226;
 const SYS_MADVISE: usize = 233;
+const SYS_RSEQ: usize = 293;
 const SYS_READ: usize = 63;
 const SYS_PREAD64: usize = 67;
 const SYS_WRITE: usize = 64;
@@ -956,6 +958,10 @@ fn sys_madvise(_addr: usize, len: usize, _advice: usize) -> Result<usize, Errno>
         return Err(Errno::Fault);
     }
     Ok(0)
+}
+
+fn sys_rseq(_rseq: usize, _rseq_len: usize, _flags: usize, _sig: usize) -> Result<usize, Errno> {
+    Err(Errno::NoSys)
 }
 
 const EXECVE_IMAGE_MAX: usize = 0x100000;
