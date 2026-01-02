@@ -19,6 +19,7 @@
 - 已完成 host 侧 help/version 路径 syscall 采集，补齐 access/pread64/readlink/madvise 占位，rseq/arch_prctl 维持 ENOSYS 兼容。
 - 增加 epoll/eventfd/timerfd 最小语义支持，方便后续用户态事件循环与定时器适配。
 - 增加 `scripts/stage_userland_apps.sh`，用于将本地静态构建的 iperf3/redis 写入 rootfs 目录。
+- 增加 `scripts/build_iperf3.sh`/`scripts/build_redis.sh` 交叉编译脚本，便于后续应用基准集成。
 
 ## 问题与定位
 - 尚未进入测例加固阶段，暂无问题记录。

@@ -15,6 +15,7 @@
 - DNS/配置依赖：优先使用 IP 直连，避免依赖 `/etc/resolv.conf` 与复杂 NSS。
 - 网络测试：iperf3 作为吞吐基线，redis 作为请求/响应基线（get/set、pipeline）。
 - staging：`scripts/stage_userland_apps.sh` 支持将已构建的 iperf3/redis 二进制写入 rootfs 目录（通过 `EXTRA_ROOTFS_DIR` 进入 ext4 镜像）。
+- 构建脚本：`scripts/build_iperf3.sh`/`scripts/build_redis.sh` 支持本地静态交叉编译（需要已下载的源码目录与 riscv64 交叉工具链）。
 
 ## 覆盖矩阵（初稿）
 | syscall | iperf3 | redis | 备注 |

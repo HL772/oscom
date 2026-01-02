@@ -225,3 +225,4 @@
 - Add rseq ENOSYS stub and document arch_prctl as unsupported on riscv64.
 - Add minimal eventfd/timerfd/epoll syscall support for userland event loops.
 - Add userland staging script for iperf3/redis rootfs injection.
+- Add iperf3/redis cross-build helper scripts for static binaries.
