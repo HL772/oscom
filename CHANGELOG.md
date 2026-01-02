@@ -53,6 +53,7 @@
 - Add poll/ppoll stubs that report pipe readiness, block on a single pipe fd, and use a sleep-retry loop for multi-fd waits.
 - Make ppoll sleep-retry fall back to timebase waiting when scheduler sleep is unavailable.
 - Add console input stash and polling readiness for stdin; USER_TEST now covers pipe poll readiness.
+- Add lseek support for VFS handles and honor O_APPEND in VFS writes; expose O_APPEND via fcntl.
 - Enable timer-driven preemption by returning running tasks to the run queue and scheduling from idle.
 - Allow user tasks to be preempted by timer ticks and resume via trapframe-backed paths.
 - Add execve loader for `/init` built-in ELF image with argv/envp stack layout.

@@ -392,6 +392,7 @@ const O_NONBLOCK: usize = 0x4000;
 const O_CREAT: usize = 0x40;
 const O_EXCL: usize = 0x80;
 const O_TRUNC: usize = 0x200;
+const O_APPEND: usize = 0x400;
 const O_RDONLY: usize = 0;
 const O_WRONLY: usize = 1;
 const O_RDWR: usize = 2;
@@ -426,6 +427,9 @@ const F_GETFD: usize = 1;
 const F_SETFD: usize = 2;
 const F_GETFL: usize = 3;
 const F_SETFL: usize = 4;
+const SEEK_SET: usize = 0;
+const SEEK_CUR: usize = 1;
+const SEEK_END: usize = 2;
 const EPOLL_CTL_ADD: usize = 1;
 const EPOLL_CTL_DEL: usize = 2;
 const EPOLL_CTL_MOD: usize = 3;
@@ -2354,7 +2358,7 @@ fn sys_openat(_dirfd: usize, pathname: usize, flags: usize, _mode: usize) -> Res
         return Err(Errno::Fault);
     }
     maybe_ext4_write_smoke();
-    let status_flags = flags & (O_ACCMODE | O_NONBLOCK | O_CLOEXEC);
+    let status_flags = flags & (O_ACCMODE | O_NONBLOCK | O_CLOEXEC | O_APPEND);
     let accmode = flags & O_ACCMODE;
     let create_mode = (_mode as u16) & !current_umask();
     with_mounts(|mounts| {
@@ -3490,11 +3494,32 @@ fn sys_dup3(oldfd: usize, newfd: usize, flags: usize) -> Result<usize, Errno> {
     Ok(newfd)
 }
 
-fn sys_lseek(fd: usize, _offset: usize, _whence: usize) -> Result<usize, Errno> {
-    if resolve_fd(fd).is_some() {
-        return Err(Errno::Pipe);
+fn sys_lseek(fd: usize, offset: usize, whence: usize) -> Result<usize, Errno> {
+    let entry = resolve_fd(fd).ok_or(Errno::Badf)?;
+    let offset = offset as isize;
+    if offset < 0 {
+        return Err(Errno::Inval);
     }
-    Err(Errno::Badf)
+    let offset = offset as usize;
+    match entry.kind {
+        FdKind::Vfs(handle) => {
+            let base = match whence {
+                SEEK_SET => 0,
+                SEEK_CUR => fd_offset(fd).ok_or(Errno::Badf)?,
+                SEEK_END => with_mounts(|mounts| {
+                    let fs = mounts.fs_for(handle.mount).ok_or(Errno::NoEnt)?;
+                    let (_, size) = vfs_meta_for(fs, handle.inode)?;
+                    Ok(size)
+                })?,
+                _ => return Err(Errno::Inval),
+            };
+            let new_offset = base.checked_add(offset).ok_or(Errno::Inval)?;
+            set_fd_offset(fd, new_offset);
+            Ok(new_offset)
+        }
+        FdKind::Empty => Err(Errno::Badf),
+        _ => Err(Errno::Pipe),
+    }
 }
 
 fn sys_set_robust_list(_head: usize, _len: usize) -> Result<usize, Errno> {
@@ -3584,7 +3609,7 @@ fn sys_fcntl(fd: usize, cmd: usize, arg: usize) -> Result<usize, Errno> {
                 FdKind::Vfs(_) => entry.flags & O_ACCMODE,
                 _ => O_RDWR,
             };
-            Ok(mode | (entry.flags & O_NONBLOCK))
+            Ok(mode | (entry.flags & (O_NONBLOCK | O_APPEND)))
         }
         F_SETFL => {
             set_fd_flags(fd, arg)?;
@@ -4499,7 +4524,7 @@ fn set_stdio_redirect(fd: usize, entry: FdEntry) -> Result<usize, Errno> {
 }
 
 fn set_fd_flags(fd: usize, flags: usize) -> Result<(), Errno> {
-    let flags = flags & O_NONBLOCK;
+    let flags = flags & (O_NONBLOCK | O_APPEND);
     let proc_idx = current_proc_index().ok_or(Errno::Badf)?;
     if stdio_kind(fd).is_some() {
         // SAFETY: 单核早期阶段访问重定向表/标志。
@@ -5773,6 +5798,16 @@ fn write_to_entry(fd: usize, entry: FdEntry, root_pa: usize, buf: usize, len: us
         FdKind::Vfs(handle) => {
             if handle.file_type == FileType::Dir {
                 return Err(Errno::IsDir);
+            }
+            if (entry.flags & O_APPEND) != 0 {
+                return with_mounts(|mounts| {
+                    let fs = mounts.fs_for(handle.mount).ok_or(Errno::NoEnt)?;
+                    let (_, size) = vfs_meta_for(fs, handle.inode)?;
+                    let written = write_vfs_at(root_pa, fs, handle.inode, size, buf, len)?;
+                    let new_offset = size.checked_add(written).ok_or(Errno::Inval)?;
+                    set_fd_offset(fd, new_offset);
+                    Ok(written)
+                });
             }
             write_vfs_fd(fd, root_pa, handle.mount, handle.inode, buf, len)
         }

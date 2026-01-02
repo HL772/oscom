@@ -27,6 +27,7 @@
 - ext4 完成 superblock + 组描述符 + inode 表读取，支持目录查找与只读文件读取（含 extent 树与间接块读路径，空洞读取零填充以支持稀疏文件）。
 - ext4 提供最小写路径骨架（create/write/truncate），支持 direct + single-indirect blocks 与单组 bitmap 分配，不含 journaling/extent 扩展。
 - 打开文件时支持 `O_TRUNC` 与 `ftruncate`，统一走 VFS truncate。
+- 写入路径支持 `O_APPEND` 追加语义，`lseek` 可调整 VFS 句柄偏移。
 - 权限与时间戳语义对齐 Linux，错误码通过 errno 映射返回。
 
 ## 关键数据结构
