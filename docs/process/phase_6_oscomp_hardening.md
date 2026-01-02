@@ -9,6 +9,7 @@
 - 扩展自研测例覆盖网络路径：`net`/`net-loopback`/`tcp-echo`/`udp-echo` 用例纳入自测清单。
 - 新增 `fs-smoke` 自研用例，覆盖 lseek/pread64/pwrite64/ftruncate/O_APPEND 文件偏移语义。
 - 运行 `make test-oscomp ARCH=riscv64 PLATFORM=qemu`，覆盖新增 fs-smoke 用例并通过。
+- 运行 `scripts/collect_syscall_matrix.sh` 生成 iperf3/redis help/version 路径 syscall 采集日志。
 - tcp-echo 增加连接失败路径校验（SO_ERROR 映射），提升连接错误码一致性覆盖。
 - net-perf 基线脚本支持 `PERF_QEMU_TIMEOUT`，避免大流量下 QEMU 超时截断。
 - net-perf 增加 `PERF_IO_TIMEOUT` 发送端超时参数，并补充 1MiB/4MiB 基线记录。
