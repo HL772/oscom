@@ -10,7 +10,7 @@
 - 测试环境记录包含工具链版本、QEMU 版本与硬件信息。
 - QEMU 冒烟测试以启动 banner 为通过条件，允许超时退出以适配早期内核。
 - QEMU 脚本固定 `virtio-mmio.force-legacy=false`，确保使用现代 virtio-mmio 接口。
-- 自研测例通过 `scripts/test_oscomp.sh` 统一驱动，读取 `tests/self/` 的用例列表，日志输出到 `build/selftest/`，需要时通过 `EXPECT_INIT=1` 检查 `/init` execve banner；ramdisk 用例通过 `EXPECT_FAT32=1` 检查 FAT32 写入回读日志；ext4 用例通过 `EXPECT_EXT4=1` 检查 `vfs: mounted ext4 rootfs` 及用户态 `/etc/issue` 读取日志，必要时启用 `EXT4_WRITE_TEST=1` 并检查 `ext4: write ok`；ext4-init 用例通过 host 侧 VFS 读取验证 `/init` ELF 头、根目录与 `/etc` 的 read_dir offset 枚举、`/etc/issue` 与 `/etc/large` 多块读取；net/net-loopback/tcp-echo 用例通过 `EXPECT_NET`/`EXPECT_NET_LOOPBACK`/`EXPECT_TCP_ECHO` 校验 ARP reply、TCP loopback 与用户态 echo 日志。
+- 自研测例通过 `scripts/test_oscomp.sh` 统一驱动，读取 `tests/self/` 的用例列表，日志输出到 `build/selftest/`，需要时通过 `EXPECT_INIT=1` 检查 `/init` execve banner；ramdisk 用例通过 `EXPECT_FAT32=1` 检查 FAT32 写入回读日志；ext4 用例通过 `EXPECT_EXT4=1` 检查 `vfs: mounted ext4 rootfs` 及用户态 `/etc/issue` 读取日志，必要时启用 `EXT4_WRITE_TEST=1` 并检查 `ext4: write ok`；ext4-init 用例通过 host 侧 VFS 读取验证 `/init` ELF 头、根目录与 `/etc` 的 read_dir offset 枚举、`/etc/issue` 与 `/etc/large` 多块读取；net/net-loopback/tcp-echo/udp-echo 用例通过 `EXPECT_NET`/`EXPECT_NET_LOOPBACK`/`EXPECT_TCP_ECHO`/`EXPECT_UDP_ECHO` 校验 ARP reply、TCP loopback 与用户态 echo 日志；fs-smoke 用例通过 `EXPECT_FS_SMOKE` 校验 lseek/pwrite64/O_APPEND 语义。
 
 ## 关键数据结构
 - TestConfig：测试目标与参数集合（ARCH/PLATFORM/FS）。
@@ -36,7 +36,8 @@ make test-* -> scripts/test_*.sh
 - NET=1 EXPECT_NET=1 make test-qemu-smoke (启用 virtio-net 并确认 ready 日志)
 - NET=1 TCP_ECHO_TEST=1 EXPECT_TCP_ECHO=1 make test-qemu-smoke (用户态 TCP echo 覆盖 socket syscall 路径)
 - NET=1 UDP_ECHO_TEST=1 EXPECT_UDP_ECHO=1 make test-qemu-smoke (用户态 UDP echo 覆盖 datagram syscall 路径)
-- make test-oscomp（运行 tests/self 用例：ramdisk + ext4 + ext4-init + net + net-loopback + tcp-echo + udp-echo）
+- FS_SMOKE_TEST=1 EXPECT_FS_SMOKE=1 make test-qemu-smoke（用户态 fs-smoke 覆盖 lseek/pwrite64/O_APPEND）
+- make test-oscomp（运行 tests/self 用例：ramdisk + ext4 + ext4-init + net + net-loopback + tcp-echo + udp-echo + fs-smoke）
 - make test-net-baseline（顺序执行 net/net-loopback/tcp-echo/udp-echo 并记录日志）
 - make test-net-perf（需要自定义 /init 与用户态二进制，脚本启用 USER_TEST 触发 execve，记录性能基线日志）
 - make test-net-perf（通过 hostfwd 触发 net_perf_send 发送端，支持 PERF_HOST_PORT=auto 避免端口冲突）
