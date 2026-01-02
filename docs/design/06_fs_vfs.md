@@ -62,4 +62,4 @@ read(file, off, len)
 - git/vim/gcc/rustc 关键路径回归。
 - ext4 镜像挂载与一致性测试（读写后比对）。
 - ext4 写路径自测：create/write/truncate 的最小覆盖（host 侧）。
-- 用户态 fs-smoke：覆盖 lseek/pwrite64/O_APPEND 的基本文件偏移语义。
+- 用户态 fs-smoke：覆盖 lseek/pread64/pwrite64/ftruncate/O_APPEND 的基本文件偏移语义。

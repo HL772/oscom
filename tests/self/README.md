@@ -10,7 +10,7 @@ Cases:
 - net-loopback: run the in-kernel TCP loopback self-test and confirm the loopback banner.
 - tcp-echo: build `/tcp_echo`, boot with NET=1 and an ext4 image, and confirm the user echo banner (nonblocking connect + ppoll + SO_ERROR + sendmsg/recvmsg iovec + getsockname/getpeername + connect failure SO_ERROR check).
 - udp-echo: build `/udp_echo`, boot with NET=1 and an ext4 image, confirm the user datagram echo banner, validate recvfrom source addresses, exercise sendmsg/recvmsg/sendmmsg/recvmmsg, and verify SO_RCVTIMEO timeout + SO_SNDTIMEO get/set.
-- fs-smoke: build `/fs_smoke`, boot with an ext4 image, and validate lseek/pwrite64/O_APPEND file offset behavior.
+- fs-smoke: build `/fs_smoke`, boot with an ext4 image, and validate lseek/pread64/pwrite64/ftruncate/O_APPEND file offset behavior.
 
 Notes:
 - ext4-init reads the image path from `AXFS_EXT4_IMAGE` (set by `scripts/test_oscomp.sh`).

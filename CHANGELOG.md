@@ -56,7 +56,7 @@
 - Add lseek support for VFS handles and honor O_APPEND in VFS writes; expose O_APPEND via fcntl.
 - Fix O_NONBLOCK flag value to match Linux userspace expectations.
 - Add pwrite64 for VFS files to support offset-based writes.
-- Add fs_smoke user test for lseek/pwrite64/O_APPEND and wire it into smoke scripts.
+- Add fs_smoke user test for lseek/pread64/pwrite64/ftruncate/O_APPEND and wire it into smoke scripts.
 - Enable timer-driven preemption by returning running tasks to the run queue and scheduling from idle.
 - Allow user tasks to be preempted by timer ticks and resume via trapframe-backed paths.
 - Add execve loader for `/init` built-in ELF image with argv/envp stack layout.

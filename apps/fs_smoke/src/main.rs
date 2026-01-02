@@ -9,7 +9,9 @@ const SYS_OPENAT: usize = 56;
 const SYS_CLOSE: usize = 57;
 const SYS_READ: usize = 63;
 const SYS_LSEEK: usize = 62;
+const SYS_PREAD64: usize = 67;
 const SYS_PWRITE64: usize = 68;
+const SYS_FTRUNCATE: usize = 46;
 
 const AT_FDCWD: isize = -100;
 
@@ -117,8 +119,16 @@ fn syscall_lseek(fd: usize, offset: usize, whence: usize) -> usize {
     check(unsafe { syscall6(SYS_LSEEK, fd, offset, whence, 0, 0, 0) })
 }
 
+fn syscall_pread64(fd: usize, buf: &mut [u8], offset: usize) -> usize {
+    check(unsafe { syscall6(SYS_PREAD64, fd, buf.as_mut_ptr() as usize, buf.len(), offset, 0, 0) })
+}
+
 fn syscall_pwrite64(fd: usize, buf: &[u8], offset: usize) -> usize {
     check(unsafe { syscall6(SYS_PWRITE64, fd, buf.as_ptr() as usize, buf.len(), offset, 0, 0) })
+}
+
+fn syscall_ftruncate(fd: usize, len: usize) {
+    check(unsafe { syscall6(SYS_FTRUNCATE, fd, len, 0, 0, 0, 0) });
 }
 
 #[no_mangle]
@@ -144,13 +154,21 @@ pub extern "C" fn _start() -> ! {
     check_eq(syscall_write(fd_append, APPEND), APPEND.len());
     syscall_close(fd_append);
 
-    let fd_ro = syscall_openat(PATH, O_RDONLY, 0);
-    check_eq(syscall_lseek(fd_ro, 0, SEEK_END), 7);
-    check_eq(syscall_lseek(fd_ro, 5, SEEK_SET), 5);
-    check_eq(syscall_read(fd_ro, &mut buf[..APPEND.len()]), APPEND.len());
-    if &buf[..APPEND.len()] != APPEND {
+    let fd_rw = syscall_openat(PATH, O_RDWR, 0);
+    check_eq(syscall_lseek(fd_rw, 0, SEEK_END), 7);
+    let mut pread_buf = [0u8; 5];
+    check_eq(syscall_pread64(fd_rw, &mut pread_buf, 0), 5);
+    if &pread_buf != b"hXYlo" {
         fail();
     }
+    syscall_ftruncate(fd_rw, 4);
+    check_eq(syscall_lseek(fd_rw, 0, SEEK_END), 4);
+    syscall_close(fd_rw);
+
+    let fd_ro = syscall_openat(PATH, O_RDONLY, 0);
+    check_eq(syscall_lseek(fd_ro, 0, SEEK_END), 4);
+    check_eq(syscall_lseek(fd_ro, 5, SEEK_SET), 5);
+    check_eq(syscall_read(fd_ro, &mut buf[..APPEND.len()]), 0);
     syscall_close(fd_ro);
 
     write_stdout(OK_MSG);
