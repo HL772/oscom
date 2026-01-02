@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+//! TCP receive benchmark used by net-perf harness.
 
 use core::arch::asm;
 
@@ -133,6 +134,7 @@ fn recv_exact(fd: usize, buf: &mut [u8]) -> bool {
 }
 
 #[no_mangle]
+/// Program entry point invoked by the kernel loader.
 pub extern "C" fn _start() -> ! {
     let server = check(unsafe { syscall6(SYS_SOCKET, AF_INET as usize, SOCK_STREAM, 0, 0, 0, 0) });
     let addr = sockaddr(LOCAL_IP, PORT);

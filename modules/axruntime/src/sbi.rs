@@ -1,3 +1,5 @@
+//! SBI (Supervisor Binary Interface) wrappers.
+
 use core::arch::asm;
 
 const SBI_CONSOLE_PUTCHAR: usize = 1;
@@ -45,10 +47,12 @@ fn sbi_call(eid: usize, fid: usize, arg0: usize, arg1: usize, arg2: usize) -> (u
     (error, value)
 }
 
+/// Write a byte to the SBI console.
 pub fn console_putchar(ch: u8) {
     let _ = sbi_call_legacy(SBI_CONSOLE_PUTCHAR, ch as usize, 0, 0);
 }
 
+/// Read a byte from the SBI console if available.
 pub fn console_getchar() -> Option<u8> {
     let ret = sbi_call_legacy(SBI_CONSOLE_GETCHAR, 0, 0, 0);
     if ret == usize::MAX {
@@ -58,6 +62,7 @@ pub fn console_getchar() -> Option<u8> {
     Some(ret as u8)
 }
 
+/// Program the SBI timer with an absolute time value.
 pub fn set_timer(stime_value: u64) {
     let (err, _) = sbi_call(SBI_EXT_TIME, 0, stime_value as usize, 0, 0);
     if err != 0 {
@@ -65,6 +70,7 @@ pub fn set_timer(stime_value: u64) {
     }
 }
 
+/// Power off the system via SBI.
 pub fn shutdown() -> ! {
     let (err, _) = sbi_call(
         SBI_EXT_SRST,

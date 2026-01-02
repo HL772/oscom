@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+//! Kernel entry point and subsystem initialization order.
 
 mod console;
 mod dtb;
@@ -36,6 +37,7 @@ core::arch::global_asm!(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../..
 core::arch::global_asm!(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../arch/riscv64/context.S")));
 
 #[no_mangle]
+/// Kernel entry invoked by the architecture-specific bootstrap.
 pub extern "C" fn rust_main(hart_id: usize, dtb_addr: usize) -> ! {
     trap::init();
     print_banner();
@@ -126,6 +128,7 @@ pub extern "C" fn rust_main(hart_id: usize, dtb_addr: usize) -> ! {
     runtime::enter_idle_loop();
 }
 
+/// Emit the ANSI aurora banner to the early console.
 fn print_banner() {
     crate::println!("\x1b[36;1m    ___                       \x1b[0m");
     crate::println!("\x1b[36;1m   /   | __  __ _________  ___\x1b[0m");

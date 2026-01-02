@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+//! Timebase and tick accounting helpers.
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -13,6 +14,7 @@ static TICK_HZ: AtomicU64 = AtomicU64::new(0);
 static TICK_INTERVAL: AtomicU64 = AtomicU64::new(0);
 static TICKS: AtomicU64 = AtomicU64::new(0);
 
+/// Initialize timebase frequency and tick interval.
 pub fn init(timebase_hz: u64, tick_hz: u64) -> u64 {
     TIMEBASE_HZ.store(timebase_hz, Ordering::Relaxed);
     TIMEBASE_START.store(read_timebase(), Ordering::Relaxed);
@@ -22,30 +24,37 @@ pub fn init(timebase_hz: u64, tick_hz: u64) -> u64 {
     interval
 }
 
+/// Increment the tick counter and return the new value.
 pub fn tick() -> u64 {
     TICKS.fetch_add(1, Ordering::Relaxed) + 1
 }
 
+/// Return the current tick count.
 pub fn ticks() -> u64 {
     TICKS.load(Ordering::Relaxed)
 }
 
+/// Return the configured timebase frequency.
 pub fn timebase_hz() -> u64 {
     TIMEBASE_HZ.load(Ordering::Relaxed)
 }
 
+/// Return the configured tick frequency.
 pub fn tick_hz() -> u64 {
     TICK_HZ.load(Ordering::Relaxed)
 }
 
+/// Return the configured tick interval in timer ticks.
 pub fn interval_ticks() -> u64 {
     TICK_INTERVAL.load(Ordering::Relaxed)
 }
 
+/// Return uptime in milliseconds.
 pub fn uptime_ms() -> u64 {
     monotonic_ns().saturating_div(1_000_000)
 }
 
+/// Return monotonic time in nanoseconds.
 pub fn monotonic_ns() -> u64 {
     let hz = timebase_hz();
     if hz == 0 {

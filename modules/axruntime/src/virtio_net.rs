@@ -1,3 +1,5 @@
+//! VirtIO net device (MMIO) driver.
+
 use core::cell::UnsafeCell;
 use core::hint::spin_loop;
 use core::ptr;
@@ -196,6 +198,7 @@ struct TxBuffer {
 // SAFETY: TX buffer 只在锁保护下使用。
 static mut VIRTIO_NET_TX_BUF: TxBuffer = TxBuffer { data: [0; NET_BUF_SIZE] };
 
+/// VirtIO net device wrapper implementing NetDevice.
 pub struct VirtioNetDevice;
 
 impl NetDevice for VirtioNetDevice {
@@ -302,6 +305,7 @@ impl NetDevice for VirtioNetDevice {
     }
 }
 
+/// Initialize the virtio-net device from DTB entries.
 pub fn init(virtio_mmio: &[VirtioMmioDevice]) {
     if VIRTIO_NET_READY.load(Ordering::Acquire) {
         return;
@@ -328,6 +332,7 @@ pub fn init(virtio_mmio: &[VirtioMmioDevice]) {
 }
 
 #[allow(dead_code)]
+/// Return the initialized virtio-net device, if any.
 pub fn device() -> Option<&'static VirtioNetDevice> {
     if VIRTIO_NET_READY.load(Ordering::Acquire) {
         Some(&VIRTIO_NET_DEVICE)
@@ -336,6 +341,7 @@ pub fn device() -> Option<&'static VirtioNetDevice> {
     }
 }
 
+/// Handle a virtio-net IRQ and notify the network stack.
 pub fn handle_irq(irq: u32) -> bool {
     let expected = VIRTIO_NET_IRQ.load(Ordering::Acquire) as u32;
     if expected == 0 || expected != irq {

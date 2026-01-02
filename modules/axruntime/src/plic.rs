@@ -1,3 +1,5 @@
+//! PLIC (platform-level interrupt controller) helpers.
+
 use core::ptr;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -12,6 +14,7 @@ const PLIC_CONTEXT_S: usize = 1;
 
 static PLIC_BASE: AtomicUsize = AtomicUsize::new(0);
 
+/// Initialize the PLIC mapping from the device tree.
 pub fn init(region: Option<MemoryRegion>) {
     if let Some(region) = region {
         let base = region.base as usize;
@@ -26,6 +29,7 @@ pub fn init(region: Option<MemoryRegion>) {
     }
 }
 
+/// Enable a specific IRQ in the PLIC.
 pub fn enable(irq: u32) {
     let base = PLIC_BASE.load(Ordering::Acquire);
     if base == 0 || irq == 0 {
@@ -45,6 +49,7 @@ pub fn enable(irq: u32) {
     }
 }
 
+/// Claim the next pending IRQ.
 pub fn claim() -> Option<u32> {
     let base = PLIC_BASE.load(Ordering::Acquire);
     if base == 0 {
@@ -59,6 +64,7 @@ pub fn claim() -> Option<u32> {
     }
 }
 
+/// Complete handling of a claimed IRQ.
 pub fn complete(irq: u32) {
     let base = PLIC_BASE.load(Ordering::Acquire);
     if base == 0 || irq == 0 {

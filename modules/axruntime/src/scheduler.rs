@@ -1,18 +1,22 @@
 #![allow(dead_code)]
+//! Simple run queue and context switch helpers.
 
 use core::cell::UnsafeCell;
 
 use crate::context::Context;
 use crate::task::{TaskControlBlock, TaskId};
 
+/// Fixed-size run queue for ready tasks.
 pub struct RunQueue {
     slots: UnsafeCell<[Option<TaskId>; RunQueue::MAX_TASKS]>,
     head: UnsafeCell<usize>,
 }
 
 impl RunQueue {
+    /// Maximum number of tasks tracked by the run queue.
     pub const MAX_TASKS: usize = crate::config::MAX_TASKS;
 
+    /// Create an empty run queue.
     pub const fn new() -> Self {
         Self {
             slots: UnsafeCell::new([None; RunQueue::MAX_TASKS]),
@@ -20,6 +24,7 @@ impl RunQueue {
         }
     }
 
+    /// Push a task onto the run queue.
     pub fn push(&self, task: TaskId) -> bool {
         // Safety: single-hart early use; no concurrent access yet.
         let slots = unsafe { &mut *self.slots.get() };
@@ -32,6 +37,7 @@ impl RunQueue {
         false
     }
 
+    /// Pop the next ready task in round-robin order.
     pub fn pop_ready(&self) -> Option<TaskId> {
         // Safety: single-hart early use; no concurrent access yet.
         let slots = unsafe { &mut *self.slots.get() };
@@ -49,6 +55,7 @@ impl RunQueue {
         None
     }
 
+    /// Push a task onto the tail of the queue.
     pub fn push_back(&self, task: TaskId) {
         let _ = self.push(task);
     }
@@ -60,6 +67,7 @@ extern "C" {
     fn context_switch(prev: *mut Context, next: *const Context);
 }
 
+/// Switch CPU context from `prev` to `next`.
 pub fn switch(prev: &mut TaskControlBlock, next: &TaskControlBlock) {
     if prev.id == next.id {
         return;

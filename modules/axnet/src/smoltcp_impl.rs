@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+//! smoltcp-based network stack glue.
 
 use core::mem::MaybeUninit;
 use core::ptr;
@@ -83,6 +84,7 @@ struct SmolTxToken<'a> {
     dev: &'a dyn NetDevice,
 }
 
+/// Socket identifier used by the network stack.
 pub type SocketId = usize;
 
 impl Device for SmolDevice {
@@ -169,6 +171,7 @@ struct NetState {
 // SAFETY: global net state is serialized by single-hart boot and idle loop.
 static mut NET_STATE: Option<NetState> = None;
 
+/// Initialize the network stack with the provided device.
 pub fn init(dev: &'static dyn NetDevice) -> Result<(), NetError> {
     if NET_READY.load(Ordering::Acquire) {
         return Ok(());
@@ -217,14 +220,17 @@ pub fn init(dev: &'static dyn NetDevice) -> Result<(), NetError> {
     Ok(())
 }
 
+/// Notify the stack that a device IRQ arrived.
 pub fn notify_irq() {
     NET_NEED_POLL.store(true, Ordering::Release);
 }
 
+/// Request a poll of the stack from the scheduler/idle loop.
 pub fn request_poll() {
     NET_NEED_POLL.store(true, Ordering::Release);
 }
 
+/// Network events emitted by the stack during poll.
 pub enum NetEvent {
     IcmpEchoReply { seq: u16, from: IpAddress },
     ArpReply { from: Ipv4Address },
@@ -240,6 +246,7 @@ pub enum NetEvent {
     Activity,
 }
 
+/// Poll the network stack and return an optional event.
 pub fn poll(now_ms: u64) -> Option<NetEvent> {
     if !NET_READY.load(Ordering::Acquire) {
         return None;
@@ -363,6 +370,7 @@ fn has_pending_tcp(state: &mut NetState) -> bool {
     false
 }
 
+/// Run a one-shot TCP loopback test.
 pub fn tcp_loopback_test_once() -> Result<(), NetError> {
     if !NET_READY.load(Ordering::Acquire) {
         return Err(NetError::NotReady);
@@ -586,6 +594,7 @@ fn run_tcp_loopback() -> Result<(), NetError> {
     Err(NetError::Invalid)
 }
 
+/// Send a single ICMP echo request to the gateway.
 pub fn ping_gateway_once() -> Result<(), NetError> {
     if !NET_READY.load(Ordering::Acquire) {
         return Err(NetError::NotReady);
@@ -595,6 +604,7 @@ pub fn ping_gateway_once() -> Result<(), NetError> {
     Ok(())
 }
 
+/// Send a single ARP probe to the gateway.
 pub fn arp_probe_gateway_once() -> Result<(), NetError> {
     if !NET_READY.load(Ordering::Acquire) {
         return Err(NetError::NotReady);
@@ -637,6 +647,7 @@ const EMPTY_SOCKET_SLOT: SocketSlot = SocketSlot {
 
 static mut SOCKET_TABLE: [SocketSlot; MAX_SOCKETS] = [EMPTY_SOCKET_SLOT; MAX_SOCKETS];
 
+/// Create a TCP/UDP socket and return its socket id.
 pub fn socket_create(domain: i32, sock_type: i32, _protocol: i32) -> Result<SocketId, NetError> {
     if !NET_READY.load(Ordering::Acquire) {
         return Err(NetError::NotReady);
@@ -671,6 +682,7 @@ pub fn socket_create(domain: i32, sock_type: i32, _protocol: i32) -> Result<Sock
     Ok(slot)
 }
 
+/// Bind a socket to a local address/port.
 pub fn socket_bind(id: SocketId, addr: IpAddress, port: u16) -> Result<(), NetError> {
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
@@ -694,6 +706,7 @@ pub fn socket_bind(id: SocketId, addr: IpAddress, port: u16) -> Result<(), NetEr
     }
 }
 
+/// Connect a socket to a remote address/port.
 pub fn socket_connect(id: SocketId, addr: IpAddress, port: u16) -> Result<(), NetError> {
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
@@ -731,6 +744,7 @@ pub fn socket_connect(id: SocketId, addr: IpAddress, port: u16) -> Result<(), Ne
     }
 }
 
+/// Place a TCP socket into listening state.
 pub fn socket_listen(id: SocketId, _backlog: usize) -> Result<(), NetError> {
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
@@ -749,6 +763,7 @@ pub fn socket_listen(id: SocketId, _backlog: usize) -> Result<(), NetError> {
     }
 }
 
+/// Accept an incoming connection from a listening socket.
 pub fn socket_accept(id: SocketId) -> Result<(SocketId, SocketId, Option<(IpAddress, u16)>), NetError> {
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
@@ -786,6 +801,7 @@ pub fn socket_accept(id: SocketId) -> Result<(SocketId, SocketId, Option<(IpAddr
     Ok((id, listener_id, remote))
 }
 
+/// Send data on a socket.
 pub fn socket_send(id: SocketId, buf: &[u8], addr: Option<(IpAddress, u16)>) -> Result<usize, NetError> {
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
@@ -827,6 +843,7 @@ pub fn socket_send(id: SocketId, buf: &[u8], addr: Option<(IpAddress, u16)>) -> 
     Ok(sent)
 }
 
+/// Receive data from a socket.
 pub fn socket_recv(
     id: SocketId,
     buf: &mut [u8],
@@ -869,12 +886,17 @@ pub fn socket_recv(
     }
 }
 
+/// TCP receive window metrics captured during polling.
 pub struct TcpRecvWindow {
+    /// Available receive window.
     pub window: usize,
+    /// Total receive buffer capacity.
     pub capacity: usize,
+    /// Bytes currently queued in the receive buffer.
     pub queued: usize,
 }
 
+/// Fetch the latest receive window event for a socket.
 pub fn socket_recv_window_event(id: SocketId) -> Result<Option<TcpRecvWindow>, NetError> {
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
@@ -940,6 +962,7 @@ fn poll_tcp_window_event(state: &mut NetState) -> Option<NetEvent> {
     None
 }
 
+/// Poll socket readiness for the requested events.
 pub fn socket_poll(id: SocketId, events: u16) -> Result<u16, NetError> {
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
@@ -996,6 +1019,7 @@ pub fn socket_poll(id: SocketId, events: u16) -> Result<u16, NetError> {
     Ok(revents)
 }
 
+/// Close a socket and release its resources.
 pub fn socket_close(id: SocketId) -> Result<(), NetError> {
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
@@ -1007,6 +1031,7 @@ pub fn socket_close(id: SocketId) -> Result<(), NetError> {
     }
 }
 
+/// Shutdown a socket for reading and/or writing.
 pub fn socket_shutdown(id: SocketId, how: usize) -> Result<(), NetError> {
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
@@ -1029,6 +1054,7 @@ pub fn socket_shutdown(id: SocketId, how: usize) -> Result<(), NetError> {
     }
 }
 
+/// Return the local endpoint for a socket.
 pub fn socket_local_endpoint(id: SocketId) -> Result<(IpAddress, u16), NetError> {
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
@@ -1047,6 +1073,7 @@ pub fn socket_local_endpoint(id: SocketId) -> Result<(IpAddress, u16), NetError>
     }
 }
 
+/// Return the remote endpoint for a socket.
 pub fn socket_remote_endpoint(id: SocketId) -> Result<Option<(IpAddress, u16)>, NetError> {
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
@@ -1063,6 +1090,7 @@ pub fn socket_remote_endpoint(id: SocketId) -> Result<Option<(IpAddress, u16)>, 
     }
 }
 
+/// Return true if the socket is mid-connection.
 pub fn socket_connecting(id: SocketId) -> Result<bool, NetError> {
     // SAFETY: single-hart early stage, socket table is serialized.
     unsafe {
@@ -1074,6 +1102,7 @@ pub fn socket_connecting(id: SocketId) -> Result<bool, NetError> {
     }
 }
 
+/// Take and clear the pending socket error, if any.
 pub fn socket_take_error(id: SocketId) -> Result<Option<NetError>, NetError> {
     // SAFETY: single-hart early stage, socket table is serialized.
     unsafe {

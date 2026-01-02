@@ -1,3 +1,5 @@
+//! VirtIO block device (MMIO) driver.
+
 use core::cell::UnsafeCell;
 use core::hint::spin_loop;
 use core::ptr;
@@ -73,6 +75,7 @@ struct BounceBuf([u8; SECTOR_SIZE]);
 // SAFETY: 单队列同步 I/O；通过锁保证同一时刻只有一个请求使用缓冲区。
 static mut VIRTIO_BLK_BOUNCE: BounceBuf = BounceBuf([0; SECTOR_SIZE]);
 
+/// VirtIO block device wrapper implementing BlockDevice.
 pub struct VirtioBlkDevice;
 
 impl BlockDevice for VirtioBlkDevice {
@@ -101,6 +104,7 @@ impl BlockDevice for VirtioBlkDevice {
     }
 }
 
+/// Initialize the virtio-blk device from DTB entries.
 pub fn init(virtio_mmio: &[VirtioMmioDevice]) {
     if VIRTIO_BLK_READY.load(Ordering::Acquire) {
         return;
@@ -116,6 +120,7 @@ pub fn init(virtio_mmio: &[VirtioMmioDevice]) {
     }
 }
 
+/// Return the initialized virtio-blk device, if any.
 pub fn device() -> Option<&'static VirtioBlkDevice> {
     if VIRTIO_BLK_READY.load(Ordering::Acquire) {
         Some(&VIRTIO_BLK_DEVICE)
@@ -295,6 +300,7 @@ fn submit_request(req_type: u32, block_id: BlockId, buf: &mut [u8]) -> VfsResult
     }
 }
 
+/// Handle a virtio-blk IRQ and wake waiting tasks.
 pub fn handle_irq(irq: u32) -> bool {
     let expected = VIRTIO_BLK_IRQ.load(Ordering::Acquire) as u32;
     if expected == 0 || expected != irq {

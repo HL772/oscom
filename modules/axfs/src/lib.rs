@@ -1,5 +1,7 @@
 #![no_std]
 
+//! Filesystem implementations and VFS integration.
+
 pub mod block;
 pub mod devfs;
 pub mod fat32;

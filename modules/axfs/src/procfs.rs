@@ -1,5 +1,8 @@
+//! Minimal procfs placeholder.
+
 use axvfs::{DirEntry, FileType, InodeId, Metadata, VfsError, VfsOps, VfsResult};
 
+/// Root inode identifier for procfs.
 pub const ROOT_ID: InodeId = 1;
 
 const ROOT_FILE_TYPE: FileType = FileType::Dir;
@@ -25,9 +28,11 @@ const PROC_ENTRIES: [DirEntrySpec; 2] = [
     },
 ];
 
+/// Minimal procfs implementation with only the root directory.
 pub struct ProcFs;
 
 impl ProcFs {
+    /// Create a new procfs instance.
     pub const fn new() -> Self {
         Self
     }

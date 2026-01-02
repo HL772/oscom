@@ -1,3 +1,5 @@
+//! Root filesystem device selection and ramdisk helper.
+
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -19,11 +21,13 @@ static ROOT_DEVICE_READY: AtomicBool = AtomicBool::new(false);
 static mut ROOT_DEVICE: MaybeUninit<RootBlockDevice> = MaybeUninit::uninit();
 
 #[derive(Clone, Copy)]
+/// In-memory ramdisk block device for the initial rootfs.
 pub struct RootFsDevice {
     size: usize,
 }
 
 impl RootFsDevice {
+    /// Construct a ramdisk device from the embedded image.
     pub fn new() -> Self {
         let image = rootfs_image();
         Self { size: image.len() }
@@ -66,12 +70,14 @@ impl BlockDevice for RootFsDevice {
     }
 }
 
+/// Selected root block device backend.
 pub enum RootBlockDevice {
     Virtio(&'static virtio_blk::VirtioBlkDevice),
     Ramdisk(RootFsDevice),
 }
 
 impl RootBlockDevice {
+    /// Return the block device trait object.
     pub fn as_block_device(&self) -> &dyn BlockDevice {
         match self {
             Self::Virtio(dev) => *dev,
@@ -80,10 +86,12 @@ impl RootBlockDevice {
     }
 }
 
+/// Initialize block device backends for rootfs.
 pub fn init(virtio_mmio: &[VirtioMmioDevice]) {
     virtio_blk::init(virtio_mmio);
 }
 
+/// Return the selected root block device.
 pub fn root_device() -> &'static RootBlockDevice {
     if !ROOT_DEVICE_READY.load(Ordering::Acquire) {
         let dev = if let Some(dev) = virtio_blk::device() {

@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+//! System call dispatcher and per-syscall implementations.
 
 use core::cmp::min;
 use core::mem::{size_of, MaybeUninit};
@@ -14,6 +15,7 @@ use crate::trap::TrapFrame;
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy)]
+/// Linux-compatible errno values used by syscalls.
 pub enum Errno {
     NoEnt = 2,
     Exist = 17,
@@ -40,6 +42,7 @@ pub enum Errno {
 }
 
 impl Errno {
+    /// Convert errno into the negative-isize return convention.
     pub fn to_ret(self) -> usize {
         (-(self as isize)) as usize
     }
@@ -85,6 +88,7 @@ impl SyscallContext {
     }
 }
 
+/// Dispatch a system call based on the trap frame.
 pub fn handle_syscall(tf: &mut TrapFrame) {
     let ctx = SyscallContext::from_trap_frame(tf);
     let ret = dispatch(tf, ctx);
@@ -4209,6 +4213,7 @@ fn with_mounts<R>(f: impl FnOnce(&MountTable<'_, VFS_MOUNT_COUNT>) -> R) -> R {
     f(&mounts)
 }
 
+/// Trigger the ext4 write smoke test when enabled.
 pub fn ext4_write_smoke() {
     if rootfs_kind() != ROOTFS_KIND_EXT4 {
         crate::println!("ext4: write skip (rootfs not ext4)");
@@ -4314,6 +4319,7 @@ fn map_futex_err(err: futex::FutexError) -> Errno {
     }
 }
 
+/// Return true if the current context may block.
 pub fn can_block_current() -> bool {
     crate::runtime::current_task_id().is_some()
 }
@@ -4842,6 +4848,7 @@ fn clear_fd_table(idx: usize) {
     }
 }
 
+/// Initialize the file descriptor table for a task.
 pub fn init_fd_table(task_id: TaskId) {
     clear_fd_table(task_id);
     init_proc_cwd(task_id);
@@ -4853,6 +4860,7 @@ pub fn init_fd_table(task_id: TaskId) {
     }
 }
 
+/// Clone file descriptors from a parent task into a child task.
 pub fn clone_fd_table(parent: TaskId, child: TaskId) {
     if parent >= MAX_PROCS || child >= MAX_PROCS {
         return;
@@ -4879,6 +4887,7 @@ pub fn clone_fd_table(parent: TaskId, child: TaskId) {
     }
 }
 
+/// Release all file descriptors owned by a task.
 pub fn release_fd_table(task_id: TaskId) {
     clear_fd_table(task_id);
     clear_proc_cwd(task_id);

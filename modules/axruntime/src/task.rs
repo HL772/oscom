@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+//! Task control blocks, task table helpers, and state transitions.
 
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicU8, Ordering};
@@ -7,37 +8,52 @@ use crate::config::MAX_TASKS;
 use crate::context::Context;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Task run state tracked by the scheduler.
 pub enum TaskState {
     Ready,
     Running,
     Blocked,
 }
 
-/// Why a wait queue block finished; stored per task for wait timeout reporting.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Why a wait queue block finished; stored per task for wait timeout reporting.
 pub enum WaitReason {
     None = 0,
     Notified = 1,
     Timeout = 2,
 }
 
+/// Task entry function type.
 pub type TaskEntry = fn() -> !;
+/// Task identifier used by the scheduler.
 pub type TaskId = usize;
 
+/// Core task bookkeeping structure stored in the task table.
 pub struct TaskControlBlock {
+    /// Task identifier.
     pub id: TaskId,
+    /// Current scheduler state.
     pub state: TaskState,
+    /// Saved CPU context for switches.
     pub context: Context,
+    /// Optional entry function for kernel tasks.
     pub entry: Option<TaskEntry>,
+    /// Kernel stack pointer.
     pub kernel_sp: usize,
+    /// User page table root.
     pub user_root_pa: usize,
+    /// User entry point.
     pub user_entry: usize,
+    /// User stack pointer.
     pub user_sp: usize,
+    /// User heap top (brk) value.
     pub heap_top: usize,
+    /// True if this is a user task.
     pub is_user: bool,
     // Pointer to the active trap frame on this task's kernel stack.
     // Valid only during trap handling; cleared on trap exit.
+    /// Active trap frame pointer while handling traps.
     pub trap_frame: Option<usize>,
     // Tracks why a blocked wait completed; only meaningful for wait queue users.
     wait_reason: AtomicU8,
@@ -93,6 +109,7 @@ pub const fn idle_task() -> TaskControlBlock {
     }
 }
 
+/// Allocate a new task with the given entry and stack top.
 pub fn alloc_task(entry: TaskEntry, stack_top: usize) -> Option<TaskId> {
     // SAFETY: single-hart early boot; task table is only mutated in init.
     unsafe {
@@ -108,6 +125,7 @@ pub fn alloc_task(entry: TaskEntry, stack_top: usize) -> Option<TaskId> {
     None
 }
 
+/// Record user context metadata for a task.
 pub fn set_user_context(id: TaskId, root_pa: usize, entry: usize, user_sp: usize) -> bool {
     // SAFETY: single-hart early boot; task slots are stable.
     unsafe {
@@ -123,6 +141,7 @@ pub fn set_user_context(id: TaskId, root_pa: usize, entry: usize, user_sp: usize
     }
 }
 
+/// Update the task's user page table root.
 pub fn update_user_root(id: TaskId, root_pa: usize) -> bool {
     // SAFETY: single-hart early boot; task slots are stable.
     unsafe {
@@ -135,6 +154,7 @@ pub fn update_user_root(id: TaskId, root_pa: usize) -> bool {
     }
 }
 
+/// Fetch the user page table root for a task.
 pub fn user_root_pa(id: TaskId) -> Option<usize> {
     // SAFETY: read-only access to task slots during early boot.
     unsafe {
@@ -146,6 +166,7 @@ pub fn user_root_pa(id: TaskId) -> Option<usize> {
     }
 }
 
+/// Fetch the recorded user entry point.
 pub fn user_entry(id: TaskId) -> Option<usize> {
     // SAFETY: read-only access to task slots during early boot.
     unsafe {
@@ -157,6 +178,7 @@ pub fn user_entry(id: TaskId) -> Option<usize> {
     }
 }
 
+/// Fetch the recorded user stack pointer.
 pub fn user_sp(id: TaskId) -> Option<usize> {
     // SAFETY: read-only access to task slots during early boot.
     unsafe {
@@ -168,6 +190,7 @@ pub fn user_sp(id: TaskId) -> Option<usize> {
     }
 }
 
+/// Update the recorded user stack pointer.
 pub fn set_user_sp(id: TaskId, user_sp: usize) -> bool {
     // SAFETY: single-hart early boot; task slots are stable.
     unsafe {
@@ -180,6 +203,7 @@ pub fn set_user_sp(id: TaskId, user_sp: usize) -> bool {
     }
 }
 
+/// Update the recorded heap top (brk) value.
 pub fn set_heap_top(id: TaskId, heap_top: usize) -> bool {
     // SAFETY: single-hart early boot; task slots are stable.
     unsafe {
@@ -192,6 +216,7 @@ pub fn set_heap_top(id: TaskId, heap_top: usize) -> bool {
     }
 }
 
+/// Fetch the recorded heap top (brk) value.
 pub fn heap_top(id: TaskId) -> Option<usize> {
     // SAFETY: read-only access to task slots during early boot.
     unsafe {
@@ -203,6 +228,7 @@ pub fn heap_top(id: TaskId) -> Option<usize> {
     }
 }
 
+/// Fetch the kernel stack pointer for a task.
 pub fn kernel_sp(id: TaskId) -> Option<usize> {
     // SAFETY: read-only access to task slots during early boot.
     unsafe {
@@ -214,6 +240,7 @@ pub fn kernel_sp(id: TaskId) -> Option<usize> {
     }
 }
 
+/// Update the saved context (ra/sp) for a task.
 pub fn set_context(id: TaskId, ra: usize, sp: usize) -> bool {
     // SAFETY: single-hart early boot; task slots are stable.
     unsafe {
@@ -227,6 +254,7 @@ pub fn set_context(id: TaskId, ra: usize, sp: usize) -> bool {
     }
 }
 
+/// Return true if the task is in the Ready state.
 pub fn is_ready(id: TaskId) -> bool {
     // SAFETY: read-only access to task state during early boot.
     unsafe {
@@ -239,6 +267,7 @@ pub fn is_ready(id: TaskId) -> bool {
 }
 
 /// Unconditionally update task state; prefer `transition_state` when validating transitions.
+/// Unconditionally update task state.
 pub fn set_state(id: TaskId, state: TaskState) -> bool {
     // SAFETY: single-hart early boot; task slots are stable.
     unsafe {
@@ -251,6 +280,7 @@ pub fn set_state(id: TaskId, state: TaskState) -> bool {
     }
 }
 
+/// Transition task state only if the current state matches `from`.
 /// Transition task state only if the current state matches `from`.
 pub fn transition_state(id: TaskId, from: TaskState, to: TaskState) -> bool {
     // SAFETY: single-hart early boot; task slots are stable.
@@ -268,6 +298,7 @@ pub fn transition_state(id: TaskId, from: TaskState, to: TaskState) -> bool {
 }
 
 /// Store the wait completion reason for a task.
+/// Store the wait completion reason for a task.
 pub fn set_wait_reason(id: TaskId, reason: WaitReason) -> bool {
     // SAFETY: single-hart early boot; task slots are stable.
     unsafe {
@@ -280,6 +311,7 @@ pub fn set_wait_reason(id: TaskId, reason: WaitReason) -> bool {
     }
 }
 
+/// Consume the last wait reason and reset it to `WaitReason::None`.
 /// Consume the last wait reason and reset it to `WaitReason::None`.
 pub fn take_wait_reason(id: TaskId) -> WaitReason {
     // SAFETY: single-hart early boot; task slots are stable.
@@ -296,6 +328,7 @@ pub fn take_wait_reason(id: TaskId) -> WaitReason {
     }
 }
 
+/// Record the active trapframe pointer for a task.
 pub fn set_trap_frame(id: TaskId, trap_frame: usize) -> bool {
     // SAFETY: single-hart early boot; trap frames live on the current stack.
     unsafe {
@@ -308,6 +341,7 @@ pub fn set_trap_frame(id: TaskId, trap_frame: usize) -> bool {
     }
 }
 
+/// Clear the recorded trapframe pointer.
 pub fn clear_trap_frame(id: TaskId) -> bool {
     // SAFETY: single-hart early boot; task slots are stable.
     unsafe {
@@ -320,6 +354,7 @@ pub fn clear_trap_frame(id: TaskId) -> bool {
     }
 }
 
+/// Fetch the recorded trapframe pointer.
 pub fn trap_frame_ptr(id: TaskId) -> Option<usize> {
     // SAFETY: read-only access to task slots during early boot.
     unsafe {
@@ -331,6 +366,7 @@ pub fn trap_frame_ptr(id: TaskId) -> Option<usize> {
     }
 }
 
+/// Fetch a mutable pointer to the task control block.
 pub fn task_ptr(id: TaskId) -> Option<*mut TaskControlBlock> {
     // SAFETY: task slots are initialized once and never freed in early boot.
     unsafe {

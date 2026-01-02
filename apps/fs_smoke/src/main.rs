@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+//! Minimal filesystem smoke test user program.
 
 use core::arch::asm;
 
@@ -148,6 +149,7 @@ fn syscall_ftruncate(fd: usize, len: usize) {
 }
 
 #[no_mangle]
+/// Program entry point invoked by the kernel loader.
 pub extern "C" fn _start() -> ! {
     let fd = syscall_openat(PATH, O_CREAT | O_TRUNC | O_RDWR, 0o644);
     check_eq(syscall_write(fd, HELLO), HELLO.len());

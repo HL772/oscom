@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+//! Minimal futex wait/wake implementation.
 
 use crate::mm::{self, UserAccess};
 use crate::runtime;
@@ -32,6 +33,7 @@ static FUTEX_WAITERS: [TaskWaitQueue; MAX_FUTEXES] = [
 ];
 
 #[derive(Clone, Copy, Debug)]
+/// Futex error codes returned by wait/wake.
 pub enum FutexError {
     Fault,
     Again,
@@ -97,6 +99,7 @@ fn clear_slot_if_empty(slot: usize) {
     }
 }
 
+/// Wait on a futex word until it changes or a timeout elapses.
 pub fn wait(
     root_pa: usize,
     uaddr: usize,
@@ -137,6 +140,7 @@ pub fn wait(
     }
 }
 
+/// Wake up to `count` waiters on the futex word.
 pub fn wake(root_pa: usize, uaddr: usize, count: usize, private: bool) -> Result<usize, FutexError> {
     validate_uaddr(uaddr)?;
     if count == 0 {

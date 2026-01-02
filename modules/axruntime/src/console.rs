@@ -1,3 +1,5 @@
+//! Console output helpers and formatting macros.
+
 use core::fmt::{self, Write};
 
 use crate::sbi;
@@ -13,11 +15,13 @@ impl Write for Console {
     }
 }
 
+/// Write formatted arguments to the SBI console.
 pub(crate) fn print(args: fmt::Arguments) {
     let mut console = Console;
     console.write_fmt(args).ok();
 }
 
+/// Print without a trailing newline.
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {
@@ -25,6 +29,7 @@ macro_rules! print {
     };
 }
 
+/// Print with a trailing newline.
 #[macro_export]
 macro_rules! println {
     () => {

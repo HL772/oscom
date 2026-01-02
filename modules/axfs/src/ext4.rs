@@ -1,3 +1,5 @@
+//! ext4 filesystem implementation.
+
 use axvfs::{DirEntry, FileType, InodeId, Metadata, VfsError, VfsOps, VfsResult};
 use core::cell::UnsafeCell;
 use core::hint::spin_loop;
@@ -90,15 +92,22 @@ impl Drop for ScratchGuard<'_> {
 static EXT4_SCRATCH: ScratchLock = ScratchLock::new();
 
 #[derive(Clone, Copy, Debug)]
+/// ext4 superblock fields required by this implementation.
 pub struct SuperBlock {
+    /// log2(block_size / 1024).
     pub log_block_size: u32,
+    /// Blocks per group.
     pub blocks_per_group: u32,
+    /// Inodes per group.
     pub inodes_per_group: u32,
+    /// Inode size in bytes.
     pub inode_size: u16,
+    /// ext4 magic value.
     pub magic: u16,
 }
 
 impl SuperBlock {
+    /// Parse a superblock from the provided buffer.
     pub fn parse(buf: &[u8]) -> VfsResult<Self> {
         if buf.len() < SUPERBLOCK_SIZE {
             return Err(VfsError::Invalid);
@@ -124,6 +133,7 @@ impl SuperBlock {
         })
     }
 
+    /// Return the filesystem block size in bytes.
     pub fn block_size(&self) -> u32 {
         1024u32 << self.log_block_size
     }
@@ -163,12 +173,14 @@ struct Ext4Inode {
     blocks: [u32; 15],
 }
 
+/// ext4 filesystem backed by a block device.
 pub struct Ext4Fs<'a> {
     cache: BlockCache<'a>,
     superblock: SuperBlock,
 }
 
 impl<'a> Ext4Fs<'a> {
+    /// Create an ext4 filesystem from a block device.
     pub fn new(device: &'a dyn BlockDevice) -> VfsResult<Self> {
         let cache = BlockCache::new(device);
         let block_size = cache.block_size();
@@ -181,14 +193,17 @@ impl<'a> Ext4Fs<'a> {
         Ok(Self { cache, superblock })
     }
 
+    /// Return the parsed superblock.
     pub fn superblock(&self) -> &SuperBlock {
         &self.superblock
     }
 
+    /// Return the filesystem block size in bytes.
     pub fn fs_block_size(&self) -> u32 {
         self.superblock.block_size()
     }
 
+    /// Read a filesystem block into the provided buffer.
     pub fn read_block(&self, block: BlockId, buf: &mut [u8]) -> VfsResult<()> {
         self.cache.read_block(block, buf)
     }

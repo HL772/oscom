@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+//! Task runtime, scheduling hooks, and idle-loop orchestration.
 
 use core::arch::asm;
 use core::mem::size_of;
@@ -70,6 +71,7 @@ fn dummy_task_c() -> ! {
     }
 }
 
+/// Advance runtime state on each timer tick.
 pub fn on_tick(ticks: u64) {
     const NET_POLL_TICK_INTERVAL: u64 = 2;
     TICK_COUNT.store(ticks, Ordering::Relaxed);
@@ -139,10 +141,12 @@ fn log_net_event(event: axnet::NetEvent, tag: &str) {
     }
 }
 
+/// Return the latest tick count observed by the runtime.
 pub fn tick_count() -> u64 {
     TICK_COUNT.load(Ordering::Relaxed)
 }
 
+/// Record trapframe pointers and user stack state on trap entry.
 pub fn on_trap_entry(tf: &mut crate::trap::TrapFrame) {
     // SAFETY: single-hart early use; current task does not change inside traps.
     unsafe {
@@ -155,6 +159,7 @@ pub fn on_trap_entry(tf: &mut crate::trap::TrapFrame) {
     }
 }
 
+/// Clear the active trapframe pointer on trap exit.
 pub fn on_trap_exit() {
     // SAFETY: single-hart early use; clear any trap frame pointer on exit.
     unsafe {
@@ -164,11 +169,13 @@ pub fn on_trap_exit() {
     }
 }
 
+/// Return the currently running task ID, if any.
 pub fn current_task_id() -> Option<TaskId> {
     // SAFETY: single-hart early use; read-only access to CURRENT_TASK.
     unsafe { CURRENT_TASK }
 }
 
+/// Initialize runtime state and optional scheduler demo tasks.
 pub fn init() {
     TICK_COUNT.store(0, Ordering::Relaxed);
 
@@ -222,6 +229,7 @@ pub fn init() {
     }
 }
 
+/// Spawn a new user task from a prepared user context.
 pub fn spawn_user(ctx: UserContext) -> Option<TaskId> {
     let stack = stack::alloc_task_stack()?;
     let task_id = task::alloc_task(user_task_entry, stack.top())?;
@@ -238,6 +246,7 @@ pub fn spawn_user(ctx: UserContext) -> Option<TaskId> {
     Some(task_id)
 }
 
+/// Spawn a forked user task using an inherited trapframe snapshot.
 pub fn spawn_forked_user(
     parent_tf: &crate::trap::TrapFrame,
     child_root_pa: usize,
@@ -309,6 +318,7 @@ fn resume_user_from_trap() -> ! {
     crate::trap::return_to_user(trap_frame);
 }
 
+/// Perform a single scheduling decision from the idle context.
 pub fn schedule_once() {
     let next_id = match RUN_QUEUE.pop_ready() {
         Some(task_id) => task_id,
@@ -343,6 +353,7 @@ pub fn schedule_once() {
     }
 }
 
+/// Trigger a schedule request if enough ticks have elapsed.
 pub fn maybe_schedule(ticks: u64, interval: u64) {
     if interval == 0 {
         return;
@@ -352,6 +363,7 @@ pub fn maybe_schedule(ticks: u64, interval: u64) {
     }
 }
 
+/// Preempt the current task and return to the idle context.
 pub fn preempt_current() {
     if !NEED_RESCHED.load(Ordering::Relaxed) {
         return;
@@ -383,6 +395,7 @@ pub fn preempt_current() {
     }
 }
 
+/// Yield to the idle context if a reschedule is pending.
 pub fn yield_if_needed() {
     while NEED_RESCHED.swap(false, Ordering::Relaxed) {
         // 调度在空闲上下文中执行，避免在 trap 中切换上下文。
@@ -390,6 +403,7 @@ pub fn yield_if_needed() {
     }
 }
 
+/// Cooperatively yield the current task back to the run queue.
 pub fn yield_now() {
     // Cooperative yield: requeue the current task and switch back to idle.
     // SAFETY: single-hart early use; CURRENT_TASK is only accessed in init/idle/task contexts.
@@ -420,6 +434,7 @@ pub fn yield_now() {
     }
 }
 
+/// Sleep the current task for at least the specified milliseconds.
 pub fn sleep_current_ms(ms: u64) -> bool {
     // Tick-based sleep: block the current task and let the timer wake it later.
     if ms == 0 {
@@ -458,6 +473,7 @@ pub fn sleep_current_ms(ms: u64) -> bool {
     true
 }
 
+/// Exit the current task and transfer control back to the idle loop.
 pub fn exit_current() -> ! {
     // SAFETY: single-hart early use; CURRENT_TASK is only accessed in init/idle/task contexts.
     unsafe {
@@ -477,6 +493,7 @@ pub fn exit_current() -> ! {
 }
 
 /// Block the current task on a wait queue until notified or the timeout elapses.
+/// Block the current task on a wait queue until notified or timeout.
 pub fn wait_timeout_ms(queue: &TaskWaitQueue, timeout_ms: u64) -> WaitResult {
     let tick_hz = time::tick_hz();
     if tick_hz == 0 {
@@ -525,10 +542,12 @@ pub fn wait_timeout_ms(queue: &TaskWaitQueue, timeout_ms: u64) -> WaitResult {
     }
 }
 
+/// Return the shared network wait queue used by socket syscalls.
 pub fn net_wait_queue() -> &'static TaskWaitQueue {
     &NET_WAITERS
 }
 
+/// Move the current task into a blocked state on the given queue.
 pub fn block_current(queue: &TaskWaitQueue) {
     // Block the current task on a wait queue; caller controls the wake-up.
     // SAFETY: single-hart early use; CURRENT_TASK is only accessed in init/idle/task contexts.
@@ -553,6 +572,7 @@ pub fn block_current(queue: &TaskWaitQueue) {
     }
 }
 
+/// Wake a single task from the given queue.
 pub fn wake_one(queue: &TaskWaitQueue) -> bool {
     // Wake a single blocked waiter and enqueue it for scheduling.
     loop {
@@ -577,6 +597,7 @@ pub fn wake_one(queue: &TaskWaitQueue) -> bool {
     }
 }
 
+/// Wake all blocked tasks in the queue until the run queue is full.
 /// Wake all blocked tasks in the queue until the run queue is full.
 pub fn wake_all(queue: &TaskWaitQueue) -> usize {
     let mut woke = 0;
@@ -604,6 +625,7 @@ pub fn wake_all(queue: &TaskWaitQueue) -> usize {
     woke
 }
 
+/// Run the idle loop, polling net and async executors between sleeps.
 pub fn idle_loop() -> ! {
     const NET_POLL_INTERVAL_MS: u64 = 20;
     let mut last_net_poll_ms = 0u64;
@@ -624,6 +646,7 @@ pub fn idle_loop() -> ! {
     }
 }
 
+/// Switch to the idle stack and enter the idle loop.
 pub fn enter_idle_loop() -> ! {
     let top = IDLE_STACK_TOP.load(Ordering::Acquire);
     if top == 0 {

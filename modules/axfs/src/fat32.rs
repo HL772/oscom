@@ -1,3 +1,5 @@
+//! FAT32 filesystem implementation.
+
 use axvfs::{DirEntry, FileType, InodeId, Metadata, VfsError, VfsOps, VfsResult, MAX_NAME_LEN};
 use core::cell::UnsafeCell;
 use core::hint::spin_loop;
@@ -77,17 +79,26 @@ impl Drop for ScratchGuard<'_> {
 static FAT_SCRATCH: ScratchLock = ScratchLock::new();
 
 #[derive(Clone, Copy, Debug)]
+/// BIOS Parameter Block (BPB) metadata for FAT32 volumes.
 pub struct Bpb {
+    /// Bytes per sector.
     pub bytes_per_sector: u16,
+    /// Sectors per cluster.
     pub sectors_per_cluster: u8,
+    /// Reserved sectors before the FAT.
     pub reserved_sectors: u16,
+    /// Number of FAT copies.
     pub num_fats: u8,
+    /// Total sectors in the filesystem.
     pub total_sectors: u32,
+    /// Sectors per FAT.
     pub sectors_per_fat: u32,
+    /// Root directory cluster.
     pub root_cluster: u32,
 }
 
 impl Bpb {
+    /// Parse a BPB from the provided sector buffer.
     pub fn parse(buf: &[u8]) -> VfsResult<Self> {
         if buf.len() < BPB_SIZE {
             return Err(VfsError::Invalid);
@@ -168,10 +179,12 @@ impl Bpb {
         })
     }
 
+    /// Return the first FAT sector number.
     pub fn fat_start_sector(&self) -> u32 {
         self.reserved_sectors as u32
     }
 
+    /// Return the first data sector number.
     pub fn data_start_sector(&self) -> u32 {
         self.fat_start_sector() + self.sectors_per_fat * self.num_fats as u32
     }
@@ -197,6 +210,7 @@ fn inode_is_dir(inode: InodeId) -> bool {
     (inode & INODE_DIR_FLAG) != 0
 }
 
+/// FAT32 filesystem backed by a block device.
 pub struct Fat32Fs<'a> {
     cache: BlockCache<'a>,
     bpb: Bpb,
@@ -303,6 +317,7 @@ impl LfnState {
 }
 
 impl<'a> Fat32Fs<'a> {
+    /// Create a FAT32 filesystem from a block device.
     pub fn new(device: &'a dyn BlockDevice) -> VfsResult<Self> {
         let cache = BlockCache::new(device);
         let block_size = cache.block_size();
@@ -318,20 +333,24 @@ impl<'a> Fat32Fs<'a> {
         Ok(Self { cache, bpb })
     }
 
+    /// Return the parsed BPB metadata.
     pub fn bpb(&self) -> &Bpb {
         &self.bpb
     }
 
+    /// Convert a cluster number to its first sector.
     pub fn cluster_to_sector(&self, cluster: u32) -> u32 {
         let cluster_index = cluster.saturating_sub(2);
         self.bpb.data_start_sector()
             + cluster_index * self.bpb.sectors_per_cluster as u32
     }
 
+    /// Read a sector into the provided buffer.
     pub fn read_sector(&self, sector: BlockId, buf: &mut [u8]) -> VfsResult<()> {
         self.cache.read_block(sector, buf)
     }
 
+    /// Write a sector from the provided buffer.
     pub fn write_sector(&self, sector: BlockId, buf: &[u8]) -> VfsResult<()> {
         self.cache.write_block(sector, buf)
     }
@@ -756,6 +775,7 @@ fn eq_ignore_ascii_case(left: &[u8], right: &[u8]) -> bool {
         .all(|(a, b)| a.to_ascii_lowercase() == b.to_ascii_lowercase())
 }
 
+/// Build an in-memory minimal FAT32 image containing a single file.
 pub fn build_minimal_image(buf: &mut [u8], file_name: &str, file_data: &[u8]) -> VfsResult<usize> {
     let extra_name = "fatlog.txt";
     let bytes_per_sector = 512usize;

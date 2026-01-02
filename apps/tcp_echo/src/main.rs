@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+//! Minimal TCP echo user program for syscall coverage.
 
 use core::arch::asm;
 
@@ -347,6 +348,7 @@ fn sockaddr_matches(addr: &SockAddrIn, ip: [u8; 4], port: u16) -> bool {
 }
 
 #[no_mangle]
+/// Program entry point invoked by the kernel loader.
 pub extern "C" fn _start() -> ! {
     let probe = syscall_socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
     syscall_close(probe);

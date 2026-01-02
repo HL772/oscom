@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+//! User image construction and ELF loading helpers.
 
 use core::cmp::min;
 use core::mem::size_of;
@@ -7,14 +8,23 @@ use core::ptr;
 use crate::{config, mm};
 use crate::syscall::Errno;
 
+/// Prepared user execution context for spawning a task.
 pub struct UserContext {
+    /// Entry point address for the user image.
     pub entry: usize,
+    /// User stack pointer.
     pub user_sp: usize,
+    /// Root page table physical address.
     pub root_pa: usize,
+    /// SATP value for the page table.
     pub satp: usize,
+    /// Argument count.
     pub argc: usize,
+    /// Pointer to argv array in user space.
     pub argv: usize,
+    /// Pointer to envp array in user space.
     pub envp: usize,
+    /// Initial heap top (brk) value.
     pub heap_top: usize,
 }
 
@@ -237,6 +247,7 @@ const USER_CODE: [u8; 1052] = [
     0x93, 0x08, 0x90, 0x03, 0x73, 0x00, 0x00, 0x00, 0x6f, 0xf0, 0x1f, 0xeb,
 ];
 
+/// Prepare the built-in user test context when enabled.
 pub fn prepare_user_test() -> Option<UserContext> {
     let root_pa = mm::alloc_user_root()?;
     match load_user_image(root_pa) {
@@ -248,6 +259,7 @@ pub fn prepare_user_test() -> Option<UserContext> {
     }
 }
 
+/// Load the built-in user test image into an existing page table.
 pub fn load_user_image(root_pa: usize) -> Option<UserContext> {
     let code_pa = ensure_user_page(root_pa, USER_CODE_VA, mm::UserAccess::Read, mm::map_user_code)?;
     let data_pa = ensure_user_page(root_pa, USER_DATA_VA, mm::UserAccess::Write, mm::map_user_data)?;
@@ -289,6 +301,7 @@ pub fn load_user_image(root_pa: usize) -> Option<UserContext> {
     })
 }
 
+/// Load an ELF image into a fresh user address space.
 pub fn load_exec_elf(
     old_root_pa: usize,
     image: &[u8],
@@ -610,6 +623,7 @@ fn align_up(value: usize, align: usize) -> usize {
     (value + align - 1) & !(align - 1)
 }
 
+/// Return the embedded `/init` ELF image bytes.
 pub fn init_exec_elf_image() -> &'static [u8] {
     // SAFETY: early boot single-hart; buffer is initialized once.
     unsafe {

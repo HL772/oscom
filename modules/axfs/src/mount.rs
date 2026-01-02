@@ -1,41 +1,54 @@
+//! Mount table and path resolution helpers.
+
 use axvfs::{FileType, InodeId, VfsError, VfsOps, VfsResult};
 
+/// Maximum path traversal depth to avoid unbounded recursion.
 pub const MAX_PATH_DEPTH: usize = 64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Known mount identifiers.
 pub enum MountId {
     Root,
     Dev,
     Proc,
 }
 
+/// A single mount point entry in the mount table.
 pub struct MountPoint<'a> {
+    /// Mount identifier.
     pub id: MountId,
+    /// Mount path prefix.
     pub path: &'a str,
+    /// Filesystem instance for this mount.
     pub fs: &'a dyn VfsOps,
 }
 
 impl<'a> MountPoint<'a> {
+    /// Create a mount point definition.
     pub fn new(id: MountId, path: &'a str, fs: &'a dyn VfsOps) -> Self {
         Self { id, path, fs }
     }
 }
 
+/// Fixed-size mount table for resolving paths to filesystems.
 pub struct MountTable<'a, const N: usize> {
     mounts: [MountPoint<'a>; N],
 }
 
 impl<'a, const N: usize> MountTable<'a, N> {
+    /// Create a new mount table.
     pub fn new(mounts: [MountPoint<'a>; N]) -> Self {
         Self { mounts }
     }
 
+    /// Resolve a path to the mount and inode.
     pub fn resolve_path(&self, path: &str) -> VfsResult<(MountId, InodeId)> {
         let (mount, rel) = self.find_mount(path)?;
         let inode = resolve_path_fs(mount.fs, rel)?;
         Ok((mount.id, inode))
     }
 
+    /// Resolve the parent directory and basename for a path.
     pub fn resolve_parent<'p>(&self, path: &'p str) -> VfsResult<(MountId, InodeId, &'p str)> {
         if !path.starts_with('/') {
             return Err(VfsError::Invalid);
@@ -56,10 +69,12 @@ impl<'a, const N: usize> MountTable<'a, N> {
         Ok((mount.id, inode, name))
     }
 
+    /// Return the filesystem for the given mount id.
     pub fn fs_for(&self, id: MountId) -> Option<&'a dyn VfsOps> {
         self.mounts.iter().find(|mount| mount.id == id).map(|mount| mount.fs)
     }
 
+    /// Flush all mounted filesystems.
     pub fn flush_all(&self) -> VfsResult<()> {
         for mount in &self.mounts {
             mount.fs.flush()?;

@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+//! Minimal no-alloc async executor for kernel-side futures.
 
 use core::future::Future;
 use core::pin::Pin;
@@ -52,16 +53,19 @@ static mut TASKS: [TaskSlot; MAX_ASYNC_TASKS] = [TaskSlot::empty(); MAX_ASYNC_TA
 static mut READY_QUEUE: ReadyQueue = ReadyQueue::new();
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+/// Spawn errors for the async executor.
 pub enum SpawnError {
     Full,
     AlreadyActive,
 }
 
+/// Spawn a `'static` future onto the executor.
 pub fn spawn<F>(future: &'static mut F) -> Result<usize, SpawnError>
 where
     F: Future<Output = ()> + 'static,
 {
     with_no_irq(|| unsafe {
+        // SAFETY: interrupts are disabled; TASKS/READY_QUEUE are only mutated here.
         for (idx, slot) in TASKS.iter_mut().enumerate() {
             if slot.active {
                 continue;
@@ -80,11 +84,13 @@ where
     })
 }
 
+/// Poll all ready tasks; returns true when at least one task made progress.
 pub fn poll() -> bool {
     let mut did_work = false;
     while let Some(task_id) = queue_pop() {
         did_work = true;
         let (poll_fn, data) = unsafe {
+            // SAFETY: task_id came from READY_QUEUE and TASKS is static.
             let slot = &mut TASKS[task_id];
             (slot.poll_fn, slot.data)
         };
@@ -106,10 +112,12 @@ pub fn poll() -> bool {
     did_work
 }
 
+/// Create a future that yields once to the executor.
 pub fn yield_now() -> YieldNow {
     YieldNow { yielded: false }
 }
 
+/// Future that yields control exactly once.
 pub struct YieldNow {
     yielded: bool,
 }
@@ -152,6 +160,7 @@ fn queue_push(task_id: usize) {
 
 fn queue_pop() -> Option<usize> {
     with_no_irq(|| unsafe {
+        // SAFETY: interrupts are disabled; READY_QUEUE/TASKS are only mutated here.
         let queue = &mut READY_QUEUE;
         if queue.len == 0 {
             return None;
@@ -168,6 +177,7 @@ fn queue_pop() -> Option<usize> {
 
 fn queue_wake(task_id: usize) {
     with_no_irq(|| unsafe {
+        // SAFETY: interrupts are disabled; TASKS/READY_QUEUE are only mutated here.
         if task_id >= MAX_ASYNC_TASKS {
             return;
         }
@@ -181,18 +191,22 @@ fn queue_wake(task_id: usize) {
 }
 
 unsafe fn raw_waker(task_id: usize) -> RawWaker {
+    // SAFETY: task_id is encoded as a pointer-sized token for the waker.
     RawWaker::new(task_id as *const (), &RAW_WAKER_VTABLE)
 }
 
 unsafe fn waker_clone(data: *const ()) -> RawWaker {
+    // SAFETY: the data pointer carries a task id encoded by raw_waker.
     raw_waker(data as usize)
 }
 
 unsafe fn waker_wake(data: *const ()) {
+    // SAFETY: the data pointer carries a task id encoded by raw_waker.
     queue_wake(data as usize);
 }
 
 unsafe fn waker_wake_by_ref(data: *const ()) {
+    // SAFETY: the data pointer carries a task id encoded by raw_waker.
     queue_wake(data as usize);
 }
 
@@ -207,11 +221,13 @@ where
 {
     let sstatus: usize;
     unsafe {
+        // SAFETY: read/modify sstatus to mask interrupts in a short critical section.
         core::arch::asm!("csrr {0}, sstatus", out(reg) sstatus);
         core::arch::asm!("csrci sstatus, 0x2");
     }
     let ret = f();
     unsafe {
+        // SAFETY: restore previous interrupt state captured above.
         core::arch::asm!("csrw sstatus, {0}", in(reg) sstatus);
     }
     ret

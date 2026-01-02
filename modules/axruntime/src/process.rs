@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+//! Minimal process table and wait/exit helpers.
 
 use crate::futex;
 use crate::mm;
@@ -34,6 +35,7 @@ static PROC_WAITERS: [TaskWaitQueue; MAX_PROCS] = [
     TaskWaitQueue::new(),
 ];
 
+/// Initialize a new process record for a task.
 pub fn init_process(task_id: TaskId, parent_pid: usize, root_pa: usize) -> usize {
     let pid = task_id + 1;
     let idx = task_id;
@@ -50,6 +52,7 @@ pub fn init_process(task_id: TaskId, parent_pid: usize, root_pa: usize) -> usize
     pid
 }
 
+/// Return the current process ID, if any.
 pub fn current_pid() -> Option<usize> {
     let task_id = runtime::current_task_id()?;
     let idx = task_id;
@@ -63,6 +66,7 @@ pub fn current_pid() -> Option<usize> {
     }
 }
 
+/// Mark the current process as exited and record its exit code.
 pub fn exit_current(code: i32) -> bool {
     let Some(task_id) = runtime::current_task_id() else {
         return false;
@@ -100,6 +104,7 @@ pub fn exit_current(code: i32) -> bool {
     true
 }
 
+/// Update the current process page table root.
 pub fn update_current_root(root_pa: usize) -> bool {
     let Some(task_id) = runtime::current_task_id() else {
         return false;
@@ -115,6 +120,7 @@ pub fn update_current_root(root_pa: usize) -> bool {
     }
 }
 
+/// Record the clear_tid address for the current process.
 pub fn set_current_clear_tid(tidptr: usize) -> bool {
     let Some(task_id) = runtime::current_task_id() else {
         return false;
@@ -130,6 +136,7 @@ pub fn set_current_clear_tid(tidptr: usize) -> bool {
     }
 }
 
+/// Record the clear_tid address for the given process.
 pub fn set_clear_tid(pid: usize, tidptr: usize) -> bool {
     let idx = pid.saturating_sub(1);
     // SAFETY: early boot single-hart; process table writes are serialized.
@@ -142,6 +149,7 @@ pub fn set_clear_tid(pid: usize, tidptr: usize) -> bool {
     }
 }
 
+/// Wait for a child process to exit and report its status.
 pub fn waitpid(target: isize, status: usize, options: usize) -> Result<usize, Errno> {
     const WNOHANG: usize = 1;
     const WAITPID_RETRY_MS: u64 = 10;

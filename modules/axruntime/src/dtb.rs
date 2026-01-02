@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+//! Device tree (DTB) parsing helpers.
 
 use core::fmt;
 
@@ -15,21 +16,32 @@ const FDT_END: u32 = 9;
 const MAX_DEPTH: usize = 16;
 
 const MAX_VIRTIO_MMIO: usize = 4;
+/// Maximum number of memory-mapped device regions returned to the MMU.
 pub const MAX_DEVICE_REGIONS: usize = MAX_VIRTIO_MMIO + 1;
 
 #[derive(Copy, Clone, Debug, Default)]
+/// Virtio-mmio device description extracted from the DTB.
 pub struct VirtioMmioDevice {
+    /// MMIO region of the device.
     pub region: MemoryRegion,
+    /// IRQ line associated with the device.
     pub irq: u32,
 }
 
 #[derive(Copy, Clone, Debug)]
+/// Parsed DTB information used during boot.
 pub struct DtbInfo {
+    /// System memory region.
     pub memory: Option<MemoryRegion>,
+    /// UART MMIO region.
     pub uart: Option<MemoryRegion>,
+    /// Timebase frequency in Hz.
     pub timebase_frequency: Option<u64>,
+    /// Discovered virtio-mmio devices.
     pub virtio_mmio: [VirtioMmioDevice; MAX_VIRTIO_MMIO],
+    /// Number of valid virtio-mmio entries.
     pub virtio_mmio_len: usize,
+    /// PLIC MMIO region.
     pub plic: Option<MemoryRegion>,
 }
 
@@ -47,10 +59,12 @@ impl Default for DtbInfo {
 }
 
 impl DtbInfo {
+    /// Return the list of virtio-mmio devices.
     pub fn virtio_mmio_devices(&self) -> &[VirtioMmioDevice] {
         &self.virtio_mmio[..self.virtio_mmio_len]
     }
 
+    /// Collect device regions for identity mapping.
     pub fn collect_device_regions(&self, out: &mut [MemoryRegion]) -> usize {
         let mut count = 0usize;
         for dev in self.virtio_mmio_devices() {
@@ -71,6 +85,7 @@ impl DtbInfo {
 }
 
 #[derive(Copy, Clone, Debug)]
+/// DTB parsing errors.
 pub enum DtbError {
     NullPointer,
     BadMagic,
@@ -118,6 +133,7 @@ impl FdtHeader {
     }
 }
 
+/// Parse a flattened device tree from the given address.
 pub fn parse(dtb_addr: usize) -> Result<DtbInfo, DtbError> {
     if dtb_addr == 0 {
         return Err(DtbError::NullPointer);

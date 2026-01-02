@@ -1,9 +1,11 @@
 #![allow(dead_code)]
+//! Sleep helpers built on the runtime scheduler.
 
 use crate::{cpu, runtime, time};
 
 // Busy-sleep using timer ticks; useful for early bring-up.
 
+/// Sleep the current task for at least the specified milliseconds.
 pub fn sleep_ms(ms: u64) {
     if runtime::sleep_current_ms(ms) {
         return;

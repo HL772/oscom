@@ -1,7 +1,12 @@
+//! Device filesystem with basic /dev/null and /dev/zero.
+
 use axvfs::{DirEntry, FileType, InodeId, Metadata, VfsError, VfsOps, VfsResult};
 
+/// Root inode identifier for devfs.
 pub const ROOT_ID: InodeId = 1;
+/// Inode identifier for /dev/null.
 pub const DEV_NULL_ID: InodeId = 2;
+/// Inode identifier for /dev/zero.
 pub const DEV_ZERO_ID: InodeId = 3;
 
 #[derive(Clone, Copy)]
@@ -67,9 +72,11 @@ const DEV_ENTRIES: [DirEntrySpec; 4] = [
     },
 ];
 
+/// Simple devfs implementation with fixed nodes.
 pub struct DevFs;
 
 impl DevFs {
+    /// Create a new devfs instance.
     pub const fn new() -> Self {
         Self
     }

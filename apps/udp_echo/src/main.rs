@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+//! Minimal UDP echo user program for syscall coverage.
 
 use core::arch::asm;
 
@@ -286,6 +287,7 @@ fn check_addr(addr: &SockAddrIn, port: u16) {
 }
 
 #[no_mangle]
+/// Program entry point invoked by the kernel loader.
 pub extern "C" fn _start() -> ! {
     let server = syscall_socket(AF_INET, SOCK_DGRAM, 0);
     let client = syscall_socket(AF_INET, SOCK_DGRAM, 0);

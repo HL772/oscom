@@ -1,14 +1,22 @@
+//! Block device abstraction and a small write-back cache.
+
 use axvfs::{VfsError, VfsResult};
 use core::cell::UnsafeCell;
 use core::hint::spin_loop;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+/// Logical block identifier.
 pub type BlockId = u64;
 
+/// Abstract block device interface.
 pub trait BlockDevice {
+    /// Return the block size in bytes.
     fn block_size(&self) -> usize;
+    /// Read a block into the provided buffer.
     fn read_block(&self, block_id: BlockId, buf: &mut [u8]) -> VfsResult<()>;
+    /// Write a block from the provided buffer.
     fn write_block(&self, block_id: BlockId, buf: &[u8]) -> VfsResult<()>;
+    /// Flush any buffered writes to the device.
     fn flush(&self) -> VfsResult<()>;
 }
 
@@ -90,6 +98,7 @@ impl Drop for CacheGuard<'_> {
     }
 }
 
+/// Fixed-size block cache with a write-back policy.
 pub struct BlockCache<'a> {
     device: &'a dyn BlockDevice,
     block_size: usize,
@@ -97,6 +106,7 @@ pub struct BlockCache<'a> {
 }
 
 impl<'a> BlockCache<'a> {
+    /// Create a new block cache over a device.
     pub fn new(device: &'a dyn BlockDevice) -> Self {
         let block_size = device.block_size();
         Self {
@@ -106,10 +116,12 @@ impl<'a> BlockCache<'a> {
         }
     }
 
+    /// Return the block size in bytes.
     pub fn block_size(&self) -> usize {
         self.block_size
     }
 
+    /// Read a block with caching.
     pub fn read_block(&self, block_id: BlockId, buf: &mut [u8]) -> VfsResult<()> {
         if buf.len() < self.block_size {
             return Err(VfsError::Invalid);
@@ -136,6 +148,7 @@ impl<'a> BlockCache<'a> {
         Ok(())
     }
 
+    /// Write a block with caching.
     pub fn write_block(&self, block_id: BlockId, buf: &[u8]) -> VfsResult<()> {
         if buf.len() < self.block_size {
             return Err(VfsError::Invalid);
@@ -158,6 +171,7 @@ impl<'a> BlockCache<'a> {
         Ok(())
     }
 
+    /// Flush dirty cache entries to the device.
     pub fn flush(&self) -> VfsResult<()> {
         if self.block_size <= BLOCK_CACHE_MAX_SIZE {
             let guard = self.cache.lock();

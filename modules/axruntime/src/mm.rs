@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+//! Physical/virtual memory management and page table helpers.
 
 use core::arch::asm;
 use core::cmp::{max, min};
@@ -7,6 +8,7 @@ use core::mem::{size_of, MaybeUninit};
 use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+/// Base page size used by the kernel (4KiB).
 pub const PAGE_SIZE: usize = 4096;
 const PAGE_SHIFT: usize = 12;
 const PAGE_SIZE_2M: usize = 1 << 21;
@@ -39,40 +41,53 @@ const PTE_FLAGS_USER_DATA: usize = PTE_V | PTE_R | PTE_W | PTE_U | PTE_A | PTE_D
 const MAX_FRAMES: usize = IDENTITY_MAP_SIZE / PAGE_SIZE;
 
 #[derive(Clone, Copy)]
+/// User page mapping permissions.
 pub struct UserMapFlags {
+    /// Read permission.
     pub read: bool,
+    /// Write permission.
     pub write: bool,
+    /// Execute permission.
     pub exec: bool,
 }
 
 #[derive(Copy, Clone, Debug, Default)]
+/// A physical memory region described by the platform.
 pub struct MemoryRegion {
+    /// Base physical address.
     pub base: u64,
+    /// Region size in bytes.
     pub size: u64,
 }
 
 #[repr(transparent)]
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+/// Physical address wrapper.
 pub struct PhysAddr(usize);
 
 #[repr(transparent)]
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+/// Virtual address wrapper.
 pub struct VirtAddr(usize);
 
 #[repr(transparent)]
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+/// Physical page number wrapper.
 pub struct PhysPageNum(usize);
 
 #[repr(transparent)]
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+/// Virtual page number wrapper.
 pub struct VirtPageNum(usize);
 
 #[repr(transparent)]
 #[derive(Copy, Clone)]
+/// Page table entry wrapper.
 pub struct PageTableEntry {
     bits: usize,
 }
 
+/// Simple bump allocator for physical frames.
 pub struct BumpFrameAllocator {
     next: AtomicUsize,
     end: usize,
@@ -98,6 +113,7 @@ extern "C" {
     static ekernel: u8;
 }
 
+/// Initialize memory management and enable paging.
 pub fn init(memory: Option<MemoryRegion>, devices: &[MemoryRegion]) {
     if let Some(region) = memory {
         MEM_BASE.store(region.base as usize, Ordering::Relaxed);
@@ -127,48 +143,59 @@ pub fn init(memory: Option<MemoryRegion>, devices: &[MemoryRegion]) {
 }
 
 impl PhysAddr {
+    /// Construct a physical address wrapper.
     pub const fn new(addr: usize) -> Self {
         Self(addr)
     }
 
+    /// Return the raw address value.
     pub const fn as_usize(self) -> usize {
         self.0
     }
 
+    /// Align the address downward to `align`.
     pub fn align_down(self, align: usize) -> Self {
         Self(self.0 & !(align - 1))
     }
 
+    /// Align the address upward to `align`.
     pub fn align_up(self, align: usize) -> Self {
         Self((self.0 + align - 1) & !(align - 1))
     }
 
+    /// Convert to a physical page number by truncating.
     pub fn floor(self) -> PhysPageNum {
         PhysPageNum(self.0 >> PAGE_SHIFT)
     }
 
+    /// Convert to a physical page number by rounding up.
     pub fn ceil(self) -> PhysPageNum {
         PhysPageNum((self.0 + PAGE_SIZE - 1) >> PAGE_SHIFT)
     }
 }
 
 impl VirtAddr {
+    /// Construct a virtual address wrapper.
     pub const fn new(addr: usize) -> Self {
         Self(addr)
     }
 
+    /// Return the raw address value.
     pub const fn as_usize(self) -> usize {
         self.0
     }
 
+    /// Align the address downward to `align`.
     pub fn align_down(self, align: usize) -> Self {
         Self(self.0 & !(align - 1))
     }
 
+    /// Align the address upward to `align`.
     pub fn align_up(self, align: usize) -> Self {
         Self((self.0 + align - 1) & !(align - 1))
     }
 
+    /// Compute SV39 page table indexes for this address.
     pub fn sv39_indexes(self) -> [usize; SV39_LEVELS] {
         let vpn = self.0 >> PAGE_SHIFT;
         [
@@ -180,61 +207,74 @@ impl VirtAddr {
 }
 
 impl PhysPageNum {
+    /// Construct a physical page number wrapper.
     pub const fn new(ppn: usize) -> Self {
         Self(ppn)
     }
 
+    /// Return the raw page number value.
     pub const fn as_usize(self) -> usize {
         self.0
     }
 
+    /// Convert to a physical address.
     pub fn addr(self) -> PhysAddr {
         PhysAddr(self.0 << PAGE_SHIFT)
     }
 }
 
 impl VirtPageNum {
+    /// Construct a virtual page number wrapper.
     pub const fn new(vpn: usize) -> Self {
         Self(vpn)
     }
 
+    /// Return the raw page number value.
     pub const fn as_usize(self) -> usize {
         self.0
     }
 
+    /// Convert to a virtual address.
     pub fn addr(self) -> VirtAddr {
         VirtAddr(self.0 << PAGE_SHIFT)
     }
 }
 
 impl PageTableEntry {
+    /// Construct an empty page table entry.
     pub const fn empty() -> Self {
         Self { bits: 0 }
     }
 
+    /// Create a page table entry from a PPN and flags.
     pub fn new(ppn: PhysPageNum, flags: usize) -> Self {
         let bits = (ppn.as_usize() & PPN_MASK) << PPN_SHIFT | (flags & 0x3ff);
         Self { bits }
     }
 
+    /// Return true if the entry is valid.
     pub fn is_valid(self) -> bool {
         (self.bits & PTE_V) != 0
     }
 
+    /// Return true if the entry is a leaf mapping.
     pub fn is_leaf(self) -> bool {
         (self.bits & (PTE_R | PTE_W | PTE_X)) != 0
     }
 
+    /// Return the raw flag bits.
     pub fn flags(self) -> usize {
         self.bits & 0x3ff
     }
 
+    /// Return the physical page number stored in the entry.
     pub fn ppn(self) -> PhysPageNum {
         PhysPageNum((self.bits >> PPN_SHIFT) & PPN_MASK)
     }
 }
 
 impl BumpFrameAllocator {
+    /// Create a bump allocator from the given physical range.
     pub fn new(start: PhysAddr, end: PhysAddr) -> Self {
         let start = start.align_up(PAGE_SIZE).as_usize();
         let end = end.align_down(PAGE_SIZE).as_usize();
@@ -244,6 +284,7 @@ impl BumpFrameAllocator {
         }
     }
 
+    /// Allocate a contiguous run of frames.
     pub fn alloc_contiguous(&self, count: usize) -> Option<PhysPageNum> {
         let size = count.checked_mul(PAGE_SIZE)?;
         let current = self.next.fetch_add(size, Ordering::Relaxed);
@@ -253,6 +294,7 @@ impl BumpFrameAllocator {
         Some(PhysPageNum::new(current >> PAGE_SHIFT))
     }
 
+    /// Allocate a single frame.
     pub fn alloc(&self) -> Option<PhysPageNum> {
         self.alloc_contiguous(1)
     }
@@ -272,6 +314,7 @@ impl PageTable {
     }
 }
 
+/// Allocate a zeroed physical frame.
 pub fn alloc_frame() -> Option<PhysPageNum> {
     if !FRAME_ALLOC_READY.load(Ordering::Acquire) {
         return None;
@@ -293,6 +336,7 @@ pub fn alloc_frame() -> Option<PhysPageNum> {
     Some(frame)
 }
 
+/// Allocate a zeroed contiguous range of physical frames.
 pub fn alloc_contiguous_frames(count: usize) -> Option<PhysPageNum> {
     if !FRAME_ALLOC_READY.load(Ordering::Acquire) {
         return None;
@@ -311,20 +355,22 @@ pub fn alloc_contiguous_frames(count: usize) -> Option<PhysPageNum> {
 }
 
 #[derive(Clone, Copy)]
+/// Requested access type for user pointer validation.
 pub enum UserAccess {
     Read,
     Write,
     Execute,
 }
 
-/// 用户态指针封装，负责在访问前校验页表权限与范围。
 #[derive(Clone, Copy)]
+/// 用户态指针封装，负责在访问前校验页表权限与范围。
 pub struct UserPtr<T> {
     ptr: usize,
     _marker: PhantomData<*const T>,
 }
 
 impl<T> UserPtr<T> {
+    /// Create a user pointer wrapper for the given virtual address.
     pub const fn new(ptr: usize) -> Self {
         Self {
             ptr,
@@ -332,12 +378,14 @@ impl<T> UserPtr<T> {
         }
     }
 
+    /// Return the raw virtual address value.
     pub const fn as_usize(self) -> usize {
         self.ptr
     }
 }
 
 impl<T: Copy> UserPtr<T> {
+    /// Read a value of `T` from user space.
     pub fn read(self, root_pa: usize) -> Option<T> {
         let size = size_of::<T>();
         let mut value = MaybeUninit::<T>::uninit();
@@ -349,6 +397,7 @@ impl<T: Copy> UserPtr<T> {
         Some(unsafe { value.assume_init() })
     }
 
+    /// Write a value of `T` into user space.
     pub fn write(self, root_pa: usize, value: T) -> Option<()> {
         let size = size_of::<T>();
         let src = unsafe {
@@ -359,26 +408,30 @@ impl<T: Copy> UserPtr<T> {
     }
 }
 
-/// 用户态切片封装，按页分段验证并支持复制。
 #[derive(Clone, Copy)]
+/// 用户态切片封装，按页分段验证并支持复制。
 pub struct UserSlice {
     ptr: usize,
     len: usize,
 }
 
 impl UserSlice {
+    /// Create a user slice wrapper for the given base/length.
     pub const fn new(ptr: usize, len: usize) -> Self {
         Self { ptr, len }
     }
 
+    /// Return the slice length in bytes.
     pub const fn len(self) -> usize {
         self.len
     }
 
+    /// Return true when the slice length is zero.
     pub const fn is_empty(self) -> bool {
         self.len == 0
     }
 
+    /// Iterate over validated chunks of the user slice.
     pub fn for_each_chunk<F>(
         self,
         root_pa: usize,
@@ -406,6 +459,7 @@ impl UserSlice {
         Some(processed)
     }
 
+    /// Copy data from user space into the destination slice.
     pub fn copy_to_slice(self, root_pa: usize, dst: &mut [u8]) -> Option<usize> {
         if dst.len() < self.len {
             return None;
@@ -423,6 +477,7 @@ impl UserSlice {
         Some(offset)
     }
 
+    /// Copy data from the source slice into user space.
     pub fn copy_from_slice(self, root_pa: usize, src: &[u8]) -> Option<usize> {
         if src.len() < self.len {
             return None;
@@ -441,29 +496,35 @@ impl UserSlice {
     }
 }
 
+/// Return the physical address of the kernel root page table.
 pub fn kernel_root_pa() -> usize {
     KERNEL_ROOT_PA.load(Ordering::Relaxed)
 }
 
+/// Translate a kernel virtual address into a physical address.
 pub fn kernel_virt_to_phys(addr: usize) -> usize {
     // 内核页表保持恒等映射，虚拟地址即物理地址。
     virt_to_phys(addr)
 }
 
+/// Return the detected physical memory size in bytes.
 pub fn memory_size() -> usize {
     MEM_SIZE.load(Ordering::Relaxed)
 }
 
+/// Return the physical address of the currently active root page table.
 pub fn current_root_pa() -> usize {
     let satp = read_satp();
     let ppn = satp & PPN_MASK;
     ppn << PAGE_SHIFT
 }
 
+/// Build an SATP value for the provided root page table.
 pub fn satp_for_root(root_pa: usize) -> usize {
     SATP_MODE_SV39 | (root_pa >> PAGE_SHIFT)
 }
 
+/// Flush the local TLB after page table updates.
 pub fn flush_tlb() {
     // SAFETY: sfence.vma is safe to issue after updating page tables.
     unsafe {
@@ -471,6 +532,7 @@ pub fn flush_tlb() {
     }
 }
 
+/// Flush the instruction cache after writing code pages.
 pub fn flush_icache() {
     // SAFETY: fence.i syncs instruction stream after writing code.
     unsafe {
@@ -478,6 +540,7 @@ pub fn flush_icache() {
     }
 }
 
+/// Translate and validate a user-space pointer for the requested access.
 pub fn translate_user_ptr(root_pa: usize, va: usize, len: usize, access: UserAccess) -> Option<usize> {
     let (pa_base, page_size, flags) = walk_page(root_pa, va)?;
     if (flags & PTE_U) == 0 {
@@ -625,6 +688,7 @@ fn resolve_cow(root_pa: usize, va: usize) -> bool {
     true
 }
 
+/// Resolve a copy-on-write fault at the given virtual address.
 pub fn handle_cow_fault(root_pa: usize, va: usize) -> bool {
     resolve_cow(root_pa, va)
 }
@@ -655,18 +719,22 @@ fn ensure_table(entry: &mut PageTableEntry) -> Option<&'static mut PageTable> {
     Some(table)
 }
 
+/// Map a user code page with RX permissions.
 pub fn map_user_code(root_pa: usize, va: usize, pa: usize) -> bool {
     map_page(root_pa, va, pa, PTE_FLAGS_USER_CODE)
 }
 
+/// Map a user data page with RW permissions.
 pub fn map_user_data(root_pa: usize, va: usize, pa: usize) -> bool {
     map_page(root_pa, va, pa, PTE_FLAGS_USER_DATA)
 }
 
+/// Map a user stack page with RW permissions.
 pub fn map_user_stack(root_pa: usize, va: usize, pa: usize) -> bool {
     map_page(root_pa, va, pa, PTE_FLAGS_USER_DATA)
 }
 
+/// Map a user page with the specified permissions.
 pub fn map_user_page(root_pa: usize, va: usize, pa: usize, flags: UserMapFlags) -> bool {
     let mut pte_flags = PTE_V | PTE_U | PTE_A;
     if flags.read {
@@ -681,6 +749,7 @@ pub fn map_user_page(root_pa: usize, va: usize, pa: usize, flags: UserMapFlags) 
     map_page(root_pa, va, pa, pte_flags)
 }
 
+/// Check whether a user virtual page is mapped.
 pub fn user_page_mapped(root_pa: usize, va: usize) -> bool {
     let Some(entry) = lookup_user_pte(root_pa, va) else {
         return false;
@@ -688,6 +757,7 @@ pub fn user_page_mapped(root_pa: usize, va: usize) -> bool {
     entry.is_valid() && entry.is_leaf() && (entry.flags() & PTE_U) != 0
 }
 
+/// Unmap a user virtual page.
 pub fn unmap_user_page(root_pa: usize, va: usize) -> bool {
     if root_pa == 0 {
         return false;
@@ -728,6 +798,7 @@ pub fn unmap_user_page(root_pa: usize, va: usize) -> bool {
     true
 }
 
+/// Update permissions on a mapped user page.
 pub fn protect_user_page(root_pa: usize, va: usize, flags: UserMapFlags) -> bool {
     let Some(entry) = lookup_user_pte_mut(root_pa, va) else {
         return false;
@@ -758,6 +829,7 @@ pub fn protect_user_page(root_pa: usize, va: usize, flags: UserMapFlags) -> bool
     true
 }
 
+/// Allocate a new user root page table (based on the kernel root).
 pub fn alloc_user_root() -> Option<usize> {
     let kernel_root_pa = kernel_root_pa();
     if kernel_root_pa == 0 {
@@ -912,6 +984,7 @@ fn table_has_user_l1(table: &PageTable) -> bool {
     false
 }
 
+/// Clone user mappings from a parent page table for fork/clone.
 pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
     if parent_root_pa == 0 {
         return None;
@@ -1018,6 +1091,7 @@ pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
     Some(child_root_pa)
 }
 
+/// Release a user page table and associated user pages.
 pub fn release_user_root(root_pa: usize) {
     if root_pa == 0 {
         return;
@@ -1075,6 +1149,7 @@ pub fn release_user_root(root_pa: usize) {
     flush_tlb();
 }
 
+/// Switch the active page table to the provided root.
 pub fn switch_root(root_pa: usize) {
     if root_pa == 0 {
         return;

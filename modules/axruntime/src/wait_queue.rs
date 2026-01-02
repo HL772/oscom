@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+//! Wait queue facade for runtime blocking operations.
 
 use crate::task_wait_queue::TaskWaitQueue;
 use crate::wait::WaitResult;
@@ -9,6 +10,7 @@ pub struct WaitQueue {
 }
 
 impl WaitQueue {
+    /// Create an empty wait queue.
     pub const fn new() -> Self {
         Self {
             inner: TaskWaitQueue::new(),

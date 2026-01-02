@@ -1,3 +1,5 @@
+//! Memory-backed pseudo filesystem for early path handling.
+
 use core::cell::UnsafeCell;
 use core::cmp::min;
 use core::hint::spin_loop;
@@ -5,13 +7,21 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use axvfs::{DirEntry, FileType, InodeId, Metadata, VfsError, VfsOps, VfsResult};
 
+/// Root inode identifier for memfs.
 pub const ROOT_ID: InodeId = 1;
+/// Inode identifier for the /dev directory.
 pub const DEV_ID: InodeId = 2;
+/// Inode identifier for /dev/null.
 pub const DEV_NULL_ID: InodeId = 3;
+/// Inode identifier for /dev/zero.
 pub const DEV_ZERO_ID: InodeId = 4;
+/// Inode identifier for the embedded /init image.
 pub const INIT_ID: InodeId = 5;
+/// Inode identifier for the /proc directory.
 pub const PROC_ID: InodeId = 6;
+/// Inode identifier for the /tmp directory.
 pub const TMP_ID: InodeId = 7;
+/// Inode identifier for /tmp/log.
 pub const TMP_LOG_ID: InodeId = 8;
 
 const TMP_LOG_SIZE: usize = 1024;
@@ -97,6 +107,7 @@ impl Drop for MemLogGuard<'_> {
 static TMP_LOG: MemLogLock = MemLogLock::new();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Errors returned by memfs path resolution.
 pub enum ResolveError {
     NotFound,
     NotDir,
@@ -265,15 +276,18 @@ const TMP_ENTRIES: [DirEntrySpec; 3] = [
     },
 ];
 
+/// Memory-backed filesystem with fixed pseudo nodes.
 pub struct MemFs<'a> {
     init_image: Option<&'a [u8]>,
 }
 
 impl<'a> MemFs<'a> {
+    /// Create a memfs instance without an embedded /init image.
     pub const fn new() -> Self {
         Self { init_image: None }
     }
 
+    /// Create a memfs instance with an embedded /init image.
     pub fn with_init_image(image: &'a [u8]) -> Self {
         Self {
             init_image: Some(image),
@@ -284,6 +298,7 @@ impl<'a> MemFs<'a> {
         NODES.iter().find(|node| node.id == inode)
     }
 
+    /// Resolve a path inside memfs into an inode id.
     pub fn resolve_path(&self, path: &str) -> Result<InodeId, ResolveError> {
         if !path.starts_with('/') {
             return Err(ResolveError::Invalid);
@@ -317,6 +332,7 @@ impl<'a> MemFs<'a> {
         Ok(current)
     }
 
+    /// Retrieve metadata for a memfs inode.
     pub fn metadata_for(&self, inode: InodeId) -> Option<Metadata> {
         let node = self.node(inode)?;
         let size = if inode == INIT_ID {
@@ -329,6 +345,7 @@ impl<'a> MemFs<'a> {
         Some(Metadata::new(node.file_type, size, node.mode))
     }
 
+    /// Return the symlink target for a memfs inode, if any.
     pub fn readlink(&self, inode: InodeId) -> VfsResult<&'static [u8]> {
         let node = self.node(inode).ok_or(VfsError::NotFound)?;
         if node.file_type != FileType::Symlink {
@@ -337,6 +354,7 @@ impl<'a> MemFs<'a> {
         Err(VfsError::NotSupported)
     }
 
+    /// Resolve the parent directory and basename for a path.
     pub fn resolve_parent<'b>(&self, path: &'b str) -> Result<(InodeId, &'b str), ResolveError> {
         if !path.starts_with('/') {
             return Err(ResolveError::Invalid);
