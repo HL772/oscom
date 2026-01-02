@@ -48,6 +48,7 @@
 - ext4 增加最小 create/write/truncate 骨架（direct + single-indirect blocks + bitmap 分配），补充 host 侧 `create_write_truncate` 自测。
 - ext4 写入路径支持 single-indirect 分配，新增 host 侧 indirect 写入回读测试。
 - ext4 inode 内 extent(depth=0) 写入与稀疏写入路径补齐，新增 host 侧 `write_extent_sparse` 自测。
+- ext4 extent tree(depth=1) 写入路径补齐，新增 `write_extent_depth1` 自测覆盖索引块与叶子块插入。
 - syscall 增加 ftruncate 与 O_TRUNC 支持，VFS truncate 与 ext4 写路径联动验证。
 - syscall 增加 lseek (SEEK_SET/CUR/END) 与 O_APPEND 追加写入，补齐 VFS 偏移管理。
 - 新增用户态 fs-smoke 覆盖 lseek/pwrite64/append 语义，并接入冒烟脚本开关。
@@ -56,7 +57,7 @@
 
 ## 问题与定位
 - ext4 extent 深度>0 与间接块读路径已经补齐，后续仍需覆盖写路径。
-- ext4 extent tree(depth>0) 写入扩展与 extent entry 扩容仍缺失，当前仅支持 inode 内 extent(depth=0)。
+- ext4 extent tree(depth>1) 写入扩展与 extent entry 扩容仍缺失，当前仅支持 depth=1。
 - ext4 稀疏文件读取在遇到未分配块时提前返回，导致 `/init` ELF 被截断并触发 `execve` 返回 `EINVAL`。
 - FAT32 写入回读不一致：`sys_write`/`sys_read` 的临时 scratch 仅 256B，小于 FAT32 扇区 512B，触发 RMW；同时 `with_mounts` 每次 syscall 重建 FS/BlockCache，导致第二次写入读取到旧扇区内容，把第一次写入覆盖回旧值。
 - 调试误操作：尝试修改 `USER_CODE` 中 FAT32 缓冲区地址时使用 `addi` 立即数 `0x800`，符号扩展为 -2048，指针落入代码页，写入覆盖指令，导致后续 read 路径被破坏（表现为 `fat32: ok` 不再出现）。
