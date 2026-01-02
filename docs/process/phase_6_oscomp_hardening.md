@@ -12,6 +12,7 @@
 - net-perf 增加 `PERF_IO_TIMEOUT` 发送端超时参数，并补充 1MiB/4MiB 基线记录。
 - TCP 缓冲区上调至 16KB、idle net poll 间隔调整为 20ms，作为性能调优基线。
 - 4MiB net-perf 基线调优后耗时约 3.4s（见 net_perf_baseline_2026-01-01.md）。
+- 8MiB/16MiB net-perf 扩展基线分别约 33.4s/80.4s（见 net_perf_baseline_2026-01-01.md）。
 
 ## 问题与定位
 - 尚未进入测例加固阶段，暂无问题记录。

@@ -45,6 +45,7 @@
 - net-perf 支持 PERF_QEMU_TIMEOUT 直传 QEMU 超时，避免大流量基准被 5s 超时截断。
 - net-perf 支持 PERF_IO_TIMEOUT 控制发送端 I/O 超时，降低 host 侧提前超时概率。
 - 提升 TCP 缓冲区到 16KB，并将 idle net poll 间隔缩短至 20ms，以改善长流量吞吐。
+- 补充 8MiB/16MiB net-perf 基线记录，覆盖长流量稳定性。
 
 ## 问题与定位
 - QEMU user-net 下 ARP probe 已发送但 RX 帧未进入，定位为 virtio 现代特性头部长度不匹配导致帧损坏。

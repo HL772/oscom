@@ -45,12 +45,38 @@ PERF_QEMU_TIMEOUT=60 \
 make test-net-perf ARCH=riscv64 PLATFORM=qemu
 ```
 
+```bash
+OUT_DIR=build/net-perf-8m \
+PERF_INIT_ELF=build/net_bench.elf \
+PERF_ROOTFS_DIR=apps/net_bench/rootfs \
+PERF_EXPECT="net-bench: ready" \
+PERF_SEND_BYTES=8388608 \
+PERF_SEND_CHUNK=65536 \
+PERF_IO_TIMEOUT=30 \
+PERF_QEMU_TIMEOUT=90 \
+make test-net-perf ARCH=riscv64 PLATFORM=qemu
+```
+
+```bash
+OUT_DIR=build/net-perf-16m \
+PERF_INIT_ELF=build/net_bench.elf \
+PERF_ROOTFS_DIR=apps/net_bench/rootfs \
+PERF_EXPECT="net-bench: ready" \
+PERF_SEND_BYTES=16777216 \
+PERF_SEND_CHUNK=65536 \
+PERF_IO_TIMEOUT=60 \
+PERF_QEMU_TIMEOUT=150 \
+make test-net-perf ARCH=riscv64 PLATFORM=qemu
+```
+
 ## 结果
 - 64K 基线：rx_bytes=65536，sent_bytes=65536，duration_ms=2。
 - 64K 基线（PERF_QEMU_TIMEOUT=20）：rx_bytes=65536，sent_bytes=65536，duration_ms=1。
 - 1MiB 扩展（PERF_QEMU_TIMEOUT=30）：rx_bytes=1048576，sent_bytes=1048576，duration_ms=245。
 - 4MiB 扩展（PERF_QEMU_TIMEOUT=60 + PERF_IO_TIMEOUT=20）：rx_bytes=4194304，sent_bytes=4194304，duration_ms=11635。
 - 4MiB 调优（TCP_BUF_LEN=16KB + poll 20ms）：rx_bytes=4194304，sent_bytes=4194304，duration_ms=3444。
+- 8MiB 扩展（PERF_QEMU_TIMEOUT=90 + PERF_IO_TIMEOUT=30）：rx_bytes=8388608，sent_bytes=8388608，duration_ms=33410。
+- 16MiB 扩展（PERF_QEMU_TIMEOUT=150 + PERF_IO_TIMEOUT=60）：rx_bytes=16777216，sent_bytes=16777216，duration_ms=80437。
 - 日志路径：
   - perf.log：build/net-perf/perf.log
   - qemu-smoke.log：build/net-perf/qemu-smoke.log
