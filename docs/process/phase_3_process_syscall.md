@@ -98,7 +98,7 @@
 - 增加 pipe2，占位内存管道缓冲区，支持阻塞唤醒与 EPIPE/EOF/EAGAIN。
 - fcntl/F_SETFL 支持 O_NONBLOCK/O_APPEND，pipe 读写在设置后返回 EAGAIN。
 - lseek 支持 VFS 句柄的 SEEK_SET/SEEK_CUR/SEEK_END，非可寻址句柄返回 ESPIPE。
-- 增加 pread64/pwrite64，支持指定偏移读写且不影响 fd 读写偏移。
+- 增加 pread64/pwrite64/preadv/pwritev，支持指定偏移读写且不影响 fd 读写偏移。
 - 增加 set_robust_list/get_robust_list，占位返回空链表。
 - 增加 rt_sigaction/rt_sigprocmask，占位支持信号配置。
 - 增加 fcntl，占位支持标准输入输出标志并返回基础读写模式。

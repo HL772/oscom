@@ -58,7 +58,7 @@
 - 早期实现 `dup/dup3`，占位支持标准输入输出重定向（dup2 由 dup3 flags=0 兼容）。
 - 早期实现 `pipe2`，提供固定大小内存管道，空/满时阻塞或返回 EAGAIN，并在无读端时返回 EPIPE、无写端时读返回 EOF。
 - 早期实现 `lseek`，支持 VFS 文件句柄的 SEEK_SET/SEEK_CUR/SEEK_END，非可 seek 句柄返回 ESPIPE。
-- 早期实现 `pread64/pwrite64`，直接走 VFS `read_at/write_at` 且不更新 fd 偏移。
+- 早期实现 `pread64/pwrite64/preadv/pwritev`，直接走 VFS `read_at/write_at` 且不更新 fd 偏移。
 - 早期实现 `set_robust_list/get_robust_list`，占位返回空链表。
 - 早期实现 `rt_sigaction/rt_sigprocmask`，占位接受信号配置请求。
 - 早期实现 `fcntl`，支持 F_GETFL/F_SETFL 基础标志（O_NONBLOCK/O_APPEND）查询与设置。

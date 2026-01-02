@@ -139,6 +139,8 @@ fn dispatch(tf: &mut TrapFrame, ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_READ => sys_read(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_PREAD64 => sys_pread64(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_PWRITE64 => sys_pwrite64(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
+        SYS_PREADV => sys_preadv(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
+        SYS_PWRITEV => sys_pwritev(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
         SYS_WRITE => sys_write(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_READV => sys_readv(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_WRITEV => sys_writev(ctx.args[0], ctx.args[1], ctx.args[2]),
@@ -263,6 +265,8 @@ const SYS_EPOLL_PWAIT2: usize = 441;
 const SYS_READ: usize = 63;
 const SYS_PREAD64: usize = 67;
 const SYS_PWRITE64: usize = 68;
+const SYS_PREADV: usize = 69;
+const SYS_PWRITEV: usize = 70;
 const SYS_WRITE: usize = 64;
 const SYS_READV: usize = 65;
 const SYS_WRITEV: usize = 66;
@@ -1536,6 +1540,101 @@ fn sys_pwrite64(fd: usize, buf: usize, len: usize, offset: usize) -> Result<usiz
         | FdKind::Timerfd(_)
         | FdKind::Epoll(_) => Err(Errno::Pipe),
         FdKind::Empty => Err(Errno::Badf),
+    }
+}
+
+fn sys_preadv(fd: usize, iov_ptr: usize, iovcnt: usize, offset: usize) -> Result<usize, Errno> {
+    if iovcnt == 0 {
+        return Ok(0);
+    }
+    if iovcnt > IOV_MAX {
+        return Err(Errno::Inval);
+    }
+    if iov_ptr == 0 {
+        return Err(Errno::Fault);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    let entry = resolve_fd(fd).ok_or(Errno::Badf)?;
+    match entry.kind {
+        FdKind::Vfs(handle) => {
+            if handle.file_type == FileType::Dir {
+                return Err(Errno::IsDir);
+            }
+            with_mounts(|mounts| {
+                let fs = mounts.fs_for(handle.mount).ok_or(Errno::NoEnt)?;
+                let mut total = 0usize;
+                for index in 0..iovcnt {
+                    let iov = load_iovec(root_pa, iov_ptr, index)?;
+                    if iov.iov_len == 0 {
+                        continue;
+                    }
+                    let read =
+                        read_vfs_at(root_pa, fs, handle.inode, offset + total, iov.iov_base, iov.iov_len)?;
+                    if read == 0 {
+                        return Ok(total);
+                    }
+                    total += read;
+                    if read < iov.iov_len {
+                        return Ok(total);
+                    }
+                }
+                Ok(total)
+            })
+        }
+        FdKind::Empty => Err(Errno::Badf),
+        _ => Err(Errno::Pipe),
+    }
+}
+
+fn sys_pwritev(fd: usize, iov_ptr: usize, iovcnt: usize, offset: usize) -> Result<usize, Errno> {
+    if iovcnt == 0 {
+        return Ok(0);
+    }
+    if iovcnt > IOV_MAX {
+        return Err(Errno::Inval);
+    }
+    if iov_ptr == 0 {
+        return Err(Errno::Fault);
+    }
+    let root_pa = mm::current_root_pa();
+    if root_pa == 0 {
+        return Err(Errno::Fault);
+    }
+    let entry = resolve_fd(fd).ok_or(Errno::Badf)?;
+    match entry.kind {
+        FdKind::Vfs(handle) => {
+            if handle.file_type == FileType::Dir {
+                return Err(Errno::IsDir);
+            }
+            with_mounts(|mounts| {
+                let fs = mounts.fs_for(handle.mount).ok_or(Errno::NoEnt)?;
+                let mut total = 0usize;
+                for index in 0..iovcnt {
+                    let iov = load_iovec(root_pa, iov_ptr, index)?;
+                    if iov.iov_len == 0 {
+                        continue;
+                    }
+                    let written = write_vfs_at(
+                        root_pa,
+                        fs,
+                        handle.inode,
+                        offset + total,
+                        iov.iov_base,
+                        iov.iov_len,
+                    )?;
+                    total += written;
+                    if written < iov.iov_len {
+                        return Ok(total);
+                    }
+                }
+                Ok(total)
+            })
+        }
+        FdKind::Empty => Err(Errno::Badf),
+        _ => Err(Errno::Pipe),
     }
 }
 
