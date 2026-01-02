@@ -99,18 +99,18 @@ Project Aurora 旨在实现一个**Rust 组件化**、**面向 OSComp 内核赛�
 
 ```
 +--------------------------------------------------+
-| Apps (userspace tests / tools)                  |
+| Apps (userspace tests / tools)                   |
 |  - tcp_echo / udp_echo / fs_smoke / net_bench    |
 +------------------------+-------------------------+
 | Modules (kernel services)                        |
-|  - axruntime / axfs / axnet                       |
+|  - axruntime / axfs / axnet                      |
 +------------------------+-------------------------+
-| Core (shared libs)                                |
-|  - axvfs, scheduler, page_table helpers, etc.     |
+| Core (shared libs)                               |
+|  - axvfs, scheduler, page_table helpers, etc.    |
 +------------------------+-------------------------+
 | HAL/Arch/Drivers                                 |
-|  - arch/ (RISC-V trap/entry)                      |
-|  - drivers/ (virtio-blk/net)                      |
+|  - arch/ (RISC-V trap/entry)                     |
+|  - drivers/ (virtio-blk/net)                     |
 +--------------------------------------------------+
 ```
 
