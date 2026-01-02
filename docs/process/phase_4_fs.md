@@ -23,6 +23,7 @@
 - 新增 devfs/procfs 占位实现，/dev 路径解析与元数据读取走 devfs。
 - 新增 BlockDevice trait 与 BlockCache 直通占位，作为后续块设备与缓存接入骨架。
 - BlockCache 增加固定大小的直映写回缓存，flush 时回写脏块。
+- syscall 增加 sync，触发挂载表 flush 回写块缓存。
 - 增加 FAT32 BPB 解析与根簇定位骨架，预留目录与数据读取实现入口。
 - 增加 ext4 superblock 解析与根 inode 占位，补齐最小元数据读取入口。
 - 增加 /proc 挂载点的目录句柄占位，getdents64 返回最小 `.`/`..` 项。

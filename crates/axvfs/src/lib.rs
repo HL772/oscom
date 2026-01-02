@@ -95,6 +95,9 @@ pub trait VfsOps {
     fn read_at(&self, inode: InodeId, offset: u64, buf: &mut [u8]) -> VfsResult<usize>;
     fn write_at(&self, inode: InodeId, offset: u64, buf: &[u8]) -> VfsResult<usize>;
     fn read_dir(&self, inode: InodeId, offset: usize, entries: &mut [DirEntry]) -> VfsResult<usize>;
+    fn flush(&self) -> VfsResult<()> {
+        Ok(())
+    }
     fn truncate(&self, _inode: InodeId, _size: u64) -> VfsResult<()> {
         Err(VfsError::NotSupported)
     }

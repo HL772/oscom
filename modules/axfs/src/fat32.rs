@@ -1099,6 +1099,10 @@ impl VfsOps for Fat32Fs<'_> {
         })?;
         Ok(written)
     }
+
+    fn flush(&self) -> VfsResult<()> {
+        self.cache.flush()
+    }
 }
 
 #[cfg(test)]

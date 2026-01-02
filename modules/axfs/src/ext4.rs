@@ -1024,6 +1024,10 @@ impl VfsOps for Ext4Fs<'_> {
         Ok(written)
     }
 
+    fn flush(&self) -> VfsResult<()> {
+        self.cache.flush()
+    }
+
     fn truncate(&self, inode: InodeId, size: u64) -> VfsResult<()> {
         let mut inode_meta = self.read_inode(inode)?;
         if inode_mode_type(inode_meta.mode) == FileType::Dir {

@@ -60,6 +60,13 @@ impl<'a, const N: usize> MountTable<'a, N> {
         self.mounts.iter().find(|mount| mount.id == id).map(|mount| mount.fs)
     }
 
+    pub fn flush_all(&self) -> VfsResult<()> {
+        for mount in &self.mounts {
+            mount.fs.flush()?;
+        }
+        Ok(())
+    }
+
     fn find_mount<'p>(&self, path: &'p str) -> VfsResult<(&MountPoint<'a>, &'p str)> {
         if !path.starts_with('/') {
             return Err(VfsError::Invalid);

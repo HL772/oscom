@@ -234,6 +234,7 @@ fn dispatch(tf: &mut TrapFrame, ctx: SyscallContext) -> Result<usize, Errno> {
         SYS_ACCEPT => sys_accept(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_SENDTO => sys_sendto(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3], ctx.args[4], ctx.args[5]),
         SYS_RECVFROM => sys_recvfrom(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3], ctx.args[4], ctx.args[5]),
+        SYS_SYNC => sys_sync(),
         SYS_SENDMSG => sys_sendmsg(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_RECVMSG => sys_recvmsg(ctx.args[0], ctx.args[1], ctx.args[2]),
         SYS_SENDMMSG => sys_sendmmsg(ctx.args[0], ctx.args[1], ctx.args[2], ctx.args[3]),
@@ -262,6 +263,7 @@ const SYS_TIMERFD_GETTIME: usize = 87;
 const SYS_TIMERFD_GETTIME64: usize = 410;
 const SYS_TIMERFD_SETTIME64: usize = 411;
 const SYS_EPOLL_PWAIT2: usize = 441;
+const SYS_SYNC: usize = 162;
 const SYS_READ: usize = 63;
 const SYS_PREAD64: usize = 67;
 const SYS_PWRITE64: usize = 68;
@@ -1830,6 +1832,11 @@ fn sys_getpeername(fd: usize, addr: usize, addrlen: usize) -> Result<usize, Errn
         return Err(Errno::NotConn);
     };
     write_sockaddr_in(root_pa, addr, addrlen, Some((ip, port)))?;
+    Ok(0)
+}
+
+fn sys_sync() -> Result<usize, Errno> {
+    with_mounts(|mounts| mounts.flush_all().map_err(map_vfs_err))?;
     Ok(0)
 }
 

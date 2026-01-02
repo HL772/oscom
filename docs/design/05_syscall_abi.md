@@ -34,6 +34,7 @@
 - 早期实现 `eventfd2/timerfd_*` 与 `epoll_*` 最小语义：eventfd 提供计数器读写与阻塞；timerfd 支持相对/绝对定时与读取过期计数；epoll 以轮询 + sleep-retry 输出就绪事件，忽略信号掩码。
 - 早期实现 `mknodat/symlinkat/linkat/renameat/renameat2`，占位仅校验指针与 AT_FDCWD，未提供真实重命名/链接能力。
 - 早期实现 `statfs/fstatfs`，占位填充基本文件系统信息。
+- 早期实现 `sync`，统一触发挂载表 flush，将块缓存脏块写回设备。
 - 早期实现 `fchmodat/fchownat/utimensat`，占位校验参数与路径，允许根目录与 `/dev` 伪节点。
 - 早期实现 `poll/ppoll`，支持 pipe 可读/可写事件与 stdin 就绪检测、单 fd 阻塞等待；多 fd 采用 sleep-retry 轮询重扫，pipe 读写/关闭会唤醒等待者；`nfds=0` 作为睡眠路径，占位忽略 signal mask。
 - 早期实现 `socket/bind/connect/listen/accept/sendto/recvfrom` 骨架：socket fd 纳入 fd 表并映射到 axnet socket 句柄；阻塞模式下通过 net 等待队列休眠；`connect` 非阻塞返回 EINPROGRESS，失败映射 ECONNREFUSED/ENETUNREACH；其余非阻塞返回 EAGAIN。
