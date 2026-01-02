@@ -6,6 +6,7 @@
 ## 进展
 - 引入调度请求标志（need_resched），中断仅设置标志，空闲上下文执行切换。
 - 早期 RunQueue + dummy task 持续验证上下文切换入口。
+- 增加最小 async 执行器（静态任务槽 + 就绪队列 + RawWaker），idle_loop 周期性驱动任务推进。
 - 增加协作式 `yield_now`，用于验证任务与空闲上下文往返切换。
 - 增加 RunQueue 轮转指针与第二个 dummy task，验证 RR 顺序。
 - 任务栈改为固定大小栈池分配，便于扩展任务数量。

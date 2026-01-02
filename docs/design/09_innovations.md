@@ -11,8 +11,18 @@
 - **RISC-V AIA 用户态中断**：具备硬件支持时直达用户态，缺失时软件模拟。
 - 取舍原则：先保证 OSComp 兼容性与可复现交付，再逐步引入创新特性。
 
+## 实现状态
+- 已实现最小异步执行器（no-alloc）：
+  - `modules/axruntime/src/async_exec.rs` 提供静态任务槽 + 就绪队列 + RawWaker。
+  - `idle_loop` 中周期性调用 `async_exec::poll()` 驱动任务推进。
+  - 任务通过 `async_exec::spawn(&'static mut Future)` 注册，`yield_now()` 提供协作式让渡。
+- 当前限制：
+  - 任务槽为固定容量（`MAX_ASYNC_TASKS`），任务需为 `'static`。
+  - 暂无取消与任务回收策略，适合内核侧长生命周期任务。
+  - 尚未与块设备/网络驱动 I/O 完整联动，后续逐步替换阻塞等待路径。
+
 ## 关键数据结构
-- `AsyncTask`/`Waker`/`ExecutorQueue`：异步任务与唤醒队列。
+- `TaskSlot`/`ReadyQueue`/`RawWaker`：静态任务槽、就绪队列与唤醒机制。
 - `BpfVm`/`BpfMap`/`Verifier`：eBPF 执行器、映射与验证器。
 - `IoUringSq`/`IoUringCq`/`Sqe`/`Cqe`：异步提交与完成队列。
 - `AiaCtl`：AIA/IMSIC 配置与用户态中断投递结构。
@@ -34,6 +44,7 @@ user submits SQE
 - AIA 硬件支持不一致，需保持可回退路径。
 
 ## 测试点
+- 最小 async 任务可被 `idle_loop` 驱动完成（spawn + yield_now）。
 - 与同步 I/O 的吞吐与延迟对比（iperf/gcc/rustc）。
 - eBPF 程序加载与探针执行的正确性与开销。
 - io_uring-like 接口的完成率、队列一致性测试。

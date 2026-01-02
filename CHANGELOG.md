@@ -105,6 +105,7 @@
 - Extend tcp_echo to validate SOCK_NONBLOCK/SOCK_CLOEXEC via F_GETFD.
 - Add accept4 support for SOCK_NONBLOCK/SOCK_CLOEXEC.
 - Preserve FD_CLOEXEC when updating file status flags via F_SETFL.
+- Add a minimal no-alloc async executor with static task slots and idle-loop polling.
 - Route faccessat/statx/readlinkat path resolution through memfs.
 - Route statfs path resolution through memfs.
 - Route path-based stub syscalls (mkdirat/unlinkat/linkat/renameat* and chmod/chown/utimensat) through memfs.

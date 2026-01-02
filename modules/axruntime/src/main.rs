@@ -27,6 +27,7 @@ mod context;
 mod stack;
 mod config;
 mod process;
+mod async_exec;
 
 use core::panic::PanicInfo;
 

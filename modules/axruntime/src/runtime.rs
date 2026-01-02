@@ -617,6 +617,7 @@ pub fn idle_loop() -> ! {
             log_net_event(event, "idle");
             let _ = wake_all(net_wait_queue());
         }
+        crate::async_exec::poll();
         yield_if_needed();
         crate::trap::enable_interrupts();
         crate::cpu::wait_for_interrupt();
