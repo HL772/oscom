@@ -20,6 +20,7 @@
 PERF_INIT_ELF=build/net_bench.elf \
 PERF_ROOTFS_DIR=apps/net_bench/rootfs \
 PERF_EXPECT="net-bench: ready" \
+PERF_QEMU_TIMEOUT=20 \
 make test-net-perf ARCH=riscv64 PLATFORM=qemu
 ```
 
@@ -34,10 +35,11 @@ make test-net-perf ARCH=riscv64 PLATFORM=qemu
 
 ## 结果
 - 64K 基线：rx_bytes=65536，sent_bytes=65536，duration_ms=2。
+- 64K 基线（PERF_QEMU_TIMEOUT=20）：rx_bytes=65536，sent_bytes=65536，duration_ms=1。
 - 1MiB 扩展（TIMEOUT=20）：rx_bytes=1048576，sent_bytes=1048576，duration_ms=54。
 - 日志路径：
   - perf.log：build/net-perf/perf.log
   - qemu-smoke.log：build/net-perf/qemu-smoke.log
 
 ## 备注
-- 当前基线验证覆盖脚本闭环、hostfwd 注入与 /init 替换路径；1MiB 负载需要更长 TIMEOUT。
+- 当前基线验证覆盖脚本闭环、hostfwd 注入与 /init 替换路径；1MiB 负载需要更长 PERF_QEMU_TIMEOUT。
