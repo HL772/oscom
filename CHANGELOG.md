@@ -99,6 +99,7 @@
 - Return EALREADY when nonblocking connect is invoked on a connecting socket.
 - Extend tcp_echo to accept repeated connect return codes (EINPROGRESS/EALREADY/EISCONN).
 - Honor MSG_DONTWAIT in sendto/recvfrom/sendmsg/recvmsg.
+- Cover MSG_DONTWAIT EAGAIN behavior in udp_echo.
 - Route faccessat/statx/readlinkat path resolution through memfs.
 - Route statfs path resolution through memfs.
 - Route path-based stub syscalls (mkdirat/unlinkat/linkat/renameat* and chmod/chown/utimensat) through memfs.

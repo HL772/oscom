@@ -22,6 +22,7 @@ const SOCK_DGRAM: usize = 2;
 const SOL_SOCKET: usize = 1;
 const SO_RCVTIMEO: usize = 20;
 const SO_SNDTIMEO: usize = 21;
+const MSG_DONTWAIT: usize = 0x40;
 const ETIMEDOUT: isize = -110;
 const EAGAIN: isize = -11;
 
@@ -183,8 +184,8 @@ fn syscall_recvmsg(fd: usize, msg: &mut MsgHdr) -> usize {
     check(unsafe { syscall6(SYS_RECVMSG, fd, msg as *mut MsgHdr as usize, 0, 0, 0, 0) })
 }
 
-fn syscall_recvmsg_ret(fd: usize, msg: &mut MsgHdr) -> isize {
-    unsafe { syscall6(SYS_RECVMSG, fd, msg as *mut MsgHdr as usize, 0, 0, 0, 0) }
+fn syscall_recvmsg_ret(fd: usize, msg: &mut MsgHdr, flags: usize) -> isize {
+    unsafe { syscall6(SYS_RECVMSG, fd, msg as *mut MsgHdr as usize, flags, 0, 0, 0) }
 }
 
 fn syscall_sendmmsg(fd: usize, msgvec: &mut [MMsgHdr]) -> usize {
@@ -322,7 +323,7 @@ pub extern "C" fn _start() -> ! {
         msg_flags: 0,
         msg_flags_pad: 0,
     };
-    let ret = syscall_recvmsg_ret(client, &mut timeout_msg);
+    let ret = syscall_recvmsg_ret(client, &mut timeout_msg, 0);
     if ret >= 0 {
         fail();
     }
@@ -334,6 +335,12 @@ pub extern "C" fn _start() -> ! {
         tv_usec: 0,
     };
     syscall_setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout_off);
+    timeout_msg.msg_flags = 0;
+    timeout_msg.msg_namelen = core::mem::size_of::<SockAddrIn>() as u32;
+    let ret = syscall_recvmsg_ret(client, &mut timeout_msg, MSG_DONTWAIT);
+    if ret != EAGAIN {
+        fail();
+    }
 
     let send_timeout = Timeval {
         tv_sec: 0,
