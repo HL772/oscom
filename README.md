@@ -368,6 +368,58 @@ aurora>
 - `Type 'help' for commands.`：提示可用命令列表（help/echo/ls/cat/cd/pwd/exit/clear/head/tail/wc/stat/sleep/hexdump/touch/append）。
 - `aurora>`：交互提示符，输入命令后回车执行。
 
+### Shell 命令说明（内置）
+
+```
+help
+  显示命令列表。
+
+echo <text...>
+  原样输出参数内容。
+
+ls [-l] [path]
+  列目录内容；-l 显示类型与大小；默认当前目录。
+
+cat [-n] <path>
+  输出文件内容；-n 为每行添加行号。
+
+cd <path>
+  切换到目录；若目标为文件，提示 not a directory。
+
+pwd
+  打印当前工作目录。
+
+clear
+  清屏并把光标移动到左上角。
+
+head [-n N] <path>
+  输出文件前 N 行（默认 10 行）。
+
+tail [-n N] <path>
+  输出文件后 N 行（默认 10 行，最多保留 16 行缓冲）。
+
+wc <path>
+  输出行数、单词数、字节数（lines words bytes）。
+
+stat <path>
+  输出文件类型与大小。
+
+sleep <seconds>
+  睡眠指定秒数（默认 1 秒）。
+
+hexdump <path>
+  以 16 字节宽输出十六进制与 ASCII 视图。
+
+touch <path>
+  创建空文件（若已存在则更新打开/关闭）。
+
+append <path> <text...>
+  追加写入文本到文件末尾，并自动换行。
+
+exit
+  退出 shell（调用 exit syscall）。
+```
+
 ---
 
 ## 网络与性能测试
