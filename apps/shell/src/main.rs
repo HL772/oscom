@@ -18,6 +18,8 @@ const AT_FDCWD: isize = -100;
 const O_RDONLY: usize = 0;
 
 const PROMPT: &[u8] = b"aurora> ";
+const PROMPT_PREFIX: &[u8] = b"aurora:";
+const PROMPT_SUFFIX: &[u8] = b"> ";
 const BANNER: &[u8] = b"\n\
 \x1b[36;1m~~~~~~~~~~~~~~~~~.::::::.\x1b[0m               \n\
 \x1b[36;1m~~~~~~~~~~~~~~.::::::::::::.\x1b[0m            \n\
@@ -396,11 +398,27 @@ fn cmd_cat(line: &[u8], args: &[Arg], argc: usize) {
     }
 }
 
+fn write_prompt() {
+    let mut buf = [0u8; IO_BUF_LEN];
+    // SAFETY: syscall arguments follow the expected ABI and pointers are valid.
+    let ret = unsafe { syscall6(SYS_GETCWD, buf.as_mut_ptr() as usize, buf.len(), 0, 0, 0, 0) };
+    if ret > 1 {
+        let len = (ret - 1) as usize;
+        if len <= buf.len() {
+            write_stdout(PROMPT_PREFIX);
+            write_stdout(&buf[..len]);
+            write_stdout(PROMPT_SUFFIX);
+            return;
+        }
+    }
+    write_stdout(PROMPT);
+}
+
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     write_stdout(BANNER);
     loop {
-        write_stdout(PROMPT);
+        write_prompt();
         let mut line = [0u8; MAX_LINE];
         let len = read_line(&mut line);
         if len == 0 {
