@@ -19,14 +19,19 @@ const O_RDONLY: usize = 0;
 
 const PROMPT: &[u8] = b"aurora> ";
 const BANNER: &[u8] = b"\n\
-\x1b[36;1m    ___                       \x1b[0m  Aurora OS / shell\n\
-\x1b[36;1m   /   | __  __ _________  ___\x1b[0m  OS:       Aurora OS\n\
-\x1b[34;1m  / /| |/ / / // ___/ __ \\/ _ \\\x1b[0m  Arch:     riscv64\n\
-\x1b[35;1m / ___ / /_/ // /  / /_/ / // /\x1b[0m  Platform: qemu-virt\n\
-\x1b[35;1m/_/  |_|\\__,_//_/   \\____/_//_/ \x1b[0m  Kernel:   axruntime\n\
-                                 RootFS:   ext4\n\
-                                 Net:      virtio-net\n\
-                                 Shell:    aurora-sh\n\
+\x1b[36;1m~~~~~~~~~~~~~~~~~.::::::.\x1b[0m               aurora@oscomp\n\
+\x1b[36;1m~~~~~~~~~~~~~~.::::::::::::.\x1b[0m            --------------\n\
+\x1b[34;1m~~~~~~~~~~~~.::::::----::::::.\x1b[0m          OS:       Aurora Kernel\n\
+\x1b[34;1m~~~~~~~~~~.::::::--------::::::.\x1b[0m        Arch:     riscv64gc\n\
+\x1b[35;1m~~~~~~~~.::::::----====----::::::.\x1b[0m      Platform: QEMU virt\n\
+\x1b[35;1m~~~~~~.::::::----========----::::::.\x1b[0m    Kernel:   axruntime\n\
+\x1b[35;1m~~~~.::::::----==========----::::::.\x1b[0m    FS:       ext4 / fat32\n\
+\x1b[35;1m~~~::::::----====++++====----::::::\x1b[0m     Net:      virtio-net + smoltcp\n\
+\x1b[35;1m~~~'::::----====++++====----::::'\x1b[0m       Shell:    aurora-sh\n\
+\x1b[35;1m~~~~~'::----====++++====----::'\x1b[0m         \n\
+\x1b[34;1m~~~~~~~'--====++++++++====--'\x1b[0m           \n\
+\x1b[36;1m~~~~~~~~~~~'==++++++++=='\x1b[0m               \n\
+\x1b[36;1m~~~~~~~~~~~~~~~'===='\x1b[0m                   \n\
 \n\
 Type 'help' for commands.\n";
 const HELP_TEXT: &[u8] = b"commands: help echo ls cat cd pwd exit\n";
