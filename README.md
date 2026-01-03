@@ -420,6 +420,66 @@ exit
   退出 shell（调用 exit syscall）。
 ```
 
+#### 示例输出
+
+```
+aurora:/> help
+commands: help echo ls cat cd pwd exit clear head tail wc stat sleep hexdump touch append
+
+aurora:/> ls
+.
+..
+lost+found
+etc
+init
+shell
+
+aurora:/> ls -l /etc
+d 0 issue
+- 8192 large
+
+aurora:/> cat /etc/issue
+Aurora ext4 test
+
+aurora:/> cat -n /etc/issue
+1: Aurora ext4 test
+
+aurora:/> pwd
+/
+
+aurora:/> cd /etc
+aurora:/etc> pwd
+/etc
+
+aurora:/etc> cd issue
+cd: not a directory
+
+aurora:/etc> stat /etc/issue
+type: file size: 17
+
+aurora:/etc> head -n 1 /etc/large
+Z
+
+aurora:/etc> wc /etc/large
+1 1 8192
+
+aurora:/etc> hexdump /etc/issue
+00000000: 41 75 72 6f 72 61 20 65 78 74 34 20 74 65 73 74  |Aurora ext4 test|
+
+aurora:/etc> touch /tmp/log
+aurora:/etc> append /tmp/log hello aurora
+aurora:/etc> cat /tmp/log
+hello aurora
+```
+
+#### 错误码说明（常见）
+
+- `errno=2`：ENOENT，路径不存在（例如 `cat /nope`）。
+- `errno=20`：ENOTDIR，目标不是目录（例如 `cd /etc/issue`）。
+- `errno=13`：EACCES，占位权限拒绝（当前最小实现中可能返回）。
+- `errno=22`：EINVAL，参数非法或不支持（例如某些未覆盖的路径）。
+- `errno=28`：ENOSPC，空间不足（ext4 写路径资源耗尽时可能出现）。
+
 ---
 
 ## 网络与性能测试
