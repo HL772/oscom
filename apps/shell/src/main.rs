@@ -53,7 +53,6 @@ const HEX_WIDTH: usize = 16;
 
 const S_IFMT: u32 = 0o170000;
 const S_IFDIR: u32 = 0o040000;
-const S_IFREG: u32 = 0o100000;
 const S_IFLNK: u32 = 0o120000;
 
 #[repr(C)]
