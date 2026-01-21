@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-//! Minimal process table and wait/exit helpers.
+//! 最小化的进程表与 wait/exit 辅助逻辑。
 
 use crate::futex;
 use crate::mm;
@@ -35,11 +35,11 @@ static PROC_WAITERS: [TaskWaitQueue; MAX_PROCS] = [
     TaskWaitQueue::new(),
 ];
 
-/// Initialize a new process record for a task.
+/// 为任务初始化进程记录。
 pub fn init_process(task_id: TaskId, parent_pid: usize, root_pa: usize) -> usize {
     let pid = task_id + 1;
     let idx = task_id;
-    // SAFETY: early boot single-hart; process table writes are serialized.
+    // 安全性：早期单核阶段，进程表写入已串行化。
     unsafe {
         if idx < MAX_PROCS {
             PROC_STATE[idx] = ProcState::Running;
@@ -52,11 +52,11 @@ pub fn init_process(task_id: TaskId, parent_pid: usize, root_pa: usize) -> usize
     pid
 }
 
-/// Return the current process ID, if any.
+/// 返回当前进程 ID（若存在）。
 pub fn current_pid() -> Option<usize> {
     let task_id = runtime::current_task_id()?;
     let idx = task_id;
-    // SAFETY: read-only access to process table during early boot.
+    // 安全性：早期阶段对进程表为只读访问。
     unsafe {
         if idx >= MAX_PROCS || PROC_STATE[idx] == ProcState::Empty {
             None
@@ -66,15 +66,15 @@ pub fn current_pid() -> Option<usize> {
     }
 }
 
-/// Mark the current process as exited and record its exit code.
+/// 将当前进程标记为退出并记录退出码。
 pub fn exit_current(code: i32) -> bool {
     let Some(task_id) = runtime::current_task_id() else {
         return false;
     };
     let idx = task_id;
-    // SAFETY: early boot single-hart; process table reads are serialized.
+    // 安全性：早期单核阶段，进程表读取已串行化。
     let parent = unsafe { PROC_PPID.get(idx).copied().unwrap_or(0) };
-    // SAFETY: early boot single-hart; process table reads are serialized.
+    // 安全性：早期单核阶段，进程表读取已串行化。
     let (root_pa, clear_tid) = unsafe {
         (
             PROC_ROOT.get(idx).copied().unwrap_or(0),
@@ -87,7 +87,7 @@ pub fn exit_current(code: i32) -> bool {
         let _ = futex::wake(root_pa, clear_tid, 1, true);
     }
     crate::syscall::release_fd_table(task_id);
-    // SAFETY: early boot single-hart; process table writes are serialized.
+    // 安全性：早期单核阶段，进程表写入已串行化。
     unsafe {
         if idx >= MAX_PROCS || PROC_STATE[idx] == ProcState::Empty {
             return false;
@@ -105,13 +105,13 @@ pub fn exit_current(code: i32) -> bool {
     true
 }
 
-/// Update the current process page table root.
+/// 更新当前进程的页表根地址。
 pub fn update_current_root(root_pa: usize) -> bool {
     let Some(task_id) = runtime::current_task_id() else {
         return false;
     };
     let idx = task_id;
-    // SAFETY: early boot single-hart; process table writes are serialized.
+    // 安全性：早期单核阶段，进程表写入已串行化。
     unsafe {
         if idx >= MAX_PROCS || PROC_STATE[idx] == ProcState::Empty {
             return false;
@@ -121,13 +121,13 @@ pub fn update_current_root(root_pa: usize) -> bool {
     }
 }
 
-/// Record the clear_tid address for the current process.
+/// 记录当前进程的 clear_tid 地址。
 pub fn set_current_clear_tid(tidptr: usize) -> bool {
     let Some(task_id) = runtime::current_task_id() else {
         return false;
     };
     let idx = task_id;
-    // SAFETY: early boot single-hart; process table writes are serialized.
+    // 安全性：早期单核阶段，进程表写入已串行化。
     unsafe {
         if idx >= MAX_PROCS || PROC_STATE[idx] == ProcState::Empty {
             return false;
@@ -137,10 +137,10 @@ pub fn set_current_clear_tid(tidptr: usize) -> bool {
     }
 }
 
-/// Record the clear_tid address for the given process.
+/// 记录指定进程的 clear_tid 地址。
 pub fn set_clear_tid(pid: usize, tidptr: usize) -> bool {
     let idx = pid.saturating_sub(1);
-    // SAFETY: early boot single-hart; process table writes are serialized.
+    // 安全性：早期单核阶段，进程表写入已串行化。
     unsafe {
         if idx >= MAX_PROCS || PROC_STATE[idx] == ProcState::Empty {
             return false;
@@ -150,7 +150,7 @@ pub fn set_clear_tid(pid: usize, tidptr: usize) -> bool {
     }
 }
 
-/// Wait for a child process to exit and report its status.
+/// 等待子进程退出并回报其状态。
 pub fn waitpid(target: isize, status: usize, options: usize) -> Result<usize, Errno> {
     const WNOHANG: usize = 1;
     const WAITPID_RETRY_MS: u64 = 10;
@@ -172,7 +172,7 @@ pub fn waitpid(target: isize, status: usize, options: usize) -> Result<usize, Er
         let mut zombie_pid = 0usize;
         let mut zombie_code = 0i32;
 
-        // SAFETY: early boot single-hart; process table reads are serialized.
+        // 安全性：早期单核阶段，进程表读取已串行化。
         unsafe {
             for idx in 0..MAX_PROCS {
                 if PROC_STATE[idx] == ProcState::Empty {

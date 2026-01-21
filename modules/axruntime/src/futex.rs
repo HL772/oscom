@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-//! Minimal futex wait/wake implementation.
+//! 最小化的 futex 等待/唤醒实现。
 
 use crate::mm::{self, UserAccess};
 use crate::runtime;
@@ -33,7 +33,7 @@ static FUTEX_WAITERS: [TaskWaitQueue; MAX_FUTEXES] = [
 ];
 
 #[derive(Clone, Copy, Debug)]
-/// Futex error codes returned by wait/wake.
+/// wait/wake 返回的 futex 错误码。
 pub enum FutexError {
     Fault,
     Again,
@@ -60,7 +60,7 @@ fn make_key(root_pa: usize, addr: usize, private: bool) -> FutexKey {
 }
 
 fn slot_for_wait(key: FutexKey) -> Result<usize, FutexError> {
-    // SAFETY: single-hart early use; futex table writes are serialized.
+    // 安全性：早期单核阶段，futex 表写入已串行化。
     unsafe {
         for (idx, &exist) in FUTEX_KEYS.iter().enumerate() {
             if exist == key {
@@ -78,7 +78,7 @@ fn slot_for_wait(key: FutexKey) -> Result<usize, FutexError> {
 }
 
 fn slot_for_wake(key: FutexKey) -> Option<usize> {
-    // SAFETY: single-hart early use; futex table reads are serialized.
+    // 安全性：早期单核阶段，futex 表读取已串行化。
     unsafe {
         for (idx, &exist) in FUTEX_KEYS.iter().enumerate() {
             if exist == key {
@@ -93,13 +93,13 @@ fn clear_slot_if_empty(slot: usize) {
     if !FUTEX_WAITERS[slot].is_empty() {
         return;
     }
-    // SAFETY: single-hart early use; futex table writes are serialized.
+    // 安全性：早期单核阶段，futex 表写入已串行化。
     unsafe {
         FUTEX_KEYS[slot] = EMPTY_KEY;
     }
 }
 
-/// Wait on a futex word until it changes or a timeout elapses.
+/// 等待 futex 字值变化或超时。
 pub fn wait(
     root_pa: usize,
     uaddr: usize,
@@ -109,7 +109,7 @@ pub fn wait(
 ) -> Result<(), FutexError> {
     validate_uaddr(uaddr)?;
     let pa = mm::translate_user_ptr(root_pa, uaddr, 4, UserAccess::Read).ok_or(FutexError::Fault)?;
-    // SAFETY: validated user pointer, aligned 4 bytes.
+    // 安全性：已校验的用户指针，且 4 字节对齐。
     let value = unsafe { *(pa as *const u32) };
     if value != expected {
         return Err(FutexError::Again);
@@ -140,7 +140,7 @@ pub fn wait(
     }
 }
 
-/// Wake up to `count` waiters on the futex word.
+/// 唤醒 futex 上最多 `count` 个等待者。
 pub fn wake(root_pa: usize, uaddr: usize, count: usize, private: bool) -> Result<usize, FutexError> {
     validate_uaddr(uaddr)?;
     if count == 0 {

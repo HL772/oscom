@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-//! Task runtime, scheduling hooks, and idle-loop orchestration.
+//! 任务运行时、调度钩子与空闲循环组织。
 
 use core::arch::asm;
 use core::mem::size_of;
@@ -25,7 +25,7 @@ static RUN_QUEUE: RunQueue = RunQueue::new();
 static SLEEP_QUEUE: SleepQueue = SleepQueue::new();
 static WAIT_QUEUE: WaitQueue = WaitQueue::new();
 static NET_WAITERS: TaskWaitQueue = TaskWaitQueue::new();
-// CURRENT_TASK is valid only while executing inside a task context.
+// CURRENT_TASK 仅在任务上下文中执行时有效。
 static mut CURRENT_TASK: Option<TaskId> = None;
 static mut IDLE_TASK: TaskControlBlock = task::idle_task();
 
@@ -71,7 +71,7 @@ fn dummy_task_c() -> ! {
     }
 }
 
-/// Advance runtime state on each timer tick.
+/// 每个定时器 tick 推进运行时状态。
 pub fn on_tick(ticks: u64) {
     const NET_POLL_TICK_INTERVAL: u64 = 2;
     TICK_COUNT.store(ticks, Ordering::Relaxed);
@@ -85,7 +85,7 @@ pub fn on_tick(ticks: u64) {
     if config::ENABLE_SCHED_DEMO && ticks % 100 == 0 {
         crate::println!("scheduler: tick={}", ticks);
     }
-    // Move expired sleepers back to the run queue.
+    // 将到期的睡眠任务移回就绪队列。
     let mut woke_any = false;
     while let Some(task_id) = SLEEP_QUEUE.pop_ready(ticks) {
         if !task::transition_state(task_id, TaskState::Blocked, TaskState::Ready) {
@@ -95,7 +95,7 @@ pub fn on_tick(ticks: u64) {
             let _ = task::set_wait_reason(task_id, WaitReason::Timeout);
             woke_any = true;
         } else {
-            // Best-effort fallback: re-block and retry next tick.
+            // 尽力回退：重新阻塞并在下一个 tick 重试。
             let _ = task::transition_state(task_id, TaskState::Ready, TaskState::Blocked);
             let _ = SLEEP_QUEUE.push(task_id, ticks.saturating_add(1));
             crate::println!("scheduler: run queue full for task {}", task_id);
@@ -141,14 +141,14 @@ fn log_net_event(event: axnet::NetEvent, tag: &str) {
     }
 }
 
-/// Return the latest tick count observed by the runtime.
+/// 返回运行时观察到的最新 tick 计数。
 pub fn tick_count() -> u64 {
     TICK_COUNT.load(Ordering::Relaxed)
 }
 
-/// Record trapframe pointers and user stack state on trap entry.
+/// 在 trap 入口记录 trapframe 指针与用户栈状态。
 pub fn on_trap_entry(tf: &mut crate::trap::TrapFrame) {
-    // SAFETY: single-hart early use; current task does not change inside traps.
+    // 安全性： 早期单核阶段；trap 内当前任务不会变化。
     unsafe {
         if let Some(task_id) = CURRENT_TASK {
             let _ = task::set_trap_frame(task_id, tf as *mut _ as usize);
@@ -159,9 +159,9 @@ pub fn on_trap_entry(tf: &mut crate::trap::TrapFrame) {
     }
 }
 
-/// Clear the active trapframe pointer on trap exit.
+/// 在 trap 退出时清除活动的 trapframe 指针。
 pub fn on_trap_exit() {
-    // SAFETY: single-hart early use; clear any trap frame pointer on exit.
+    // 安全性： 早期单核阶段；退出时清理任何 trapframe 指针。
     unsafe {
         if let Some(task_id) = CURRENT_TASK {
             let _ = task::clear_trap_frame(task_id);
@@ -169,13 +169,13 @@ pub fn on_trap_exit() {
     }
 }
 
-/// Return the currently running task ID, if any.
+/// 返回当前正在运行的任务 ID（若存在）。
 pub fn current_task_id() -> Option<TaskId> {
-    // SAFETY: single-hart early use; read-only access to CURRENT_TASK.
+    // 安全性： 早期单核阶段；对 CURRENT_TASK 为只读访问。
     unsafe { CURRENT_TASK }
 }
 
-/// Initialize runtime state and optional scheduler demo tasks.
+/// 初始化运行时状态及可选的调度演示任务。
 pub fn init() {
     TICK_COUNT.store(0, Ordering::Relaxed);
 
@@ -229,7 +229,7 @@ pub fn init() {
     }
 }
 
-/// Spawn a new user task from a prepared user context.
+/// 基于已准备的用户上下文创建新用户任务。
 pub fn spawn_user(ctx: UserContext) -> Option<TaskId> {
     let stack = stack::alloc_task_stack()?;
     let task_id = task::alloc_task(user_task_entry, stack.top())?;
@@ -246,7 +246,7 @@ pub fn spawn_user(ctx: UserContext) -> Option<TaskId> {
     Some(task_id)
 }
 
-/// Spawn a forked user task using an inherited trapframe snapshot.
+/// 使用继承的 trapframe 快照创建 fork 后的用户任务。
 pub fn spawn_forked_user(
     parent_tf: &crate::trap::TrapFrame,
     child_root_pa: usize,
@@ -256,7 +256,7 @@ pub fn spawn_forked_user(
     let task_id = task::alloc_task(resume_user_from_trap, stack.top())?;
     let kernel_sp = stack.top();
     let trap_frame_ptr = kernel_sp.saturating_sub(size_of::<crate::trap::TrapFrame>());
-    // SAFETY: trapframe lives on the child kernel stack top.
+    // 安全性： trapframe 位于子任务的内核栈顶。
     unsafe {
         let child_tf = &mut *(trap_frame_ptr as *mut crate::trap::TrapFrame);
         ptr::copy_nonoverlapping(parent_tf as *const _, child_tf as *mut _, 1);
@@ -264,7 +264,7 @@ pub fn spawn_forked_user(
         child_tf.sepc = parent_tf.sepc.wrapping_add(4);
         child_tf.user_sp = user_sp;
     }
-    // Ensure the first resume uses the saved trap frame without clobbering it.
+    // 确保首次恢复使用已保存的 trapframe，避免被覆盖。
     let _ = task::set_context(task_id, resume_user_from_trap as usize, trap_frame_ptr);
     let _ = task::set_trap_frame(task_id, trap_frame_ptr);
     let _ = task::set_user_context(task_id, child_root_pa, parent_tf.sepc.wrapping_add(4), user_sp);
@@ -297,7 +297,7 @@ fn user_task_entry() -> ! {
         crate::sbi::shutdown();
     }
     mm::switch_root(root_pa);
-    // SAFETY: entry/user_sp/root_pa are validated above and the task owns them.
+    // 安全性： entry/user_sp/root_pa 已在上方校验且归任务所有。
     unsafe {
         crate::trap::enter_user(entry, user_sp, mm::satp_for_root(root_pa));
     }
@@ -319,7 +319,7 @@ fn resume_user_from_trap() -> ! {
     crate::trap::return_to_user(trap_frame);
 }
 
-/// Perform a single scheduling decision from the idle context.
+/// 在空闲上下文中执行一次调度决策。
 pub fn schedule_once() {
     let next_id = match RUN_QUEUE.pop_ready() {
         Some(task_id) => task_id,
@@ -337,7 +337,7 @@ pub fn schedule_once() {
         mm::switch_root(mm::kernel_root_pa());
     }
 
-    // SAFETY: single-hart early use; only switching between idle and one task.
+    // 安全性： 早期单核阶段；仅在空闲与单个任务之间切换。
     unsafe {
         if CURRENT_TASK.is_some() {
             return;
@@ -354,7 +354,7 @@ pub fn schedule_once() {
     }
 }
 
-/// Trigger a schedule request if enough ticks have elapsed.
+/// 当 tick 达到阈值时触发调度请求。
 pub fn maybe_schedule(ticks: u64, interval: u64) {
     if interval == 0 {
         return;
@@ -364,12 +364,12 @@ pub fn maybe_schedule(ticks: u64, interval: u64) {
     }
 }
 
-/// Preempt the current task and return to the idle context.
+/// 抢占当前任务并返回空闲上下文。
 pub fn preempt_current() {
     if !NEED_RESCHED.load(Ordering::Relaxed) {
         return;
     }
-    // SAFETY: single-hart early use; CURRENT_TASK is only accessed in init/idle/task contexts.
+    // 安全性： 早期单核阶段；CURRENT_TASK 仅在 init/idle/task 上下文访问。
     unsafe {
         let Some(task_id) = CURRENT_TASK else {
             return;
@@ -396,7 +396,7 @@ pub fn preempt_current() {
     }
 }
 
-/// Yield to the idle context if a reschedule is pending.
+/// 若有待处理调度请求则让出到空闲上下文。
 pub fn yield_if_needed() {
     while NEED_RESCHED.swap(false, Ordering::Relaxed) {
         // 调度在空闲上下文中执行，避免在 trap 中切换上下文。
@@ -404,10 +404,10 @@ pub fn yield_if_needed() {
     }
 }
 
-/// Cooperatively yield the current task back to the run queue.
+/// 协作式让出当前任务并回到就绪队列。
 pub fn yield_now() {
-    // Cooperative yield: requeue the current task and switch back to idle.
-    // SAFETY: single-hart early use; CURRENT_TASK is only accessed in init/idle/task contexts.
+    // 协作式让出：将当前任务重新入队并切回空闲。
+    // 安全性： 早期单核阶段；CURRENT_TASK 仅在 init/idle/task 上下文访问。
     unsafe {
         let Some(task_id) = CURRENT_TASK else {
             return;
@@ -415,7 +415,7 @@ pub fn yield_now() {
         let Some(task_ptr) = task::task_ptr(task_id) else {
             return;
         };
-        // Mark ready before enqueueing; if the queue is full, keep running.
+        // 入队前标记就绪；若队列已满则继续运行。
         if !task::transition_state(task_id, TaskState::Running, TaskState::Ready) {
             return;
         }
@@ -435,9 +435,9 @@ pub fn yield_now() {
     }
 }
 
-/// Sleep the current task for at least the specified milliseconds.
+/// 让当前任务至少休眠指定毫秒数。
 pub fn sleep_current_ms(ms: u64) -> bool {
-    // Tick-based sleep: block the current task and let the timer wake it later.
+    // 基于 tick 的睡眠：阻塞当前任务，由定时器稍后唤醒。
     if ms == 0 {
         return true;
     }
@@ -451,7 +451,7 @@ pub fn sleep_current_ms(ms: u64) -> bool {
     }
     let wake_tick = time::ticks().saturating_add(delta);
 
-    // SAFETY: single-hart early use; CURRENT_TASK is only accessed in init/idle/task contexts.
+    // 安全性： 早期单核阶段；CURRENT_TASK 仅在 init/idle/task 上下文访问。
     unsafe {
         let Some(task_id) = CURRENT_TASK else {
             return false;
@@ -459,7 +459,7 @@ pub fn sleep_current_ms(ms: u64) -> bool {
         let Some(task_ptr) = task::task_ptr(task_id) else {
             return false;
         };
-        // Transition to Blocked before enqueueing into the sleep queue.
+        // 入睡眠队列前先切换为阻塞态。
         if !task::transition_state(task_id, TaskState::Running, TaskState::Blocked) {
             return false;
         }
@@ -474,9 +474,9 @@ pub fn sleep_current_ms(ms: u64) -> bool {
     true
 }
 
-/// Exit the current task and transfer control back to the idle loop.
+/// 退出当前任务并将控制权交回空闲循环。
 pub fn exit_current() -> ! {
-    // SAFETY: single-hart early use; CURRENT_TASK is only accessed in init/idle/task contexts.
+    // 安全性： 早期单核阶段；CURRENT_TASK 仅在 init/idle/task 上下文访问。
     unsafe {
         let Some(task_id) = CURRENT_TASK else {
             crate::sbi::shutdown();
@@ -493,8 +493,8 @@ pub fn exit_current() -> ! {
     }
 }
 
-/// Block the current task on a wait queue until notified or the timeout elapses.
-/// Block the current task on a wait queue until notified or timeout.
+/// 将当前任务阻塞在等待队列，直到被通知或超时。
+/// 将当前任务阻塞在等待队列，直到被通知或超时。
 pub fn wait_timeout_ms(queue: &TaskWaitQueue, timeout_ms: u64) -> WaitResult {
     let tick_hz = time::tick_hz();
     if tick_hz == 0 {
@@ -509,7 +509,7 @@ pub fn wait_timeout_ms(queue: &TaskWaitQueue, timeout_ms: u64) -> WaitResult {
     }
     let wake_tick = time::ticks().saturating_add(delta);
 
-    // SAFETY: single-hart early use; CURRENT_TASK is only accessed in init/idle/task contexts.
+    // 安全性： 早期单核阶段；CURRENT_TASK 仅在 init/idle/task 上下文访问。
     unsafe {
         let Some(task_id) = CURRENT_TASK else {
             return WaitResult::Timeout;
@@ -534,7 +534,7 @@ pub fn wait_timeout_ms(queue: &TaskWaitQueue, timeout_ms: u64) -> WaitResult {
         CURRENT_TASK = None;
         crate::scheduler::switch(&mut *task_ptr, &IDLE_TASK);
         let _ = SLEEP_QUEUE.remove(task_id);
-        // Clear any stale wait-queue entry left by timeout or notify races.
+        // 清理超时或通知竞态留下的等待队列残留项。
         let _ = queue.pop(task_id);
         match task::take_wait_reason(task_id) {
             WaitReason::Notified => WaitResult::Notified,
@@ -543,15 +543,15 @@ pub fn wait_timeout_ms(queue: &TaskWaitQueue, timeout_ms: u64) -> WaitResult {
     }
 }
 
-/// Return the shared network wait queue used by socket syscalls.
+/// 返回 socket 系统调用使用的共享网络等待队列。
 pub fn net_wait_queue() -> &'static TaskWaitQueue {
     &NET_WAITERS
 }
 
-/// Move the current task into a blocked state on the given queue.
+/// 将当前任务置为阻塞并加入给定队列。
 pub fn block_current(queue: &TaskWaitQueue) {
-    // Block the current task on a wait queue; caller controls the wake-up.
-    // SAFETY: single-hart early use; CURRENT_TASK is only accessed in init/idle/task contexts.
+    // 将当前任务阻塞在等待队列，由调用方控制唤醒。
+    // 安全性： 早期单核阶段；CURRENT_TASK 仅在 init/idle/task 上下文访问。
     unsafe {
         let Some(task_id) = CURRENT_TASK else {
             return;
@@ -559,7 +559,7 @@ pub fn block_current(queue: &TaskWaitQueue) {
         let Some(task_ptr) = task::task_ptr(task_id) else {
             return;
         };
-        // Transition to Blocked before enqueueing into the wait queue.
+        // 入等待队列前先切换为阻塞态。
         if !task::transition_state(task_id, TaskState::Running, TaskState::Blocked) {
             return;
         }
@@ -573,9 +573,9 @@ pub fn block_current(queue: &TaskWaitQueue) {
     }
 }
 
-/// Wake a single task from the given queue.
+/// 从给定队列唤醒一个任务。
 pub fn wake_one(queue: &TaskWaitQueue) -> bool {
-    // Wake a single blocked waiter and enqueue it for scheduling.
+    // 唤醒一个阻塞等待者并加入调度队列。
     loop {
         let Some(task_id) = queue.notify_one() else {
             return false;
@@ -598,8 +598,8 @@ pub fn wake_one(queue: &TaskWaitQueue) -> bool {
     }
 }
 
-/// Wake all blocked tasks in the queue until the run queue is full.
-/// Wake all blocked tasks in the queue until the run queue is full.
+/// 唤醒队列中所有阻塞任务，直到就绪队列满。
+/// 唤醒队列中所有阻塞任务，直到就绪队列满。
 pub fn wake_all(queue: &TaskWaitQueue) -> usize {
     let mut woke = 0;
     loop {
@@ -626,7 +626,7 @@ pub fn wake_all(queue: &TaskWaitQueue) -> usize {
     woke
 }
 
-/// Run the idle loop, polling net and async executors between sleeps.
+/// 运行空闲循环，在睡眠间隙轮询网络与异步执行器。
 pub fn idle_loop() -> ! {
     const NET_POLL_INTERVAL_MS: u64 = 20;
     let mut last_net_poll_ms = 0u64;
@@ -647,13 +647,13 @@ pub fn idle_loop() -> ! {
     }
 }
 
-/// Switch to the idle stack and enter the idle loop.
+/// 切换到空闲栈并进入空闲循环。
 pub fn enter_idle_loop() -> ! {
     let top = IDLE_STACK_TOP.load(Ordering::Acquire);
     if top == 0 {
         idle_loop();
     }
-    // SAFETY: switching to the dedicated idle stack before jumping to idle_loop.
+    // 安全性： 切换到专用空闲栈后再跳转到 idle_loop。
     unsafe {
         asm!(
             "mv sp, {0}",

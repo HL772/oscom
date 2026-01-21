@@ -1,4 +1,4 @@
-//! Root filesystem device selection and ramdisk helper.
+//! 根文件系统设备选择与内存盘辅助。
 
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -14,20 +14,20 @@ const ROOTFS_IMAGE_MAX: usize = 16 * 1024;
 
 static ROOTFS_READY: AtomicBool = AtomicBool::new(false);
 static ROOTFS_SIZE: AtomicUsize = AtomicUsize::new(0);
-// SAFETY: 单核早期阶段初始化一次，后续只读。
+// 安全性： 单核早期阶段初始化一次，后续只读。
 static mut ROOTFS_IMAGE: [u8; ROOTFS_IMAGE_MAX] = [0; ROOTFS_IMAGE_MAX];
 static ROOT_DEVICE_READY: AtomicBool = AtomicBool::new(false);
-// SAFETY: 单核早期阶段初始化一次，后续只读。
+// 安全性： 单核早期阶段初始化一次，后续只读。
 static mut ROOT_DEVICE: MaybeUninit<RootBlockDevice> = MaybeUninit::uninit();
 
 #[derive(Clone, Copy)]
-/// In-memory ramdisk block device for the initial rootfs.
+/// 初始 rootfs 的内存盘块设备。
 pub struct RootFsDevice {
     size: usize,
 }
 
 impl RootFsDevice {
-    /// Construct a ramdisk device from the embedded image.
+    /// 基于内嵌镜像构造内存盘设备。
     pub fn new() -> Self {
         let image = rootfs_image();
         Self { size: image.len() }
@@ -44,7 +44,7 @@ impl BlockDevice for RootFsDevice {
         if offset + ROOTFS_BLOCK_SIZE > self.size || buf.len() < ROOTFS_BLOCK_SIZE {
             return Err(VfsError::NotFound);
         }
-        // SAFETY: rootfs image is initialized once at boot and resides in static memory.
+        // 安全性： rootfs 镜像在启动时初始化一次，且位于静态内存中。
         unsafe {
             buf[..ROOTFS_BLOCK_SIZE]
                 .copy_from_slice(&ROOTFS_IMAGE[offset..offset + ROOTFS_BLOCK_SIZE]);
@@ -57,7 +57,7 @@ impl BlockDevice for RootFsDevice {
         if offset + ROOTFS_BLOCK_SIZE > self.size || buf.len() < ROOTFS_BLOCK_SIZE {
             return Err(VfsError::NotFound);
         }
-        // SAFETY: rootfs image is mutable in the single-core early stage.
+        // 安全性： rootfs 镜像在早期单核阶段可变。
         unsafe {
             ROOTFS_IMAGE[offset..offset + ROOTFS_BLOCK_SIZE]
                 .copy_from_slice(&buf[..ROOTFS_BLOCK_SIZE]);
@@ -70,14 +70,14 @@ impl BlockDevice for RootFsDevice {
     }
 }
 
-/// Selected root block device backend.
+/// 选定的根块设备后端。
 pub enum RootBlockDevice {
     Virtio(&'static virtio_blk::VirtioBlkDevice),
     Ramdisk(RootFsDevice),
 }
 
 impl RootBlockDevice {
-    /// Return the block device trait object.
+    /// 返回块设备 trait 对象。
     pub fn as_block_device(&self) -> &dyn BlockDevice {
         match self {
             Self::Virtio(dev) => *dev,
@@ -86,12 +86,12 @@ impl RootBlockDevice {
     }
 }
 
-/// Initialize block device backends for rootfs.
+/// 初始化 rootfs 的块设备后端。
 pub fn init(virtio_mmio: &[VirtioMmioDevice]) {
     virtio_blk::init(virtio_mmio);
 }
 
-/// Return the selected root block device.
+/// 返回选定的根块设备。
 pub fn root_device() -> &'static RootBlockDevice {
     if !ROOT_DEVICE_READY.load(Ordering::Acquire) {
         let dev = if let Some(dev) = virtio_blk::device() {
@@ -99,19 +99,19 @@ pub fn root_device() -> &'static RootBlockDevice {
         } else {
             RootBlockDevice::Ramdisk(RootFsDevice::new())
         };
-        // SAFETY: 单核初始化时写入静态设备句柄。
+        // 安全性： 单核初始化时写入静态设备句柄。
         unsafe {
             ROOT_DEVICE.write(dev);
         }
         ROOT_DEVICE_READY.store(true, Ordering::Release);
     }
-    // SAFETY: ROOT_DEVICE 在上方初始化后只读。
+    // 安全性： ROOT_DEVICE 在上方初始化后只读。
     unsafe { &*ROOT_DEVICE.as_ptr() }
 }
 
 fn rootfs_image() -> &'static [u8] {
     if !ROOTFS_READY.load(Ordering::Acquire) {
-        // SAFETY: 单核启动阶段初始化 rootfs 镜像。
+        // 安全性： 单核启动阶段初始化 rootfs 镜像。
         unsafe {
             let size = fat32::build_minimal_image(
                 &mut ROOTFS_IMAGE,
@@ -124,6 +124,6 @@ fn rootfs_image() -> &'static [u8] {
         }
     }
     let size = ROOTFS_SIZE.load(Ordering::Acquire);
-    // SAFETY: ROOTFS_IMAGE 在上方初始化后只读。
+    // 安全性： ROOTFS_IMAGE 在上方初始化后只读。
     unsafe { &ROOTFS_IMAGE[..size] }
 }

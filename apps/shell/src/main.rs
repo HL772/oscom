@@ -15,6 +15,7 @@ const SYS_CHDIR: usize = 49;
 const SYS_GETCWD: usize = 17;
 const SYS_NEWFSTATAT: usize = 79;
 const SYS_NANOSLEEP: usize = 101;
+const SYS_SYNC: usize = 162;
 
 const AT_FDCWD: isize = -100;
 const O_RDONLY: usize = 0;
@@ -41,7 +42,8 @@ const BANNER: &[u8] = b"\n\
 \x1b[36;1m~~~~~~~~~~~~~~~'===='\x1b[0m                       \n\
 \n\
 Type 'help' for commands.\n";
-const HELP_TEXT: &[u8] = b"commands: help echo ls cat cd pwd exit clear head tail wc stat sleep hexdump touch append\n";
+const HELP_TEXT: &[u8] =
+    b"commands: help echo ls cat cd pwd exit clear head tail wc stat sleep hexdump touch append sync\n";
 
 const MAX_LINE: usize = 256;
 const MAX_ARGS: usize = 8;
@@ -189,6 +191,17 @@ fn read_byte() -> Option<u8> {
         return None;
     }
     Some(ch)
+}
+
+fn cmd_sync() {
+    // SAFETY: syscall arguments follow the expected ABI and pointers are valid.
+    let ret = unsafe { syscall6(SYS_SYNC, 0, 0, 0, 0, 0, 0) };
+    if ret < 0 {
+        write_stdout(b"sync failed");
+        write_errno(ret);
+    } else {
+        write_stdout(b"sync ok\n");
+    }
 }
 
 static mut SKIP_LF: bool = false;
@@ -1042,7 +1055,10 @@ pub extern "C" fn _start() -> ! {
             cmd_touch_append(&line, &args, argc, false);
         } else if arg_eq(&line, cmd, b"append") {
             cmd_touch_append(&line, &args, argc, true);
+        } else if arg_eq(&line, cmd, b"sync") {
+            cmd_sync();
         } else if arg_eq(&line, cmd, b"exit") {
+            cmd_sync();
             // SAFETY: syscall arguments follow the expected ABI and pointers are valid.
             unsafe {
                 let _ = syscall6(SYS_EXIT, 0, 0, 0, 0, 0, 0);

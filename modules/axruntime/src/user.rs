@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-//! User image construction and ELF loading helpers.
+//! 用户镜像构造与 ELF 加载辅助。
 
 use core::cmp::min;
 use core::mem::size_of;
@@ -8,23 +8,23 @@ use core::ptr;
 use crate::{config, mm};
 use crate::syscall::Errno;
 
-/// Prepared user execution context for spawning a task.
+/// 用于启动任务的用户执行上下文。
 pub struct UserContext {
-    /// Entry point address for the user image.
+    /// 用户镜像的入口地址。
     pub entry: usize,
-    /// User stack pointer.
+    /// 用户栈指针。
     pub user_sp: usize,
-    /// Root page table physical address.
+    /// 根页表物理地址。
     pub root_pa: usize,
-    /// SATP value for the page table.
+    /// 页表对应的 SATP 值。
     pub satp: usize,
-    /// Argument count.
+    /// 参数数量。
     pub argc: usize,
-    /// Pointer to argv array in user space.
+    /// 用户态 argv 数组指针。
     pub argv: usize,
-    /// Pointer to envp array in user space.
+    /// 用户态 envp 数组指针。
     pub envp: usize,
-    /// Initial heap top (brk) value.
+    /// 初始堆顶（brk）值。
     pub heap_top: usize,
 }
 
@@ -125,7 +125,7 @@ const ELF_ISSUE_OPEN_FAIL_OFFSET: usize = 0x240;
 const ELF_ISSUE_READ_FAIL_OFFSET: usize = 0x260;
 const ELF_ISSUE_BUF_OFFSET: usize = 0x280;
 const ELF_ISSUE_BUF_LEN: usize = 64;
-// /init: 打印 banner，读取 /etc/issue（若存在），随后退出。
+// /init: 打印启动提示，读取 /etc/issue（若存在），随后退出。
 const ELF_INIT_MSG: &[u8] = b"init: ok\n";
 const ELF_ISSUE_PATH: &[u8] = b"/etc/issue\0";
 const ELF_ISSUE_OPEN_FAIL: &[u8] = b"issue: open fail\n";
@@ -166,7 +166,7 @@ struct UserTimespec {
 
 // 最小用户态程序：
 //   poll(NULL, 0, 0) -> 走一次 poll 非阻塞路径
-//   pipe2 + ppoll(2 fds, timeout) -> 覆盖多 fd sleep-retry 超时路径
+//   pipe2 + ppoll(2 fds, timeout) -> 覆盖多 fd 超时/睡眠重试路径
 //   write(pipefd[1]) -> 写入管道
 //   poll(pipefd[0], 1, 0) -> 覆盖 pipe 可读就绪路径
 //   writev(1, USER_IOVEC_VA, 2) -> 控制台输出（跨页验证 UserSlice）
@@ -247,7 +247,7 @@ const USER_CODE: [u8; 1052] = [
     0x93, 0x08, 0x90, 0x03, 0x73, 0x00, 0x00, 0x00, 0x6f, 0xf0, 0x1f, 0xeb,
 ];
 
-/// Prepare the built-in user test context when enabled.
+/// 启用内置用户态测试时准备上下文。
 pub fn prepare_user_test() -> Option<UserContext> {
     let root_pa = mm::alloc_user_root()?;
     match load_user_image(root_pa) {
@@ -259,13 +259,13 @@ pub fn prepare_user_test() -> Option<UserContext> {
     }
 }
 
-/// Load the built-in user test image into an existing page table.
+/// 将内置用户态测试镜像加载到已有页表中。
 pub fn load_user_image(root_pa: usize) -> Option<UserContext> {
     let code_pa = ensure_user_page(root_pa, USER_CODE_VA, mm::UserAccess::Read, mm::map_user_code)?;
     let data_pa = ensure_user_page(root_pa, USER_DATA_VA, mm::UserAccess::Write, mm::map_user_data)?;
     let message_pa =
         ensure_user_page(root_pa, USER_MESSAGE_PAGE_VA, mm::UserAccess::Write, mm::map_user_data)?;
-    // SAFETY: identity-mapped frame; clear message page for deterministic writev test.
+    // 安全性： 恒等映射的页帧；清空消息页以保证 writev 测试确定性。
     unsafe {
         ptr::write_bytes(message_pa as *mut u8, 0, PAGE_SIZE);
     }
@@ -276,7 +276,7 @@ pub fn load_user_image(root_pa: usize) -> Option<UserContext> {
         if idx == 0 {
             stack_pa = pa;
         }
-        // SAFETY: identity-mapped frame; clear each stack page.
+        // 安全性： 恒等映射的页帧；清空每个栈页。
         unsafe {
             ptr::write_bytes(pa as *mut u8, 0, PAGE_SIZE);
         }
@@ -301,7 +301,7 @@ pub fn load_user_image(root_pa: usize) -> Option<UserContext> {
     })
 }
 
-/// Load an ELF image into a fresh user address space.
+/// 将 ELF 镜像加载到新的用户地址空间。
 pub fn load_exec_elf(
     old_root_pa: usize,
     image: &[u8],
@@ -328,7 +328,7 @@ pub fn load_exec_elf(
                 return Err(Errno::Fault);
             }
         };
-        // SAFETY: identity-mapped frame; clear each stack page.
+        // 安全性： 恒等映射的页帧；清空每个栈页。
         unsafe {
             ptr::write_bytes(pa as *mut u8, 0, PAGE_SIZE);
         }
@@ -430,7 +430,7 @@ fn build_user_stack(
 fn read_user_usize(root_pa: usize, addr: usize) -> Result<usize, Errno> {
     let pa = mm::translate_user_ptr(root_pa, addr, size_of::<usize>(), mm::UserAccess::Read)
         .ok_or(Errno::Fault)?;
-    // SAFETY: validated user pointer.
+    // 安全性： 已校验的用户指针。
     Ok(unsafe { *(pa as *const usize) })
 }
 
@@ -448,7 +448,7 @@ fn read_user_cstr(root_pa: usize, addr: usize, out: &mut [u8]) -> Result<usize, 
 fn write_user_usize(root_pa: usize, addr: usize, value: usize) -> Result<(), Errno> {
     let pa = mm::translate_user_ptr(root_pa, addr, size_of::<usize>(), mm::UserAccess::Write)
         .ok_or(Errno::Fault)?;
-    // SAFETY: validated user pointer.
+    // 安全性： 已校验的用户指针。
     unsafe {
         *(pa as *mut usize) = value;
     }
@@ -473,7 +473,7 @@ fn write_user_bytes(root_pa: usize, addr: usize, data: &[u8]) -> Result<(), Errn
 fn read_user_byte(root_pa: usize, addr: usize) -> Result<u8, Errno> {
     let pa = mm::translate_user_ptr(root_pa, addr, 1, mm::UserAccess::Read)
         .ok_or(Errno::Fault)?;
-    // SAFETY: validated user pointer.
+    // 安全性： 已校验的用户指针。
     Ok(unsafe { *(pa as *const u8) })
 }
 
@@ -501,7 +501,7 @@ fn load_elf_segments(root_pa: usize, image: &[u8], header: &ElfHeader) -> Result
         for va in (seg_start..seg_end).step_by(mm::PAGE_SIZE) {
             let frame = mm::alloc_frame().ok_or(Errno::MFile)?;
             let pa = frame.addr().as_usize();
-            // SAFETY: identity-mapped frame; clear before mapping.
+            // 安全性： 恒等映射的页帧；映射前先清零。
             unsafe {
                 ptr::write_bytes(pa as *mut u8, 0, mm::PAGE_SIZE);
             }
@@ -623,9 +623,9 @@ fn align_up(value: usize, align: usize) -> usize {
     (value + align - 1) & !(align - 1)
 }
 
-/// Return the embedded `/init` ELF image bytes.
+/// 返回内嵌的 `/init` ELF 镜像字节序列。
 pub fn init_exec_elf_image() -> &'static [u8] {
-    // SAFETY: early boot single-hart; buffer is initialized once.
+    // 安全性： 早期单核阶段；缓冲区只初始化一次。
     unsafe {
         if INIT_ELF_READY {
             return &INIT_ELF_IMAGE[..];
@@ -633,7 +633,7 @@ pub fn init_exec_elf_image() -> &'static [u8] {
         let mut offset = 0usize;
         let mut buf = &mut INIT_ELF_IMAGE[..];
 
-        // ELF header (64-bit, little-endian).
+        // ELF 头（64 位，小端）。
         buf[offset..offset + 4].copy_from_slice(b"\x7fELF");
         buf[offset + 4] = 2; // ELFCLASS64
         buf[offset + 5] = 1; // ELFDATA2LSB
@@ -659,7 +659,7 @@ pub fn init_exec_elf_image() -> &'static [u8] {
         write_u16(&mut buf, &mut offset, 0);
         write_u16(&mut buf, &mut offset, 0);
 
-        // Program header (single RXW segment).
+        // 程序头（单一 RXW 段）。
         offset = 64;
         write_u32(&mut buf, &mut offset, 1); // PT_LOAD
         write_u32(&mut buf, &mut offset, 0x7); // PF_R|PF_W|PF_X
@@ -681,7 +681,7 @@ pub fn init_exec_elf_image() -> &'static [u8] {
         write_u64(&mut buf, &mut offset, segment_size as u64);
         write_u64(&mut buf, &mut offset, ELF_SEGMENT_ALIGN as u64);
 
-        // Fill segment content.
+        // 填充段内容。
         buf[ELF_SEGMENT_OFFSET..ELF_SEGMENT_OFFSET + ELF_INIT_CODE.len()]
             .copy_from_slice(&ELF_INIT_CODE);
         let msg_start = ELF_SEGMENT_OFFSET + ELF_INIT_MSG_OFFSET;
@@ -718,13 +718,13 @@ fn ensure_user_page(
 }
 
 fn init_user_image(code_pa: usize, data_pa: usize, message_pa: usize, stack_pa: usize) {
-    // SAFETY: frames are identity-mapped; code/data fit in a single page each.
+    // 安全性： 页帧为恒等映射；代码/数据各自落在单页内。
     unsafe {
-        // Ensure deterministic user data layout before partial writes.
+        // 在部分写入前保证用户数据布局确定。
         ptr::write_bytes(data_pa as *mut u8, 0, mm::PAGE_SIZE);
         ptr::copy_nonoverlapping(USER_CODE.as_ptr(), code_pa as *mut u8, USER_CODE.len());
         ptr::write_bytes(stack_pa as *mut u8, 0, PAGE_SIZE);
-        // 将消息拆分写入 data+stack 跨页区域，验证用户态跨页访问。
+        // 将消息拆分写入数据页+栈页的跨页区域，验证用户态跨页访问。
         let first_len = min(USER_MESSAGE_LEN, USER_MESSAGE_SPLIT);
         ptr::copy_nonoverlapping(
             USER_MESSAGE.as_ptr(),
@@ -767,7 +767,7 @@ fn init_user_image(code_pa: usize, data_pa: usize, message_pa: usize, stack_pa: 
         });
         let futex_ts_base = (data_pa + (USER_FUTEX_TS_VA - USER_DATA_VA)) as *mut UserTimespec;
         futex_ts_base.write(UserTimespec { tv_sec: 0, tv_nsec: 0 });
-        // execve 路径字符串与 argv/envp。
+        // 准备 execve 路径字符串与 argv/envp。
         let path_base = data_pa + (USER_PATH_VA - USER_DATA_VA);
         ptr::copy_nonoverlapping(USER_PATH.as_ptr(), path_base as *mut u8, USER_PATH.len());
         let arg0_base = path_base + USER_PATH_STRIDE;
@@ -813,7 +813,7 @@ fn init_user_image(code_pa: usize, data_pa: usize, message_pa: usize, stack_pa: 
         );
         let fat32_buf_base = data_pa + (USER_FAT32_BUF_VA - USER_DATA_VA);
         ptr::write_bytes(fat32_buf_base as *mut u8, b'F', USER_FAT32_BUF_LEN);
-        // CoW 测试数据与 wait4 状态缓冲。
+        // CoW 测试数据与 wait4 状态缓冲区。
         let cow_base = (data_pa + (USER_COW_VA - USER_DATA_VA)) as *mut u32;
         cow_base.write(USER_COW_INIT);
         let status_base = (data_pa + (USER_WAIT_STATUS_VA - USER_DATA_VA)) as *mut usize;

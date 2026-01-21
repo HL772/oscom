@@ -1,4 +1,4 @@
-//! VirtIO net device (MMIO) driver.
+//! VirtIO 网卡（MMIO）驱动。
 
 use core::cell::UnsafeCell;
 use core::hint::spin_loop;
@@ -67,7 +67,7 @@ static VIRTIO_NET_IRQ_LOGGED: AtomicBool = AtomicBool::new(false);
 
 static VIRTIO_NET_DEVICE: VirtioNetDevice = VirtioNetDevice;
 
-// SAFETY: 仅在 init 阶段写入一次，ready 后只读。
+// 安全性：仅在初始化阶段写入一次，就绪后只读。
 static mut VIRTIO_NET_MAC: [u8; 6] = [0; 6];
 
 struct SpinLock {
@@ -178,7 +178,7 @@ impl QueueCell {
     }
 
     fn get(&self) -> &mut VirtioNetQueue {
-        // SAFETY: 队列访问通过自旋锁串行化。
+        // 安全性： 队列访问通过自旋锁串行化。
         unsafe { &mut *self.inner.get() }
     }
 }
@@ -188,17 +188,17 @@ unsafe impl Sync for QueueCell {}
 static VIRTIO_NET_RX_QUEUE: QueueCell = QueueCell::new();
 static VIRTIO_NET_TX_QUEUE: QueueCell = QueueCell::new();
 
-// SAFETY: RX buffer 只在锁保护下读写。
+// 安全性：接收缓冲区只在锁保护下读写。
 static mut RX_BUFFER_PTRS: [usize; QUEUE_SIZE] = [0; QUEUE_SIZE];
 #[repr(C, align(4096))]
 struct TxBuffer {
     data: [u8; NET_BUF_SIZE],
 }
 
-// SAFETY: TX buffer 只在锁保护下使用。
+// 安全性：发送缓冲区只在锁保护下使用。
 static mut VIRTIO_NET_TX_BUF: TxBuffer = TxBuffer { data: [0; NET_BUF_SIZE] };
 
-/// VirtIO net device wrapper implementing NetDevice.
+/// 实现 NetDevice 的 VirtIO 网卡封装。
 pub struct VirtioNetDevice;
 
 impl NetDevice for VirtioNetDevice {
@@ -206,7 +206,7 @@ impl NetDevice for VirtioNetDevice {
         if !VIRTIO_NET_READY.load(Ordering::Acquire) {
             return [0; 6];
         }
-        // SAFETY: 只读 MAC，init 时完成写入。
+        // 安全性：只读 MAC，初始化时完成写入。
         unsafe { VIRTIO_NET_MAC }
     }
 
@@ -222,7 +222,7 @@ impl NetDevice for VirtioNetDevice {
 
         let _guard = RX_LOCK.lock();
         let queue = VIRTIO_NET_RX_QUEUE.get();
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
         let used_idx = unsafe { ptr::read_volatile(&queue.used.idx) };
         let last_used = VIRTIO_NET_RX_USED.load(Ordering::Acquire) as u16;
         if used_idx == last_used {
@@ -230,7 +230,7 @@ impl NetDevice for VirtioNetDevice {
         }
 
         let slot = (last_used as usize) % queue_size;
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
         let used_elem = unsafe { ptr::read_volatile(&queue.used.ring[slot]) };
         let desc_id = used_elem.id as usize;
         let total_len = used_elem.len as usize;
@@ -241,7 +241,7 @@ impl NetDevice for VirtioNetDevice {
             return Err(NetError::BufferTooSmall);
         }
 
-        // SAFETY: RX buffer 仅在 RX_LOCK 保护下访问。
+        // 安全性：接收缓冲区仅在 RX_LOCK 保护下访问。
         unsafe {
             let buf_base = RX_BUFFER_PTRS[desc_id];
             let src_ptr = (buf_base + VIRTIO_NET_HDR_LEN) as *const u8;
@@ -268,7 +268,7 @@ impl NetDevice for VirtioNetDevice {
 
         let _guard = TX_LOCK.lock();
         let queue = VIRTIO_NET_TX_QUEUE.get();
-        // SAFETY: TX buffer 只在锁保护下使用。
+        // 安全性：发送缓冲区只在锁保护下使用。
         unsafe {
             VIRTIO_NET_TX_BUF.data[..VIRTIO_NET_HDR_LEN].fill(0);
             VIRTIO_NET_TX_BUF.data[VIRTIO_NET_HDR_LEN..VIRTIO_NET_HDR_LEN + buf.len()]
@@ -276,7 +276,7 @@ impl NetDevice for VirtioNetDevice {
         }
         let desc_id = 0;
         let addr =
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
             mm::kernel_virt_to_phys(unsafe { VIRTIO_NET_TX_BUF.data.as_ptr() } as usize) as u64;
         queue.desc[desc_id].addr = addr;
         queue.desc[desc_id].len = (buf.len() + VIRTIO_NET_HDR_LEN) as u32;
@@ -302,14 +302,14 @@ impl NetDevice for VirtioNetDevice {
             return false;
         }
         let queue = VIRTIO_NET_RX_QUEUE.get();
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
         let used_idx = unsafe { ptr::read_volatile(&queue.used.idx) };
         let last_used = VIRTIO_NET_RX_USED.load(Ordering::Acquire) as u16;
         used_idx != last_used
     }
 }
 
-/// Initialize the virtio-net device from DTB entries.
+/// 根据 DTB 条目初始化 virtio-net 设备。
 pub fn init(virtio_mmio: &[VirtioMmioDevice]) {
     if VIRTIO_NET_READY.load(Ordering::Acquire) {
         return;
@@ -336,7 +336,7 @@ pub fn init(virtio_mmio: &[VirtioMmioDevice]) {
 }
 
 #[allow(dead_code)]
-/// Return the initialized virtio-net device, if any.
+/// 返回已初始化的 virtio-net 设备（若存在）。
 pub fn device() -> Option<&'static VirtioNetDevice> {
     if VIRTIO_NET_READY.load(Ordering::Acquire) {
         Some(&VIRTIO_NET_DEVICE)
@@ -345,7 +345,7 @@ pub fn device() -> Option<&'static VirtioNetDevice> {
     }
 }
 
-/// Handle a virtio-net IRQ and notify the network stack.
+/// 处理 virtio-net 中断并通知网络栈。
 pub fn handle_irq(irq: u32) -> bool {
     let expected = VIRTIO_NET_IRQ.load(Ordering::Acquire) as u32;
     if expected == 0 || expected != irq {
@@ -415,7 +415,7 @@ fn try_init_device(base: usize, irq: u32) -> bool {
         crate::println!("virtio-net: device set STATUS_FAILED after DRIVER_OK");
         return false;
     }
-    // 在 DRIVER_OK 后通知设备处理 RX 队列。
+    // 在 DRIVER_OK 后通知设备处理接收队列。
     mmio_write32(base, MMIO_QUEUE_NOTIFY, RX_QUEUE_INDEX);
 
     VIRTIO_NET_BASE.store(base, Ordering::Release);
@@ -430,7 +430,7 @@ fn try_init_device(base: usize, irq: u32) -> bool {
 
     if (driver_features & VIRTIO_NET_F_MAC as u64) != 0 {
         let mac = read_mac(base);
-        // SAFETY: init 期间单次写入。
+        // 安全性：初始化期间单次写入。
         unsafe {
             VIRTIO_NET_MAC = mac;
         }
@@ -448,7 +448,7 @@ fn setup_queue(base: usize, queue_index: u32, queue: &mut VirtioNetQueue) -> usi
     let queue_size = core::cmp::min(queue_max, QUEUE_SIZE);
     mmio_write32(base, MMIO_QUEUE_NUM, queue_size as u32);
 
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
     unsafe {
         ptr::write_bytes(queue as *mut VirtioNetQueue, 0, 1);
     }
@@ -469,11 +469,11 @@ fn setup_queue(base: usize, queue_index: u32, queue: &mut VirtioNetQueue) -> usi
 
 fn fill_rx_queue(queue_size: usize) {
     let queue = VIRTIO_NET_RX_QUEUE.get();
-    // 预投递 RX 描述符，设备写入后更新 used ring。
+    // 预投递接收描述符，设备写入后更新已用环。
     for idx in 0..queue_size {
         let frame = mm::alloc_frame().expect("virtio-net: alloc rx buffer failed");
         let pa = frame.addr().as_usize();
-        // SAFETY: 内核恒等映射，直接记录物理地址作为虚拟地址。
+        // 安全性： 内核恒等映射，直接记录物理地址作为虚拟地址。
         unsafe {
             RX_BUFFER_PTRS[idx] = pa;
         }
@@ -499,7 +499,7 @@ fn recycle_rx_desc(queue: &mut VirtioNetQueue, queue_size: usize, desc_id: usize
 fn wait_for_tx_completion(queue: &VirtioNetQueue) {
     let last_used = VIRTIO_NET_TX_USED.load(Ordering::Acquire) as u16;
     loop {
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
         let used_idx = unsafe { ptr::read_volatile(&queue.used.idx) };
         if used_idx != last_used {
             VIRTIO_NET_TX_USED.store(used_idx as usize, Ordering::Release);
@@ -526,17 +526,17 @@ fn read_mac(base: usize) -> [u8; 6] {
 }
 
 fn mmio_read32(base: usize, offset: usize) -> u32 {
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
     unsafe { ptr::read_volatile((base + offset) as *const u32) }
 }
 
 fn mmio_read8(base: usize, offset: usize) -> u8 {
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
     unsafe { ptr::read_volatile((base + offset) as *const u8) }
 }
 
 fn mmio_write32(base: usize, offset: usize, value: u32) {
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
     unsafe { ptr::write_volatile((base + offset) as *mut u32, value) }
 }
 

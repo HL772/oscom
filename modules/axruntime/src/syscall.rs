@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-//! System call dispatcher and per-syscall implementations.
+//! 系统调用分发与各调用实现。
 
 use core::cmp::min;
 use core::mem::{size_of, MaybeUninit};
@@ -15,7 +15,7 @@ use crate::trap::TrapFrame;
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy)]
-/// Linux-compatible errno values used by syscalls.
+/// 系统调用使用的 Linux 兼容 errno 值。
 pub enum Errno {
     NoEnt = 2,
     Exist = 17,
@@ -42,7 +42,7 @@ pub enum Errno {
 }
 
 impl Errno {
-    /// Convert errno into the negative-isize return convention.
+    /// 将 errno 转换为负的 isize 返回约定。
     pub fn to_ret(self) -> usize {
         (-(self as isize)) as usize
     }
@@ -56,16 +56,16 @@ const ROOTFS_KIND_EXT4: u8 = 1;
 const ROOTFS_KIND_FAT32: u8 = 2;
 const ROOTFS_KIND_MEMFS: u8 = 3;
 
-// Avoid repeated rootfs log spam across per-syscall mount table creation.
+// 避免每次构建挂载表时重复输出 rootfs 日志。
 static ROOTFS_LOGGED: AtomicU8 = AtomicU8::new(0);
-// Rootfs kind is initialized once and reused to keep block cache state stable.
+// 根文件系统类型只初始化一次并复用，以保持块缓存状态稳定。
 static ROOTFS_KIND: AtomicU8 = AtomicU8::new(ROOTFS_KIND_UNKNOWN);
 static EXT4_WRITE_DONE: AtomicU8 = AtomicU8::new(0);
-// SAFETY: rootfs instances are initialized once in single-core boot and then shared read-only.
+// 安全性： rootfs 实例在单核启动时初始化一次，随后只读共享。
 static mut ROOTFS_EXT4: MaybeUninit<ext4::Ext4Fs<'static>> = MaybeUninit::uninit();
-// SAFETY: rootfs instances are initialized once in single-core boot and then shared read-only.
+// 安全性： rootfs 实例在单核启动时初始化一次，随后只读共享。
 static mut ROOTFS_FAT32: MaybeUninit<fat32::Fat32Fs<'static>> = MaybeUninit::uninit();
-// SAFETY: rootfs instances are initialized once in single-core boot and then shared read-only.
+// 安全性： rootfs 实例在单核启动时初始化一次，随后只读共享。
 static mut ROOTFS_MEMFS: MaybeUninit<memfs::MemFs<'static>> = MaybeUninit::uninit();
 static DEVFS: devfs::DevFs = devfs::DevFs::new();
 static PROCFS: procfs::ProcFs = procfs::ProcFs::new();
@@ -88,7 +88,7 @@ impl SyscallContext {
     }
 }
 
-/// Dispatch a system call based on the trap frame.
+/// 根据 trapframe 分发系统调用。
 pub fn handle_syscall(tf: &mut TrapFrame) {
     let ctx = SyscallContext::from_trap_frame(tf);
     let ret = dispatch(tf, ctx);
@@ -775,29 +775,29 @@ const EMPTY_FD_ENTRY: FdEntry = FdEntry {
     send_timeout_ms: 0,
 };
 
-// SAFETY: 单核早期阶段，fd 表按进程索引串行访问。
+// 安全性： 单核早期阶段，fd 表按进程索引串行访问。
 static mut FD_TABLES: [[FdEntry; FD_TABLE_SLOTS]; MAX_PROCS] = [[EMPTY_FD_ENTRY; FD_TABLE_SLOTS]; MAX_PROCS];
-// SAFETY: 仅用于重定向标准 fd，单核阶段按进程顺序访问。
+// 安全性： 仅用于重定向标准 fd，单核阶段按进程顺序访问。
 static mut STDIO_REDIRECT: [[Option<FdEntry>; 3]; MAX_PROCS] = [[None; 3]; MAX_PROCS];
-// SAFETY: 标准 fd 的状态标志在单核阶段按进程顺序访问。
+// 安全性： 标准 fd 的状态标志在单核阶段按进程顺序访问。
 static mut STDIO_FLAGS: [[usize; 3]; MAX_PROCS] = [[0; 3]; MAX_PROCS];
-// SAFETY: 当前工作目录缓存按进程顺序访问。
+// 安全性： 当前工作目录缓存按进程顺序访问。
 static mut PROC_CWD: [[u8; MAX_PATH_LEN]; MAX_PROCS] = [[0; MAX_PATH_LEN]; MAX_PROCS];
-// SAFETY: 当前工作目录长度按进程顺序访问。
+// 安全性： 当前工作目录长度按进程顺序访问。
 static mut PROC_CWD_LEN: [usize; MAX_PROCS] = [0; MAX_PROCS];
-// SAFETY: umask 按进程顺序访问。
+// 安全性： umask 按进程顺序访问。
 static mut PROC_UMASK: [u16; MAX_PROCS] = [0; MAX_PROCS];
-// SAFETY: 控制台输入缓存仅在单核阶段顺序访问。
+// 安全性： 控制台输入缓存仅在单核阶段顺序访问。
 static mut CONSOLE_STASH: i16 = -1;
-// SAFETY: pipe 表在早期阶段串行访问。
+// 安全性： pipe 表在早期阶段串行访问。
 static mut PIPES: [Pipe; PIPE_SLOTS] = [EMPTY_PIPE; PIPE_SLOTS];
-// SAFETY: eventfd 表在早期阶段串行访问。
+// 安全性： eventfd 表在早期阶段串行访问。
 static mut EVENTFDS: [EventFd; EVENTFD_SLOTS] = [EMPTY_EVENTFD; EVENTFD_SLOTS];
-// SAFETY: timerfd 表在早期阶段串行访问。
+// 安全性： timerfd 表在早期阶段串行访问。
 static mut TIMERFDS: [TimerFd; TIMERFD_SLOTS] = [EMPTY_TIMERFD; TIMERFD_SLOTS];
-// SAFETY: epoll 表在早期阶段串行访问。
+// 安全性： epoll 表在早期阶段串行访问。
 static mut EPOLLS: [EpollInstance; EPOLL_SLOTS] = [EMPTY_EPOLL; EPOLL_SLOTS];
-// SAFETY: pipe 等待队列只在单核早期阶段访问。
+// 安全性： pipe 等待队列只在单核早期阶段访问。
 static PIPE_READ_WAITERS: [crate::task_wait_queue::TaskWaitQueue; PIPE_SLOTS] = [
     crate::task_wait_queue::TaskWaitQueue::new(),
     crate::task_wait_queue::TaskWaitQueue::new(),
@@ -808,7 +808,7 @@ static PIPE_READ_WAITERS: [crate::task_wait_queue::TaskWaitQueue; PIPE_SLOTS] = 
     crate::task_wait_queue::TaskWaitQueue::new(),
     crate::task_wait_queue::TaskWaitQueue::new(),
 ];
-// SAFETY: eventfd 等待队列只在单核早期阶段访问。
+// 安全性： eventfd 等待队列只在单核早期阶段访问。
 static EVENTFD_WAITERS: [crate::task_wait_queue::TaskWaitQueue; EVENTFD_SLOTS] = [
     crate::task_wait_queue::TaskWaitQueue::new(),
     crate::task_wait_queue::TaskWaitQueue::new(),
@@ -827,7 +827,7 @@ static EVENTFD_WAITERS: [crate::task_wait_queue::TaskWaitQueue; EVENTFD_SLOTS] =
     crate::task_wait_queue::TaskWaitQueue::new(),
     crate::task_wait_queue::TaskWaitQueue::new(),
 ];
-// SAFETY: timerfd 等待队列只在单核早期阶段访问。
+// 安全性： timerfd 等待队列只在单核早期阶段访问。
 static TIMERFD_WAITERS: [crate::task_wait_queue::TaskWaitQueue; TIMERFD_SLOTS] = [
     crate::task_wait_queue::TaskWaitQueue::new(),
     crate::task_wait_queue::TaskWaitQueue::new(),
@@ -856,7 +856,7 @@ static PIPE_WRITE_WAITERS: [crate::task_wait_queue::TaskWaitQueue; PIPE_SLOTS] =
     crate::task_wait_queue::TaskWaitQueue::new(),
     crate::task_wait_queue::TaskWaitQueue::new(),
 ];
-// SAFETY: poll/ppoll 共享等待队列在单核阶段顺序访问。
+// 安全性： poll/ppoll 共享等待队列在单核阶段顺序访问。
 static POLL_WAITERS: crate::task_wait_queue::TaskWaitQueue = crate::task_wait_queue::TaskWaitQueue::new();
 
 #[repr(C)]
@@ -1010,7 +1010,7 @@ fn sys_brk(addr: usize) -> Result<usize, Errno> {
         for va in (start..new_brk).step_by(mm::PAGE_SIZE) {
             let frame = mm::alloc_frame().ok_or(Errno::NoMem)?;
             let pa = frame.addr().as_usize();
-            // SAFETY: fresh frame; zero before mapping into user space.
+            // 安全性： 新分配的页帧；映射到用户态前先清零。
             unsafe {
                 core::ptr::write_bytes(pa as *mut u8, 0, mm::PAGE_SIZE);
             }
@@ -1089,7 +1089,7 @@ fn sys_mmap(
         }
         let frame = mm::alloc_frame().ok_or(Errno::NoMem)?;
         let pa = frame.addr().as_usize();
-        // SAFETY: freshly allocated frame is exclusively owned by this mapping.
+        // 安全性： 新分配的页帧仅由此映射独占。
         unsafe {
             core::ptr::write_bytes(pa as *mut u8, 0, mm::PAGE_SIZE);
         }
@@ -1228,7 +1228,7 @@ fn sys_epoll_ctl(epfd: usize, op: usize, fd: usize, event_ptr: usize) -> Result<
             .read(root_pa)
             .ok_or(Errno::Fault)?;
     }
-    // SAFETY: 单核早期阶段，epoll 表串行更新。
+    // 安全性： 单核早期阶段，epoll 表串行更新。
     unsafe {
         let epoll = EPOLLS.get_mut(epoll_id).ok_or(Errno::Badf)?;
         if !epoll.used {
@@ -1360,7 +1360,7 @@ fn sys_timerfd_settime(fd: usize, flags: usize, new_ptr: usize, old_ptr: usize) 
     } else {
         now.saturating_add(value_ns)
     };
-    // SAFETY: 单核早期阶段串行更新 timerfd。
+    // 安全性： 单核早期阶段串行更新 timerfd。
     unsafe {
         if let Some(timer) = TIMERFDS.get_mut(timer_id) {
             if !timer.used {
@@ -1397,10 +1397,10 @@ fn sys_timerfd_gettime(fd: usize, curr_ptr: usize) -> Result<usize, Errno> {
 }
 
 const EXECVE_IMAGE_MAX: usize = 0x100000;
-// SAFETY: 单核 execve 过程复用该缓冲区读取 ELF 镜像。
+// 安全性： 单核 execve 过程复用该缓冲区读取 ELF 镜像。
 static mut EXECVE_IMAGE: [u8; EXECVE_IMAGE_MAX] = [0; EXECVE_IMAGE_MAX];
 
-/// Load the `/init` image from the VFS and prepare a user context for it.
+/// 从 VFS 加载 `/init` 镜像并准备用户上下文。
 pub fn prepare_user_init() -> Option<crate::user::UserContext> {
     let (mount, inode) = vfs_lookup_path("/init").ok()?;
     let image = vfs_read_inode_image(mount, inode).ok()?;
@@ -3596,7 +3596,7 @@ fn sys_getrandom(buf: usize, len: usize, flags: usize) -> Result<usize, Errno> {
                 let rand = rng_next();
                 let bytes = rand.to_le_bytes();
                 let copy_len = min(bytes.len(), chunk - offset);
-                // SAFETY: 翻译结果确保该片段在用户态可写。
+                // 安全性： 翻译结果确保该片段在用户态可写。
                 unsafe {
                     core::ptr::copy_nonoverlapping(
                         bytes.as_ptr(),
@@ -3829,7 +3829,7 @@ fn sys_prctl(option: usize, arg2: usize) -> Result<usize, Errno> {
             } else {
                 name[15] = 0;
             }
-            // SAFETY: single-hart early boot; process name is updated atomically.
+            // 安全性： 早期单核阶段；进程名按原子方式更新。
             unsafe {
                 PRCTL_NAME = name;
             }
@@ -3839,7 +3839,7 @@ fn sys_prctl(option: usize, arg2: usize) -> Result<usize, Errno> {
             if arg2 == 0 {
                 return Err(Errno::Fault);
             }
-            // SAFETY: single-hart early boot; process name is read atomically.
+            // 安全性： 早期单核阶段；进程名按原子方式读取。
             let name = unsafe { PRCTL_NAME };
             UserSlice::new(arg2, name.len()).copy_from_slice(root_pa, &name)
                 .ok_or(Errno::Fault)?;
@@ -3881,7 +3881,7 @@ fn sys_sched_getaffinity(_pid: usize, len: usize, mask: usize) -> Result<usize, 
     }
     UserSlice::new(mask, len)
         .for_each_chunk(root_pa, UserAccess::Write, |pa, chunk| {
-            // SAFETY: 翻译结果确保该片段在用户态可写。
+            // 安全性： 翻译结果确保该片段在用户态可写。
             unsafe {
                 core::ptr::write_bytes(pa as *mut u8, 0, chunk);
             }
@@ -4088,7 +4088,7 @@ fn vfs_meta_for(fs: &dyn VfsOps, inode: InodeId) -> Result<(u32, usize), Errno> 
 }
 
 fn current_pid() -> usize {
-    // Single-hart early boot uses TaskId+1 as a stable placeholder PID.
+    // 单核早期启动阶段使用 TaskId+1 作为稳定占位 PID。
     crate::process::current_pid()
         .or_else(|| crate::runtime::current_task_id().map(|id| id + 1))
         .unwrap_or(1)
@@ -4138,7 +4138,7 @@ fn init_rootfs_kind() {
     let root_dev = crate::fs::root_device();
     let root_block = root_dev.as_block_device();
     if let Ok(rootfs) = ext4::Ext4Fs::new(root_block) {
-        // SAFETY: 单核初始化阶段写入 rootfs 实例。
+        // 安全性： 单核初始化阶段写入 rootfs 实例。
         unsafe {
             ROOTFS_EXT4.write(rootfs);
         }
@@ -4146,7 +4146,7 @@ fn init_rootfs_kind() {
         return;
     }
     if let Ok(rootfs) = fat32::Fat32Fs::new(root_block) {
-        // SAFETY: 单核初始化阶段写入 rootfs 实例。
+        // 安全性： 单核初始化阶段写入 rootfs 实例。
         unsafe {
             ROOTFS_FAT32.write(rootfs);
         }
@@ -4154,7 +4154,7 @@ fn init_rootfs_kind() {
         return;
     }
     let rootfs = memfs::MemFs::with_init_image(init_memfile_image());
-    // SAFETY: 单核初始化阶段写入 rootfs 实例。
+    // 安全性： 单核初始化阶段写入 rootfs 实例。
     unsafe {
         ROOTFS_MEMFS.write(rootfs);
     }
@@ -4172,15 +4172,15 @@ fn rootfs_kind() -> u8 {
 fn rootfs_ref(kind: u8) -> &'static dyn VfsOps {
     match kind {
         ROOTFS_KIND_EXT4 => {
-            // SAFETY: instance is initialized before ROOTFS_KIND is published.
+            // 安全性： 实例在 ROOTFS_KIND 发布前已初始化。
             unsafe { &*ROOTFS_EXT4.as_ptr() }
         }
         ROOTFS_KIND_FAT32 => {
-            // SAFETY: instance is initialized before ROOTFS_KIND is published.
+            // 安全性： 实例在 ROOTFS_KIND 发布前已初始化。
             unsafe { &*ROOTFS_FAT32.as_ptr() }
         }
         _ => {
-            // SAFETY: instance is initialized before ROOTFS_KIND is published.
+            // 安全性： 实例在 ROOTFS_KIND 发布前已初始化。
             unsafe { &*ROOTFS_MEMFS.as_ptr() }
         }
     }
@@ -4202,7 +4202,7 @@ fn with_mounts<R>(f: impl FnOnce(&MountTable<'_, VFS_MOUNT_COUNT>) -> R) -> R {
     f(&mounts)
 }
 
-/// Trigger the ext4 write smoke test when enabled.
+/// 启用时触发 ext4 写入冒烟测试。
 pub fn ext4_write_smoke() {
     if rootfs_kind() != ROOTFS_KIND_EXT4 {
         crate::println!("ext4: write skip (rootfs not ext4)");
@@ -4269,7 +4269,7 @@ fn vfs_read_inode_image(mount: MountId, inode: InodeId) -> Result<&'static [u8],
         if size == 0 || size > EXECVE_IMAGE_MAX {
             return Err(Errno::NoMem);
         }
-        // SAFETY: 单核 execve/引导路径，缓冲区只在此处写入。
+        // 安全性： 单核 execve/引导路径，缓冲区只在此处写入。
         unsafe {
             let buf = &mut EXECVE_IMAGE[..size];
             let mut offset = 0usize;
@@ -4344,7 +4344,7 @@ fn map_futex_err(err: futex::FutexError) -> Errno {
     }
 }
 
-/// Return true if the current context may block.
+/// 返回当前上下文是否允许阻塞。
 pub fn can_block_current() -> bool {
     crate::runtime::current_task_id().is_some()
 }
@@ -4396,7 +4396,7 @@ fn current_umask() -> u16 {
     let Some(idx) = current_proc_index() else {
         return 0;
     };
-    // SAFETY: 单核阶段顺序访问 umask。
+    // 安全性： 单核阶段顺序访问 umask。
     unsafe { PROC_UMASK[idx] }
 }
 
@@ -4404,9 +4404,9 @@ fn set_current_umask(mask: u16) -> Result<u16, Errno> {
     let Some(idx) = current_proc_index() else {
         return Err(Errno::Fault);
     };
-    // SAFETY: 单核阶段顺序访问 umask。
+    // 安全性： 单核阶段顺序访问 umask。
     let old = unsafe { PROC_UMASK[idx] };
-    // SAFETY: 单核阶段顺序访问 umask。
+    // 安全性： 单核阶段顺序访问 umask。
     unsafe {
         PROC_UMASK[idx] = mask;
     }
@@ -4417,7 +4417,7 @@ fn init_proc_cwd(idx: usize) {
     if idx >= MAX_PROCS {
         return;
     }
-    // SAFETY: 单核阶段顺序初始化 cwd。
+    // 安全性： 单核阶段顺序初始化 cwd。
     unsafe {
         PROC_CWD[idx][0] = b'/';
         PROC_CWD_LEN[idx] = 1;
@@ -4428,7 +4428,7 @@ fn clone_proc_cwd(parent: usize, child: usize) {
     if parent >= MAX_PROCS || child >= MAX_PROCS {
         return;
     }
-    // SAFETY: 单核阶段顺序复制 cwd。
+    // 安全性： 单核阶段顺序复制 cwd。
     unsafe {
         PROC_CWD[child] = PROC_CWD[parent];
         PROC_CWD_LEN[child] = PROC_CWD_LEN[parent];
@@ -4439,7 +4439,7 @@ fn clear_proc_cwd(idx: usize) {
     if idx >= MAX_PROCS {
         return;
     }
-    // SAFETY: 单核阶段顺序清理 cwd。
+    // 安全性： 单核阶段顺序清理 cwd。
     unsafe {
         PROC_CWD[idx] = [0; MAX_PATH_LEN];
         PROC_CWD_LEN[idx] = 0;
@@ -4450,12 +4450,12 @@ fn current_cwd_str() -> &'static str {
     let Some(idx) = current_proc_index() else {
         return "/";
     };
-    // SAFETY: 单核阶段顺序访问 cwd。
+    // 安全性： 单核阶段顺序访问 cwd。
     let len = unsafe { PROC_CWD_LEN[idx] };
     if len == 0 || len > MAX_PATH_LEN {
         return "/";
     }
-    // SAFETY: cwd length is validated and bounded by MAX_PATH_LEN.
+    // 安全性： cwd 长度已校验且受 MAX_PATH_LEN 约束。
     let bytes = unsafe { &PROC_CWD[idx][..len] };
     core::str::from_utf8(bytes).unwrap_or("/")
 }
@@ -4470,7 +4470,7 @@ fn set_current_cwd(path: &str) -> Result<(), Errno> {
     if path.is_empty() || path.len() >= MAX_PATH_LEN {
         return Err(Errno::Range);
     }
-    // SAFETY: 单核阶段顺序写入 cwd。
+    // 安全性： 单核阶段顺序写入 cwd。
     unsafe {
         PROC_CWD[idx].fill(0);
         PROC_CWD[idx][..path.len()].copy_from_slice(path.as_bytes());
@@ -4564,7 +4564,7 @@ fn stdio_object(fd: usize) -> Option<FdObject> {
 fn stdio_entry(fd: usize) -> Option<FdEntry> {
     let object = stdio_object(fd)?;
     let proc_idx = current_proc_index()?;
-    // SAFETY: 单核早期阶段访问重定向表/标志。
+    // 安全性： 单核早期阶段访问重定向表/标志。
     unsafe {
         if let Some(entry) = STDIO_REDIRECT[proc_idx][fd] {
             Some(entry)
@@ -4586,7 +4586,7 @@ fn resolve_fd(fd: usize) -> Option<FdEntry> {
     }
     let proc_idx = current_proc_index()?;
     let idx = fd_table_index(fd)?;
-    // SAFETY: 单核早期阶段，fd 表无并发访问。
+    // 安全性： 单核早期阶段，fd 表无并发访问。
     let entry = unsafe { FD_TABLES[proc_idx][idx] };
     if entry.object == FdObject::Empty {
         None
@@ -4610,7 +4610,7 @@ fn fd_table_index(fd: usize) -> Option<usize> {
 fn fd_offset(fd: usize) -> Option<usize> {
     if stdio_object(fd).is_some() {
         let proc_idx = current_proc_index()?;
-        // SAFETY: 单核早期阶段访问重定向表。
+        // 安全性： 单核早期阶段访问重定向表。
         unsafe {
             if let Some(entry) = STDIO_REDIRECT[proc_idx][fd] {
                 return Some(entry.offset);
@@ -4620,7 +4620,7 @@ fn fd_offset(fd: usize) -> Option<usize> {
     }
     let proc_idx = current_proc_index()?;
     let idx = fd_table_index(fd)?;
-    // SAFETY: 单核早期阶段，fd 表无并发访问。
+    // 安全性： 单核早期阶段，fd 表无并发访问。
     let entry = unsafe { FD_TABLES[proc_idx][idx] };
     if entry.object == FdObject::Empty {
         None
@@ -4634,7 +4634,7 @@ fn set_fd_offset(fd: usize, offset: usize) {
         return;
     };
     if stdio_object(fd).is_some() {
-        // SAFETY: 单核早期阶段访问重定向表。
+        // 安全性： 单核早期阶段访问重定向表。
         unsafe {
             if let Some(mut entry) = STDIO_REDIRECT[proc_idx][fd] {
                 entry.offset = offset;
@@ -4646,7 +4646,7 @@ fn set_fd_offset(fd: usize, offset: usize) {
     let Some(idx) = fd_table_index(fd) else {
         return;
     };
-    // SAFETY: 单核早期阶段，偏移顺序访问。
+    // 安全性： 单核早期阶段，偏移顺序访问。
     unsafe {
         if FD_TABLES[proc_idx][idx].object == FdObject::Empty {
             return;
@@ -4660,7 +4660,7 @@ fn alloc_fd(entry: FdEntry) -> Option<usize> {
         return None;
     }
     let proc_idx = current_proc_index()?;
-    // SAFETY: 单核早期阶段，fd 表串行更新。
+    // 安全性： 单核早期阶段，fd 表串行更新。
     unsafe {
         for (idx, slot) in FD_TABLES[proc_idx].iter_mut().enumerate() {
             if slot.object == FdObject::Empty {
@@ -4679,7 +4679,7 @@ fn dup_to_fd(newfd: usize, entry: FdEntry) -> Result<usize, Errno> {
     }
     let proc_idx = current_proc_index().ok_or(Errno::Badf)?;
     let idx = fd_table_index(newfd).ok_or(Errno::Badf)?;
-    // SAFETY: 单核早期阶段，fd 表串行更新。
+    // 安全性： 单核早期阶段，fd 表串行更新。
     unsafe {
         let old = FD_TABLES[proc_idx][idx];
         if old.object != FdObject::Empty {
@@ -4697,7 +4697,7 @@ fn replace_socket_fd(fd: usize, socket_id: axnet::SocketId) -> Result<(), Errno>
     }
     let proc_idx = current_proc_index().ok_or(Errno::Badf)?;
     let idx = fd_table_index(fd).ok_or(Errno::Badf)?;
-    // SAFETY: 单核早期阶段，fd 表串行更新。
+    // 安全性： 单核早期阶段，fd 表串行更新。
     unsafe {
         let entry = &mut FD_TABLES[proc_idx][idx];
         if !matches!(entry.object, FdObject::Socket(_)) {
@@ -4712,7 +4712,7 @@ fn replace_socket_fd(fd: usize, socket_id: axnet::SocketId) -> Result<(), Errno>
 fn close_fd(fd: usize) -> Result<usize, Errno> {
     let proc_idx = current_proc_index().ok_or(Errno::Badf)?;
     if stdio_object(fd).is_some() {
-        // SAFETY: 单核早期阶段访问重定向表。
+        // 安全性： 单核早期阶段访问重定向表。
         unsafe {
             if let Some(old) = STDIO_REDIRECT[proc_idx][fd] {
                 pipe_release(old.object);
@@ -4722,7 +4722,7 @@ fn close_fd(fd: usize) -> Result<usize, Errno> {
         return Ok(0);
     }
     let idx = fd_table_index(fd).ok_or(Errno::Badf)?;
-    // SAFETY: 单核早期阶段，fd 表串行更新。
+    // 安全性： 单核早期阶段，fd 表串行更新。
     unsafe {
         let old = FD_TABLES[proc_idx][idx];
         if old.object == FdObject::Empty {
@@ -4741,7 +4741,7 @@ fn close_cloexec_fds() {
     let Some(proc_idx) = current_proc_index() else {
         return;
     };
-    // SAFETY: 单核早期阶段，fd 表按进程顺序访问。
+    // 安全性： 单核早期阶段，fd 表按进程顺序访问。
     unsafe {
         for (idx, entry) in FD_TABLES[proc_idx].iter_mut().enumerate() {
             if entry.object == FdObject::Empty || (entry.flags & O_CLOEXEC) == 0 {
@@ -4774,7 +4774,7 @@ fn set_stdio_redirect(fd: usize, entry: FdEntry) -> Result<usize, Errno> {
         return Err(Errno::Badf);
     }
     let proc_idx = current_proc_index().ok_or(Errno::Badf)?;
-    // SAFETY: 单核早期阶段访问重定向表。
+    // 安全性： 单核早期阶段访问重定向表。
     unsafe {
         if let Some(old) = STDIO_REDIRECT[proc_idx][fd] {
             if let FdObject::Socket(socket_id) = old.object {
@@ -4792,7 +4792,7 @@ fn set_fd_flags(fd: usize, flags: usize) -> Result<(), Errno> {
     let flags = flags & (O_NONBLOCK | O_APPEND);
     let proc_idx = current_proc_index().ok_or(Errno::Badf)?;
     if stdio_object(fd).is_some() {
-        // SAFETY: 单核早期阶段访问重定向表/标志。
+        // 安全性： 单核早期阶段访问重定向表/标志。
         unsafe {
             if let Some(mut entry) = STDIO_REDIRECT[proc_idx][fd] {
                 entry.flags = (entry.flags & (O_ACCMODE | O_CLOEXEC)) | flags;
@@ -4805,7 +4805,7 @@ fn set_fd_flags(fd: usize, flags: usize) -> Result<(), Errno> {
         return Ok(());
     }
     let idx = fd_table_index(fd).ok_or(Errno::Badf)?;
-    // SAFETY: 单核早期阶段，fd 表串行更新。
+    // 安全性： 单核早期阶段，fd 表串行更新。
     unsafe {
         if FD_TABLES[proc_idx][idx].object == FdObject::Empty {
             return Err(Errno::Badf);
@@ -4819,7 +4819,7 @@ fn set_fd_flags(fd: usize, flags: usize) -> Result<(), Errno> {
 fn set_fd_cloexec(fd: usize, cloexec: bool) -> Result<(), Errno> {
     let proc_idx = current_proc_index().ok_or(Errno::Badf)?;
     if stdio_object(fd).is_some() {
-        // SAFETY: 单核早期阶段访问重定向表/标志。
+        // 安全性： 单核早期阶段访问重定向表/标志。
         unsafe {
             if let Some(mut entry) = STDIO_REDIRECT[proc_idx][fd] {
                 if cloexec {
@@ -4837,7 +4837,7 @@ fn set_fd_cloexec(fd: usize, cloexec: bool) -> Result<(), Errno> {
         return Ok(());
     }
     let idx = fd_table_index(fd).ok_or(Errno::Badf)?;
-    // SAFETY: 单核早期阶段，fd 表串行更新。
+    // 安全性： 单核早期阶段，fd 表串行更新。
     unsafe {
         if FD_TABLES[proc_idx][idx].object == FdObject::Empty {
             return Err(Errno::Badf);
@@ -4855,7 +4855,7 @@ fn clear_fd_table(idx: usize) {
     if idx >= MAX_PROCS {
         return;
     }
-    // SAFETY: 单核早期阶段按进程顺序清理 fd 表。
+    // 安全性： 单核早期阶段按进程顺序清理 fd 表。
     unsafe {
         for entry in FD_TABLES[idx].iter_mut() {
             if entry.object != FdObject::Empty {
@@ -4875,25 +4875,25 @@ fn clear_fd_table(idx: usize) {
     }
 }
 
-/// Initialize the file descriptor table for a task.
+/// 初始化任务的文件描述符表。
 pub fn init_fd_table(task_id: TaskId) {
     clear_fd_table(task_id);
     init_proc_cwd(task_id);
     if task_id < MAX_PROCS {
-        // SAFETY: 单核阶段顺序初始化 umask。
+        // 安全性： 单核阶段顺序初始化 umask。
         unsafe {
             PROC_UMASK[task_id] = 0;
         }
     }
 }
 
-/// Clone file descriptors from a parent task into a child task.
+/// 将父任务的文件描述符克隆到子任务。
 pub fn clone_fd_table(parent: TaskId, child: TaskId) {
     if parent >= MAX_PROCS || child >= MAX_PROCS {
         return;
     }
     clear_fd_table(child);
-    // SAFETY: 单核早期阶段按进程顺序复制 fd 表。
+    // 安全性： 单核早期阶段按进程顺序复制 fd 表。
     unsafe {
         FD_TABLES[child] = FD_TABLES[parent];
         STDIO_REDIRECT[child] = STDIO_REDIRECT[parent];
@@ -4908,18 +4908,18 @@ pub fn clone_fd_table(parent: TaskId, child: TaskId) {
         }
     }
     clone_proc_cwd(parent, child);
-    // SAFETY: 单核阶段顺序复制 umask。
+    // 安全性： 单核阶段顺序复制 umask。
     unsafe {
         PROC_UMASK[child] = PROC_UMASK[parent];
     }
 }
 
-/// Release all file descriptors owned by a task.
+/// 释放任务拥有的全部文件描述符。
 pub fn release_fd_table(task_id: TaskId) {
     clear_fd_table(task_id);
     clear_proc_cwd(task_id);
     if task_id < MAX_PROCS {
-        // SAFETY: 单核阶段顺序清理 umask。
+        // 安全性： 单核阶段顺序清理 umask。
         unsafe {
             PROC_UMASK[task_id] = 0;
         }
@@ -4927,7 +4927,7 @@ pub fn release_fd_table(task_id: TaskId) {
 }
 
 fn alloc_pipe() -> Option<usize> {
-    // SAFETY: 单核早期阶段串行更新 pipe 表。
+    // 安全性： 单核早期阶段串行更新 pipe 表。
     unsafe {
         for (idx, pipe) in PIPES.iter_mut().enumerate() {
             if !pipe.used {
@@ -4951,7 +4951,7 @@ fn free_pipe(pipe_id: usize) {
     if pipe_id >= PIPE_SLOTS {
         return;
     }
-    // SAFETY: 单核早期阶段串行更新 pipe 表。
+    // 安全性： 单核早期阶段串行更新 pipe 表。
     unsafe {
         PIPES[pipe_id] = EMPTY_PIPE;
     }
@@ -4966,7 +4966,7 @@ fn timerfd_queue(timer_id: usize) -> &'static crate::task_wait_queue::TaskWaitQu
 }
 
 fn alloc_eventfd(initval: u64, flags: usize) -> Option<usize> {
-    // SAFETY: 单核早期阶段串行更新 eventfd 表。
+    // 安全性： 单核早期阶段串行更新 eventfd 表。
     unsafe {
         for (idx, slot) in EVENTFDS.iter_mut().enumerate() {
             if !slot.used {
@@ -4984,7 +4984,7 @@ fn alloc_eventfd(initval: u64, flags: usize) -> Option<usize> {
 }
 
 fn alloc_timerfd(flags: usize) -> Option<usize> {
-    // SAFETY: 单核早期阶段串行更新 timerfd 表。
+    // 安全性： 单核早期阶段串行更新 timerfd 表。
     unsafe {
         for (idx, slot) in TIMERFDS.iter_mut().enumerate() {
             if !slot.used {
@@ -5003,7 +5003,7 @@ fn alloc_timerfd(flags: usize) -> Option<usize> {
 }
 
 fn alloc_epoll(flags: usize) -> Option<usize> {
-    // SAFETY: 单核早期阶段串行更新 epoll 表。
+    // 安全性： 单核早期阶段串行更新 epoll 表。
     unsafe {
         for (idx, slot) in EPOLLS.iter_mut().enumerate() {
             if !slot.used {
@@ -5026,7 +5026,7 @@ fn pipe_acquire(object: FdObject) {
         FdObject::PipeWrite(id) => (id, false),
         FdObject::Eventfd(id) => {
             if id < EVENTFD_SLOTS {
-                // SAFETY: eventfd table is updated sequentially at early boot.
+                // 安全性： eventfd 表在早期阶段顺序更新。
                 unsafe {
                     if EVENTFDS[id].used {
                         EVENTFDS[id].refs += 1;
@@ -5037,7 +5037,7 @@ fn pipe_acquire(object: FdObject) {
         }
         FdObject::Timerfd(id) => {
             if id < TIMERFD_SLOTS {
-                // SAFETY: timerfd table is updated sequentially at early boot.
+                // 安全性： timerfd 表在早期阶段顺序更新。
                 unsafe {
                     if TIMERFDS[id].used {
                         TIMERFDS[id].refs += 1;
@@ -5048,7 +5048,7 @@ fn pipe_acquire(object: FdObject) {
         }
         FdObject::Epoll(id) => {
             if id < EPOLL_SLOTS {
-                // SAFETY: epoll table is updated sequentially at early boot.
+                // 安全性： epoll 表在早期阶段顺序更新。
                 unsafe {
                     if EPOLLS[id].used {
                         EPOLLS[id].refs += 1;
@@ -5062,7 +5062,7 @@ fn pipe_acquire(object: FdObject) {
     if pipe_id >= PIPE_SLOTS {
         return;
     }
-    // SAFETY: 单核早期阶段串行更新 pipe 表。
+    // 安全性： 单核早期阶段串行更新 pipe 表。
     unsafe {
         if !PIPES[pipe_id].used {
             return;
@@ -5081,7 +5081,7 @@ fn pipe_release(object: FdObject) {
         FdObject::PipeWrite(id) => (id, false),
         FdObject::Eventfd(id) => {
             if id < EVENTFD_SLOTS {
-                // SAFETY: eventfd table is updated sequentially at early boot.
+                // 安全性： eventfd 表在早期阶段顺序更新。
                 unsafe {
                     if EVENTFDS[id].used && EVENTFDS[id].refs > 0 {
                         EVENTFDS[id].refs -= 1;
@@ -5095,7 +5095,7 @@ fn pipe_release(object: FdObject) {
         }
         FdObject::Timerfd(id) => {
             if id < TIMERFD_SLOTS {
-                // SAFETY: timerfd table is updated sequentially at early boot.
+                // 安全性： timerfd 表在早期阶段顺序更新。
                 unsafe {
                     if TIMERFDS[id].used && TIMERFDS[id].refs > 0 {
                         TIMERFDS[id].refs -= 1;
@@ -5109,7 +5109,7 @@ fn pipe_release(object: FdObject) {
         }
         FdObject::Epoll(id) => {
             if id < EPOLL_SLOTS {
-                // SAFETY: epoll table is updated sequentially at early boot.
+                // 安全性： epoll 表在早期阶段顺序更新。
                 unsafe {
                     if EPOLLS[id].used && EPOLLS[id].refs > 0 {
                         EPOLLS[id].refs -= 1;
@@ -5126,7 +5126,7 @@ fn pipe_release(object: FdObject) {
     if pipe_id >= PIPE_SLOTS {
         return;
     }
-    // SAFETY: 单核早期阶段串行更新 pipe 表。
+    // 安全性： 单核早期阶段串行更新 pipe 表。
     unsafe {
         if !PIPES[pipe_id].used {
             return;
@@ -5139,19 +5139,19 @@ fn pipe_release(object: FdObject) {
             PIPES[pipe_id].writers -= 1;
         }
     }
-// SAFETY: unsafe access is guarded by checks above.
+// 安全性： 不安全访问已由上方检查保护。
     if unsafe { PIPES[pipe_id].writers == 0 } {
         let _ = crate::runtime::wake_all(pipe_read_queue(pipe_id));
     }
-    // SAFETY: pipe_id bounds checked and pipe table is serialized.
+    // 安全性： pipe_id 已做边界检查，pipe 表访问已串行化。
     if unsafe { PIPES[pipe_id].readers == 0 } {
         let _ = crate::runtime::wake_all(pipe_write_queue(pipe_id));
     }
     // fd 关闭可能触发 HUP/ERR，唤醒 poll/ppoll 等待者。
     let _ = crate::runtime::wake_all(ppoll_wait_queue());
-    // SAFETY: pipe_id bounds checked and pipe table is serialized.
+    // 安全性： pipe_id 已做边界检查，pipe 表访问已串行化。
     if unsafe { PIPES[pipe_id].readers == 0 && PIPES[pipe_id].writers == 0 } {
-        // SAFETY: pipe_id bounds checked and pipe table is serialized.
+        // 安全性： pipe_id 已做边界检查，pipe 表访问已串行化。
         unsafe {
             PIPES[pipe_id] = EMPTY_PIPE;
         }
@@ -5166,7 +5166,7 @@ fn pipe_read(pipe_id: usize, root_pa: usize, buf: usize, len: usize, nonblock: b
         return Ok(0);
     }
     loop {
-        // SAFETY: pipe_id bounds checked; pipe table is read under serialized access.
+        // 安全性： pipe_id 已做边界检查；pipe 表在串行访问下读取。
         let (used, available, writers) = unsafe {
             let pipe = &PIPES[pipe_id];
             (pipe.used, pipe.len, pipe.writers)
@@ -5186,7 +5186,7 @@ fn pipe_read(pipe_id: usize, root_pa: usize, buf: usize, len: usize, nonblock: b
         }
         break;
     }
-    // SAFETY: 单核早期阶段串行访问 pipe。
+    // 安全性： 单核早期阶段串行访问 pipe。
     let pipe = unsafe { &mut PIPES[pipe_id] };
     let to_read = min(len, pipe.len);
     let mut remaining = to_read;
@@ -5216,7 +5216,7 @@ fn pipe_write(pipe_id: usize, root_pa: usize, buf: usize, len: usize, nonblock: 
         return Ok(0);
     }
     loop {
-        // SAFETY: pipe_id bounds checked; pipe table is read under serialized access.
+        // 安全性： pipe_id 已做边界检查；pipe 表在串行访问下读取。
         let (used, readers, used_len) = unsafe {
             let pipe = &PIPES[pipe_id];
             (pipe.used, pipe.readers, pipe.len)
@@ -5237,7 +5237,7 @@ fn pipe_write(pipe_id: usize, root_pa: usize, buf: usize, len: usize, nonblock: 
         }
         break;
     }
-    // SAFETY: 单核早期阶段串行访问 pipe。
+    // 安全性： 单核早期阶段串行访问 pipe。
     let pipe = unsafe { &mut PIPES[pipe_id] };
     let avail = PIPE_BUFFER_SIZE.saturating_sub(pipe.len);
     let to_write = min(len, avail);
@@ -5264,7 +5264,7 @@ fn pipe_snapshot(pipe_id: usize) -> Option<(usize, usize, usize)> {
     if pipe_id >= PIPE_SLOTS {
         return None;
     }
-    // SAFETY: 单核早期阶段串行读取 pipe 状态。
+    // 安全性： 单核早期阶段串行读取 pipe 状态。
     let pipe = unsafe { &PIPES[pipe_id] };
     if !pipe.used {
         return None;
@@ -5327,7 +5327,7 @@ fn poll_revents_for_fd(fd: i32, events: u16) -> u16 {
                 return POLLNVAL;
             }
             let mut revents = 0u16;
-            // SAFETY: event_id bounds checked and table is serialized.
+            // 安全性： event_id 已做边界检查且表访问已串行化。
             let event = unsafe { &EVENTFDS[event_id] };
             if !event.used {
                 return POLLNVAL;
@@ -5346,7 +5346,7 @@ fn poll_revents_for_fd(fd: i32, events: u16) -> u16 {
                 return POLLNVAL;
             }
             let mut revents = 0u16;
-            // SAFETY: timer_id bounds checked and table is serialized.
+            // 安全性： timer_id 已做边界检查且表访问已串行化。
             let timer = unsafe { &TIMERFDS[timer_id] };
             if !timer.used {
                 return POLLNVAL;
@@ -5423,7 +5423,7 @@ fn ppoll_wait(root_pa: usize, fds: usize, nfds: usize, timeout_ms: Option<u64>) 
             }
         }
     }
-    // 多 fd 情况用简单 sleep-retry 轮询：定时睡眠后重新扫描。
+    // 多 fd 情况用简单 睡眠重试 轮询：定时睡眠后重新扫描。
     let mut remaining_ms = timeout_ms;
     loop {
         let sleep_ms = match remaining_ms {
@@ -5575,7 +5575,7 @@ fn epoll_scan(epfd: usize, root_pa: usize, events_ptr: usize, maxevents: usize) 
         _ => return Err(Errno::Badf),
     };
     let mut ready = 0usize;
-    // SAFETY: 单核早期阶段串行读取 epoll 表。
+    // 安全性： 单核早期阶段串行读取 epoll 表。
     unsafe {
         let epoll = EPOLLS.get(epoll_id).ok_or(Errno::Badf)?;
         if !epoll.used {
@@ -5607,7 +5607,7 @@ fn epoll_scan(epfd: usize, root_pa: usize, events_ptr: usize, maxevents: usize) 
 }
 
 fn epoll_has_ready(epoll_id: usize) -> bool {
-    // SAFETY: 单核早期阶段串行读取 epoll 表。
+    // 安全性： 单核早期阶段串行读取 epoll 表。
     unsafe {
         let Some(epoll) = EPOLLS.get(epoll_id) else {
             return false;
@@ -5730,7 +5730,7 @@ fn set_socket_timeout(
 ) -> Result<usize, Errno> {
     let proc_idx = current_proc_index().ok_or(Errno::Badf)?;
     if stdio_object(fd).is_some() {
-        // SAFETY: 单核早期阶段访问重定向表。
+        // 安全性： 单核早期阶段访问重定向表。
         unsafe {
             if let Some(mut entry) = STDIO_REDIRECT[proc_idx][fd] {
                 if !matches!(entry.object, FdObject::Socket(_)) {
@@ -5749,7 +5749,7 @@ fn set_socket_timeout(
         return Err(Errno::Badf);
     }
     let idx = fd_table_index(fd).ok_or(Errno::Badf)?;
-    // SAFETY: 单核早期阶段，fd 表串行更新。
+    // 安全性： 单核早期阶段，fd 表串行更新。
     unsafe {
         let entry = &mut FD_TABLES[proc_idx][idx];
         if entry.object == FdObject::Empty || !matches!(entry.object, FdObject::Socket(_)) {
@@ -5826,7 +5826,7 @@ fn eventfd_read(event_id: usize, root_pa: usize, buf: usize, len: usize, nonbloc
         return Err(Errno::Inval);
     }
     loop {
-        // SAFETY: event_id bounds checked and table is serialized.
+        // 安全性： event_id 已做边界检查且表访问已串行化。
         let (used, counter, flags) = unsafe {
             let event = &EVENTFDS[event_id];
             (event.used, event.counter, event.flags)
@@ -5842,7 +5842,7 @@ fn eventfd_read(event_id: usize, root_pa: usize, buf: usize, len: usize, nonbloc
             continue;
         }
         let value = if (flags & EFD_SEMAPHORE) != 0 { 1 } else { counter };
-        // SAFETY: 单核早期阶段串行更新 eventfd。
+        // 安全性： 单核早期阶段串行更新 eventfd。
         unsafe {
             let event = &mut EVENTFDS[event_id];
             if (flags & EFD_SEMAPHORE) != 0 {
@@ -5872,7 +5872,7 @@ fn eventfd_write(event_id: usize, root_pa: usize, buf: usize, len: usize, nonblo
         return Err(Errno::Inval);
     }
     loop {
-        // SAFETY: event_id bounds checked and table is serialized.
+        // 安全性： event_id 已做边界检查且表访问已串行化。
         let (used, counter) = unsafe {
             let event = &EVENTFDS[event_id];
             (event.used, event.counter)
@@ -5887,7 +5887,7 @@ fn eventfd_write(event_id: usize, root_pa: usize, buf: usize, len: usize, nonblo
             crate::runtime::block_current(eventfd_queue(event_id));
             continue;
         }
-        // SAFETY: event_id bounds checked and table is serialized.
+        // 安全性： event_id 已做边界检查且表访问已串行化。
         unsafe {
             let event = &mut EVENTFDS[event_id];
             event.counter = event.counter.saturating_add(value);
@@ -5902,7 +5902,7 @@ fn timerfd_current_spec(timer_id: usize) -> Result<Itimerspec, Errno> {
         return Err(Errno::Badf);
     }
     let now = time::monotonic_ns();
-    // SAFETY: 单核早期阶段串行读取 timerfd。
+    // 安全性： 单核早期阶段串行读取 timerfd。
     unsafe {
         let timer = TIMERFDS.get(timer_id).ok_or(Errno::Badf)?;
         if !timer.used {
@@ -5928,7 +5928,7 @@ fn timerfd_read(timer_id: usize, root_pa: usize, buf: usize, len: usize, nonbloc
         return Err(Errno::Inval);
     }
     loop {
-        // SAFETY: timer_id bounds checked and table is serialized.
+        // 安全性： timer_id 已做边界检查且表访问已串行化。
         let (used, next_ns, interval_ns) = unsafe {
             let timer = &TIMERFDS[timer_id];
             (timer.used, timer.next_ns, timer.interval_ns)
@@ -5963,7 +5963,7 @@ fn timerfd_read(timer_id: usize, root_pa: usize, buf: usize, len: usize, nonbloc
             expirations = expirations.saturating_add(missed);
             new_next = next_ns.saturating_add(expirations.saturating_mul(interval_ns));
         }
-        // SAFETY: 单核早期阶段串行更新 timerfd。
+        // 安全性： 单核早期阶段串行更新 timerfd。
         unsafe {
             if let Some(timer) = TIMERFDS.get_mut(timer_id) {
                 if interval_ns == 0 {
@@ -6045,7 +6045,7 @@ fn read_vfs_at(
 ) -> Result<usize, Errno> {
     let mut total = 0usize;
     let mut remaining = len;
-    // Match FAT32 sector size to avoid partial-sector RMW issues.
+    // 对齐 FAT32 扇区大小，避免部分扇区 RMW 问题。
     let mut scratch = [0u8; 512];
     while remaining > 0 {
         let chunk = min(remaining, scratch.len());
@@ -6095,7 +6095,7 @@ fn write_vfs_at(
     }
     let mut total = 0usize;
     let mut remaining = len;
-    // Match FAT32 sector size to avoid partial-sector RMW issues.
+    // 对齐 FAT32 扇区大小，避免部分扇区 RMW 问题。
     let mut scratch = [0u8; 512];
     while remaining > 0 {
         let chunk = min(remaining, scratch.len());
@@ -6239,7 +6239,7 @@ fn write_socket(
 fn read_user_byte(root_pa: usize, addr: usize) -> Result<u8, Errno> {
     let pa = mm::translate_user_ptr(root_pa, addr, 1, UserAccess::Read)
         .ok_or(Errno::Fault)?;
-    // SAFETY: 已验证用户态权限与范围。
+    // 安全性： 已验证用户态权限与范围。
     Ok(unsafe { *(pa as *const u8) })
 }
 
@@ -6260,7 +6260,7 @@ fn validate_user_write(root_pa: usize, addr: usize, len: usize) -> Result<(), Er
 fn zero_user_write(root_pa: usize, addr: usize, len: usize) -> Result<(), Errno> {
     UserSlice::new(addr, len)
         .for_each_chunk(root_pa, UserAccess::Write, |pa, chunk| {
-            // SAFETY: 翻译结果确保该片段在用户态可写。
+            // 安全性： 翻译结果确保该片段在用户态可写。
             unsafe {
                 core::ptr::write_bytes(pa as *mut u8, 0, chunk);
             }
@@ -6331,7 +6331,7 @@ fn read_console_into(root_pa: usize, buf: usize, len: usize, nonblock: bool) -> 
         let chunk = core::cmp::min(remaining, mm::PAGE_SIZE - page_off);
         let pa = mm::translate_user_ptr(root_pa, addr, chunk, UserAccess::Write)
             .ok_or(Errno::Fault)?;
-        // SAFETY: 翻译结果确保该片段在用户态可写。
+        // 安全性： 翻译结果确保该片段在用户态可写。
         unsafe {
             let dst = pa as *mut u8;
             let mut i = 0usize;
@@ -6363,7 +6363,7 @@ fn read_console_into(root_pa: usize, buf: usize, len: usize, nonblock: bool) -> 
 }
 
 fn console_peek() -> bool {
-    // SAFETY: 单核早期阶段顺序访问控制台缓存。
+    // 安全性： 单核早期阶段顺序访问控制台缓存。
     unsafe {
         if CONSOLE_STASH >= 0 {
             return true;
@@ -6378,7 +6378,7 @@ fn console_peek() -> bool {
 }
 
 fn console_take() -> Option<u8> {
-    // SAFETY: 单核早期阶段顺序访问控制台缓存。
+    // 安全性： 单核早期阶段顺序访问控制台缓存。
     unsafe {
         if CONSOLE_STASH >= 0 {
             let ch = CONSOLE_STASH as u8;
@@ -6401,7 +6401,7 @@ fn write_console_from(root_pa: usize, buf: usize, len: usize) -> Result<usize, E
     let mut written = 0usize;
     slice
         .for_each_chunk(root_pa, UserAccess::Read, |pa, chunk| {
-            // SAFETY: 翻译结果确保该片段在用户态可读。
+            // 安全性： 翻译结果确保该片段在用户态可读。
             unsafe {
                 let src = pa as *const u8;
                 for i in 0..chunk {

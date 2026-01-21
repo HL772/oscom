@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-//! Physical/virtual memory management and page table helpers.
+//! 物理/虚拟内存管理与页表辅助。
 
 use core::arch::asm;
 use core::cmp::{max, min};
@@ -8,7 +8,7 @@ use core::mem::{size_of, MaybeUninit};
 use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-/// Base page size used by the kernel (4KiB).
+/// 内核使用的基础页大小（4KiB）。
 pub const PAGE_SIZE: usize = 4096;
 const PAGE_SHIFT: usize = 12;
 const PAGE_SIZE_2M: usize = 1 << 21;
@@ -41,53 +41,53 @@ const PTE_FLAGS_USER_DATA: usize = PTE_V | PTE_R | PTE_W | PTE_U | PTE_A | PTE_D
 const MAX_FRAMES: usize = IDENTITY_MAP_SIZE / PAGE_SIZE;
 
 #[derive(Clone, Copy)]
-/// User page mapping permissions.
+/// 用户页映射权限。
 pub struct UserMapFlags {
-    /// Read permission.
+    /// 读权限。
     pub read: bool,
-    /// Write permission.
+    /// 写权限。
     pub write: bool,
-    /// Execute permission.
+    /// 执行权限。
     pub exec: bool,
 }
 
 #[derive(Copy, Clone, Debug, Default)]
-/// A physical memory region described by the platform.
+/// 平台描述的物理内存区域。
 pub struct MemoryRegion {
-    /// Base physical address.
+    /// 物理基地址。
     pub base: u64,
-    /// Region size in bytes.
+    /// 区域大小（字节）。
     pub size: u64,
 }
 
 #[repr(transparent)]
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
-/// Physical address wrapper.
+/// 物理地址封装。
 pub struct PhysAddr(usize);
 
 #[repr(transparent)]
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
-/// Virtual address wrapper.
+/// 虚拟地址封装。
 pub struct VirtAddr(usize);
 
 #[repr(transparent)]
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
-/// Physical page number wrapper.
+/// 物理页号封装。
 pub struct PhysPageNum(usize);
 
 #[repr(transparent)]
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
-/// Virtual page number wrapper.
+/// 虚拟页号封装。
 pub struct VirtPageNum(usize);
 
 #[repr(transparent)]
 #[derive(Copy, Clone)]
-/// Page table entry wrapper.
+/// 页表项封装。
 pub struct PageTableEntry {
     bits: usize,
 }
 
-/// Simple bump allocator for physical frames.
+/// 物理页帧的简单 bump 分配器。
 pub struct BumpFrameAllocator {
     next: AtomicUsize,
     end: usize,
@@ -113,7 +113,7 @@ extern "C" {
     static ekernel: u8;
 }
 
-/// Initialize memory management and enable paging.
+/// 初始化内存管理并开启分页。
 pub fn init(memory: Option<MemoryRegion>, devices: &[MemoryRegion]) {
     if let Some(region) = memory {
         MEM_BASE.store(region.base as usize, Ordering::Relaxed);
@@ -129,7 +129,7 @@ pub fn init(memory: Option<MemoryRegion>, devices: &[MemoryRegion]) {
 
     if let Some(region) = memory {
         init_frame_allocator(region);
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+// 安全性： 原始指针来源于已校验地址或已分配内存。
         unsafe {
             if let Some(root_pa) = setup_kernel_page_table(region) {
                 map_device_regions(root_pa, devices);
@@ -144,59 +144,59 @@ pub fn init(memory: Option<MemoryRegion>, devices: &[MemoryRegion]) {
 }
 
 impl PhysAddr {
-    /// Construct a physical address wrapper.
+    /// 构造物理地址封装。
     pub const fn new(addr: usize) -> Self {
         Self(addr)
     }
 
-    /// Return the raw address value.
+    /// 返回原始地址值。
     pub const fn as_usize(self) -> usize {
         self.0
     }
 
-    /// Align the address downward to `align`.
+    /// 将地址向下对齐到 `align`。
     pub fn align_down(self, align: usize) -> Self {
         Self(self.0 & !(align - 1))
     }
 
-    /// Align the address upward to `align`.
+    /// 将地址向上对齐到 `align`。
     pub fn align_up(self, align: usize) -> Self {
         Self((self.0 + align - 1) & !(align - 1))
     }
 
-    /// Convert to a physical page number by truncating.
+    /// 截断得到物理页号。
     pub fn floor(self) -> PhysPageNum {
         PhysPageNum(self.0 >> PAGE_SHIFT)
     }
 
-    /// Convert to a physical page number by rounding up.
+    /// 向上取整得到物理页号。
     pub fn ceil(self) -> PhysPageNum {
         PhysPageNum((self.0 + PAGE_SIZE - 1) >> PAGE_SHIFT)
     }
 }
 
 impl VirtAddr {
-    /// Construct a virtual address wrapper.
+    /// 构造虚拟地址封装。
     pub const fn new(addr: usize) -> Self {
         Self(addr)
     }
 
-    /// Return the raw address value.
+    /// 返回原始地址值。
     pub const fn as_usize(self) -> usize {
         self.0
     }
 
-    /// Align the address downward to `align`.
+    /// 将地址向下对齐到 `align`。
     pub fn align_down(self, align: usize) -> Self {
         Self(self.0 & !(align - 1))
     }
 
-    /// Align the address upward to `align`.
+    /// 将地址向上对齐到 `align`。
     pub fn align_up(self, align: usize) -> Self {
         Self((self.0 + align - 1) & !(align - 1))
     }
 
-    /// Compute SV39 page table indexes for this address.
+    /// 计算该地址的 SV39 页表索引。
     pub fn sv39_indexes(self) -> [usize; SV39_LEVELS] {
         let vpn = self.0 >> PAGE_SHIFT;
         [
@@ -208,74 +208,74 @@ impl VirtAddr {
 }
 
 impl PhysPageNum {
-    /// Construct a physical page number wrapper.
+    /// 构造物理页号封装。
     pub const fn new(ppn: usize) -> Self {
         Self(ppn)
     }
 
-    /// Return the raw page number value.
+    /// 返回原始页号值。
     pub const fn as_usize(self) -> usize {
         self.0
     }
 
-    /// Convert to a physical address.
+    /// 转换为物理地址。
     pub fn addr(self) -> PhysAddr {
         PhysAddr(self.0 << PAGE_SHIFT)
     }
 }
 
 impl VirtPageNum {
-    /// Construct a virtual page number wrapper.
+    /// 构造虚拟页号封装。
     pub const fn new(vpn: usize) -> Self {
         Self(vpn)
     }
 
-    /// Return the raw page number value.
+    /// 返回原始页号值。
     pub const fn as_usize(self) -> usize {
         self.0
     }
 
-    /// Convert to a virtual address.
+    /// 转换为虚拟地址。
     pub fn addr(self) -> VirtAddr {
         VirtAddr(self.0 << PAGE_SHIFT)
     }
 }
 
 impl PageTableEntry {
-    /// Construct an empty page table entry.
+    /// 构造空页表项。
     pub const fn empty() -> Self {
         Self { bits: 0 }
     }
 
-    /// Create a page table entry from a PPN and flags.
+    /// 根据 PPN 与标志位创建页表项。
     pub fn new(ppn: PhysPageNum, flags: usize) -> Self {
         let bits = (ppn.as_usize() & PPN_MASK) << PPN_SHIFT | (flags & 0x3ff);
         Self { bits }
     }
 
-    /// Return true if the entry is valid.
+    /// 判断页表项是否有效。
     pub fn is_valid(self) -> bool {
         (self.bits & PTE_V) != 0
     }
 
-    /// Return true if the entry is a leaf mapping.
+    /// 判断页表项是否为叶子映射。
     pub fn is_leaf(self) -> bool {
         (self.bits & (PTE_R | PTE_W | PTE_X)) != 0
     }
 
-    /// Return the raw flag bits.
+    /// 返回原始标志位。
     pub fn flags(self) -> usize {
         self.bits & 0x3ff
     }
 
-    /// Return the physical page number stored in the entry.
+    /// 返回页表项中的物理页号。
     pub fn ppn(self) -> PhysPageNum {
         PhysPageNum((self.bits >> PPN_SHIFT) & PPN_MASK)
     }
 }
 
 impl BumpFrameAllocator {
-    /// Create a bump allocator from the given physical range.
+    /// 以给定物理范围创建 bump 分配器。
     pub fn new(start: PhysAddr, end: PhysAddr) -> Self {
         let start = start.align_up(PAGE_SIZE).as_usize();
         let end = end.align_down(PAGE_SIZE).as_usize();
@@ -285,7 +285,7 @@ impl BumpFrameAllocator {
         }
     }
 
-    /// Allocate a contiguous run of frames.
+    /// 分配一段连续页帧。
     pub fn alloc_contiguous(&self, count: usize) -> Option<PhysPageNum> {
         let size = count.checked_mul(PAGE_SIZE)?;
         let current = self.next.fetch_add(size, Ordering::Relaxed);
@@ -295,7 +295,7 @@ impl BumpFrameAllocator {
         Some(PhysPageNum::new(current >> PAGE_SHIFT))
     }
 
-    /// Allocate a single frame.
+    /// 分配单个页帧。
     pub fn alloc(&self) -> Option<PhysPageNum> {
         self.alloc_contiguous(1)
     }
@@ -315,7 +315,7 @@ impl PageTable {
     }
 }
 
-/// Allocate a zeroed physical frame.
+/// 分配清零的物理页帧。
 pub fn alloc_frame() -> Option<PhysPageNum> {
     if !FRAME_ALLOC_READY.load(Ordering::Acquire) {
         return None;
@@ -324,32 +324,32 @@ pub fn alloc_frame() -> Option<PhysPageNum> {
         let _ = set_refcount(pa, 1);
         PhysPageNum::new(pa >> PAGE_SHIFT)
     } else {
-        // SAFETY: initialized once in init_frame_allocator before any allocations.
+        // 安全性： 在任何分配之前由 init_frame_allocator 初始化一次。
         let frame = unsafe { FRAME_ALLOC.assume_init_ref().alloc()? };
         let pa = frame.addr().as_usize();
         let _ = set_refcount(pa, 1);
         frame
     };
-    // SAFETY: the frame is exclusively owned and identity-mapped.
+    // 安全性： 页帧被独占且为恒等映射。
     unsafe {
         ptr::write_bytes(frame.addr().as_usize() as *mut u8, 0, PAGE_SIZE);
     }
     Some(frame)
 }
 
-/// Allocate a zeroed contiguous range of physical frames.
+/// 分配并清零一段连续物理页帧。
 pub fn alloc_contiguous_frames(count: usize) -> Option<PhysPageNum> {
     if !FRAME_ALLOC_READY.load(Ordering::Acquire) {
         return None;
     }
-    // Bypass the free list to guarantee physical contiguity for kernel stacks.
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+    // 绕过空闲链表以保证内核栈的物理连续性。
+// 安全性： 原始指针来源于已校验地址或已分配内存。
     let frame = unsafe { FRAME_ALLOC.assume_init_ref().alloc_contiguous(count)? };
     let pa = frame.addr().as_usize();
     for idx in 0..count {
         let _ = set_refcount(pa + idx * PAGE_SIZE, 1);
     }
-    // SAFETY: the frames are exclusively owned and identity-mapped.
+    // 安全性： 页帧被独占且为恒等映射。
     unsafe {
         ptr::write_bytes(pa as *mut u8, 0, count * PAGE_SIZE);
     }
@@ -357,7 +357,7 @@ pub fn alloc_contiguous_frames(count: usize) -> Option<PhysPageNum> {
 }
 
 #[derive(Clone, Copy)]
-/// Requested access type for user pointer validation.
+/// 用户指针校验所需的访问类型。
 pub enum UserAccess {
     Read,
     Write,
@@ -372,7 +372,7 @@ pub struct UserPtr<T> {
 }
 
 impl<T> UserPtr<T> {
-    /// Create a user pointer wrapper for the given virtual address.
+    /// 为给定虚拟地址创建用户指针封装。
     pub const fn new(ptr: usize) -> Self {
         Self {
             ptr,
@@ -380,30 +380,30 @@ impl<T> UserPtr<T> {
         }
     }
 
-    /// Return the raw virtual address value.
+    /// 返回原始虚拟地址值。
     pub const fn as_usize(self) -> usize {
         self.ptr
     }
 }
 
 impl<T: Copy> UserPtr<T> {
-    /// Read a value of `T` from user space.
+    /// 从用户态读取一个 `T` 值。
     pub fn read(self, root_pa: usize) -> Option<T> {
         let size = size_of::<T>();
         let mut value = MaybeUninit::<T>::uninit();
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+// 安全性： 原始指针来源于已校验地址或已分配内存。
         let dst = unsafe {
             core::slice::from_raw_parts_mut(value.as_mut_ptr() as *mut u8, size)
         };
         UserSlice::new(self.ptr, size).copy_to_slice(root_pa, dst)?;
-        // SAFETY: copy_to_slice 已完整写入 size 字节。
+        // 安全性： copy_to_slice 已完整写入 size 字节。
         Some(unsafe { value.assume_init() })
     }
 
-    /// Write a value of `T` into user space.
+    /// 向用户态写入一个 `T` 值。
     pub fn write(self, root_pa: usize, value: T) -> Option<()> {
         let size = size_of::<T>();
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+// 安全性： 原始指针来源于已校验地址或已分配内存。
         let src = unsafe {
             core::slice::from_raw_parts(&value as *const T as *const u8, size)
         };
@@ -420,22 +420,22 @@ pub struct UserSlice {
 }
 
 impl UserSlice {
-    /// Create a user slice wrapper for the given base/length.
+    /// 根据基址/长度创建用户切片封装。
     pub const fn new(ptr: usize, len: usize) -> Self {
         Self { ptr, len }
     }
 
-    /// Return the slice length in bytes.
+    /// 返回切片长度（字节）。
     pub const fn len(self) -> usize {
         self.len
     }
 
-    /// Return true when the slice length is zero.
+    /// 切片长度为 0 时返回 true。
     pub const fn is_empty(self) -> bool {
         self.len == 0
     }
 
-    /// Iterate over validated chunks of the user slice.
+    /// 迭代用户切片中已校验的分段。
     pub fn for_each_chunk<F>(
         self,
         root_pa: usize,
@@ -463,7 +463,7 @@ impl UserSlice {
         Some(processed)
     }
 
-    /// Copy data from user space into the destination slice.
+    /// 将用户态数据拷贝到目标切片。
     pub fn copy_to_slice(self, root_pa: usize, dst: &mut [u8]) -> Option<usize> {
         if dst.len() < self.len {
             return None;
@@ -471,7 +471,7 @@ impl UserSlice {
         let mut offset = 0usize;
         let dst_ptr = dst.as_mut_ptr();
         self.for_each_chunk(root_pa, UserAccess::Read, |pa, chunk| {
-            // SAFETY: 已验证用户态权限与范围，且 dst 有足够容量。
+            // 安全性： 已验证用户态权限与范围，且 dst 有足够容量。
             unsafe {
                 core::ptr::copy_nonoverlapping(pa as *const u8, dst_ptr.add(offset), chunk);
             }
@@ -481,7 +481,7 @@ impl UserSlice {
         Some(offset)
     }
 
-    /// Copy data from the source slice into user space.
+    /// 将源切片数据拷贝到用户态。
     pub fn copy_from_slice(self, root_pa: usize, src: &[u8]) -> Option<usize> {
         if src.len() < self.len {
             return None;
@@ -489,7 +489,7 @@ impl UserSlice {
         let mut offset = 0usize;
         let src_ptr = src.as_ptr();
         self.for_each_chunk(root_pa, UserAccess::Write, |pa, chunk| {
-            // SAFETY: 已验证用户态权限与范围，且 src 有足够数据。
+            // 安全性： 已验证用户态权限与范围，且 src 有足够数据。
             unsafe {
                 core::ptr::copy_nonoverlapping(src_ptr.add(offset), pa as *mut u8, chunk);
             }
@@ -500,51 +500,51 @@ impl UserSlice {
     }
 }
 
-/// Return the physical address of the kernel root page table.
+/// 返回内核根页表的物理地址。
 pub fn kernel_root_pa() -> usize {
     KERNEL_ROOT_PA.load(Ordering::Relaxed)
 }
 
-/// Translate a kernel virtual address into a physical address.
+/// 将内核虚拟地址转换为物理地址。
 pub fn kernel_virt_to_phys(addr: usize) -> usize {
     // 内核页表保持恒等映射，虚拟地址即物理地址。
     virt_to_phys(addr)
 }
 
-/// Return the detected physical memory size in bytes.
+/// 返回探测到的物理内存大小（字节）。
 pub fn memory_size() -> usize {
     MEM_SIZE.load(Ordering::Relaxed)
 }
 
-/// Return the physical address of the currently active root page table.
+/// 返回当前活动根页表的物理地址。
 pub fn current_root_pa() -> usize {
     let satp = read_satp();
     let ppn = satp & PPN_MASK;
     ppn << PAGE_SHIFT
 }
 
-/// Build an SATP value for the provided root page table.
+/// 为给定根页表构建 SATP 值。
 pub fn satp_for_root(root_pa: usize) -> usize {
     SATP_MODE_SV39 | (root_pa >> PAGE_SHIFT)
 }
 
-/// Flush the local TLB after page table updates.
+/// 页表更新后刷新本地 TLB。
 pub fn flush_tlb() {
-    // SAFETY: sfence.vma is safe to issue after updating page tables.
+    // 安全性： 页表更新后执行 sfence.vma 是安全的。
     unsafe {
         asm!("sfence.vma");
     }
 }
 
-/// Flush the instruction cache after writing code pages.
+/// 写入代码页后刷新指令缓存。
 pub fn flush_icache() {
-    // SAFETY: fence.i syncs instruction stream after writing code.
+    // 安全性： 写入代码后用 fence.i 同步指令流。
     unsafe {
         asm!("fence.i");
     }
 }
 
-/// Translate and validate a user-space pointer for the requested access.
+/// 按请求的访问权限转换并校验用户态指针。
 pub fn translate_user_ptr(root_pa: usize, va: usize, len: usize, access: UserAccess) -> Option<usize> {
     let (pa_base, page_size, flags) = walk_page(root_pa, va)?;
     if (flags & PTE_U) == 0 {
@@ -575,7 +575,7 @@ fn walk_page(root_pa: usize, va: usize) -> Option<(usize, usize, usize)> {
     if root_pa == 0 {
         return None;
     }
-    // SAFETY: early boot uses identity mapping; page table pages are valid.
+    // 安全性： 早期启动使用恒等映射；页表页有效。
     let l2 = unsafe { &*(root_pa as *const PageTable) };
     let [l2_idx, l1_idx, l0_idx] = VirtAddr::new(va).sv39_indexes();
     let l2e = l2.entries[l2_idx];
@@ -586,7 +586,7 @@ fn walk_page(root_pa: usize, va: usize) -> Option<(usize, usize, usize)> {
         return Some((l2e.ppn().addr().as_usize(), PAGE_SIZE_1G, l2e.flags()));
     }
 
-    // SAFETY: entry points to a valid next-level table page.
+    // 安全性： 条目指向有效的下一级页表页。
     let l1 = unsafe { &*(l2e.ppn().addr().as_usize() as *const PageTable) };
     let l1e = l1.entries[l1_idx];
     if !l1e.is_valid() {
@@ -596,7 +596,7 @@ fn walk_page(root_pa: usize, va: usize) -> Option<(usize, usize, usize)> {
         return Some((l1e.ppn().addr().as_usize(), PAGE_SIZE_2M, l1e.flags()));
     }
 
-    // SAFETY: entry points to a valid next-level table page.
+    // 安全性： 条目指向有效的下一级页表页。
     let l0 = unsafe { &*(l1e.ppn().addr().as_usize() as *const PageTable) };
     let l0e = l0.entries[l0_idx];
     if !l0e.is_valid() || !l0e.is_leaf() {
@@ -618,7 +618,7 @@ fn walk_pte_mut(root_pa: usize, va: usize) -> Option<(*mut PageTableEntry, usize
     if root_pa == 0 {
         return None;
     }
-    // SAFETY: early boot uses identity mapping; root page table is valid.
+    // 安全性： 早期启动使用恒等映射；根页表有效。
     let l2 = unsafe { &mut *(root_pa as *mut PageTable) };
     let [l2_idx, l1_idx, l0_idx] = VirtAddr::new(va).sv39_indexes();
     let l2e = &mut l2.entries[l2_idx];
@@ -629,7 +629,7 @@ fn walk_pte_mut(root_pa: usize, va: usize) -> Option<(*mut PageTableEntry, usize
         return Some((l2e as *mut _, PAGE_SIZE_1G));
     }
 
-    // SAFETY: entry points to a valid next-level table page.
+    // 安全性： 条目指向有效的下一级页表页。
     let l1 = unsafe { &mut *(l2e.ppn().addr().as_usize() as *mut PageTable) };
     let l1e = &mut l1.entries[l1_idx];
     if !l1e.is_valid() {
@@ -639,7 +639,7 @@ fn walk_pte_mut(root_pa: usize, va: usize) -> Option<(*mut PageTableEntry, usize
         return Some((l1e as *mut _, PAGE_SIZE_2M));
     }
 
-    // SAFETY: entry points to a valid next-level table page.
+    // 安全性： 条目指向有效的下一级页表页。
     let l0 = unsafe { &mut *(l1e.ppn().addr().as_usize() as *mut PageTable) };
     let l0e = &mut l0.entries[l0_idx];
     if !l0e.is_valid() || !l0e.is_leaf() {
@@ -656,7 +656,7 @@ fn resolve_cow(root_pa: usize, va: usize) -> bool {
     if page_size != PAGE_SIZE {
         return false;
     }
-    // SAFETY: entry_ptr points to a valid PTE in the current page table.
+    // 安全性： entry_ptr 指向当前页表中的有效 PTE。
     let entry = unsafe { *entry_ptr };
     let flags = entry.flags();
     if (flags & PTE_COW) == 0 || (flags & PTE_U) == 0 {
@@ -666,7 +666,7 @@ fn resolve_cow(root_pa: usize, va: usize) -> bool {
     let count = frame_refcount(old_pa).unwrap_or(1);
     if count <= 1 {
         let new_flags = (flags | PTE_W | PTE_D) & !PTE_COW;
-        // SAFETY: entry_ptr points to a valid writable PTE slot.
+        // 安全性： entry_ptr 指向可写的有效 PTE 槽位。
         unsafe {
             *entry_ptr = PageTableEntry::new(entry.ppn(), new_flags);
         }
@@ -678,12 +678,12 @@ fn resolve_cow(root_pa: usize, va: usize) -> bool {
         None => return false,
     };
     let new_pa = frame.addr().as_usize();
-    // SAFETY: old/new pages are identity-mapped and PAGE_SIZE bytes long.
+    // 安全性： 旧/新页均为恒等映射且长度为 PAGE_SIZE 字节。
     unsafe {
         ptr::copy_nonoverlapping(old_pa as *const u8, new_pa as *mut u8, PAGE_SIZE);
     }
     let new_flags = (flags | PTE_W | PTE_D) & !PTE_COW;
-    // SAFETY: entry_ptr points to a valid writable PTE slot.
+    // 安全性： entry_ptr 指向可写的有效 PTE 槽位。
     unsafe {
         *entry_ptr = PageTableEntry::new(frame, new_flags);
     }
@@ -692,7 +692,7 @@ fn resolve_cow(root_pa: usize, va: usize) -> bool {
     true
 }
 
-/// Resolve a copy-on-write fault at the given virtual address.
+/// 处理给定虚拟地址处的写时复制异常。
 pub fn handle_cow_fault(root_pa: usize, va: usize) -> bool {
     resolve_cow(root_pa, va)
 }
@@ -701,7 +701,7 @@ unsafe fn alloc_page_table() -> Option<&'static mut PageTable> {
     let frame = alloc_frame()?;
     let pa = frame.addr().as_usize();
     let table = pa as *mut PageTable;
-    // SAFETY: 早期启动阶段使用恒等映射，且帧分配器返回唯一页帧。
+    // 安全性： 早期启动阶段使用恒等映射，且帧分配器返回唯一页帧。
     core::ptr::write_bytes(table as *mut u8, 0, PAGE_SIZE);
     Some(&mut *table)
 }
@@ -713,32 +713,32 @@ fn ensure_table(entry: &mut PageTableEntry) -> Option<&'static mut PageTable> {
         }
         let table_pa = entry.ppn().addr().as_usize();
         let table = table_pa as *mut PageTable;
-        // SAFETY: existing page table entry points to a valid table page.
+        // 安全性：现有页表项指向有效的页表页。
         return Some(unsafe { &mut *table });
     }
-    // SAFETY: allocating a fresh page table during early boot.
+    // 安全性： 早期启动阶段分配新的页表。
     let table = unsafe { alloc_page_table()? };
     let pa = virt_to_phys(table as *const _ as usize);
     *entry = PageTableEntry::new(PhysPageNum::new(pa >> PAGE_SHIFT), PTE_V);
     Some(table)
 }
 
-/// Map a user code page with RX permissions.
+/// 以 RX 权限映射用户代码页。
 pub fn map_user_code(root_pa: usize, va: usize, pa: usize) -> bool {
     map_page(root_pa, va, pa, PTE_FLAGS_USER_CODE)
 }
 
-/// Map a user data page with RW permissions.
+/// 以 RW 权限映射用户数据页。
 pub fn map_user_data(root_pa: usize, va: usize, pa: usize) -> bool {
     map_page(root_pa, va, pa, PTE_FLAGS_USER_DATA)
 }
 
-/// Map a user stack page with RW permissions.
+/// 以 RW 权限映射用户栈页。
 pub fn map_user_stack(root_pa: usize, va: usize, pa: usize) -> bool {
     map_page(root_pa, va, pa, PTE_FLAGS_USER_DATA)
 }
 
-/// Map a user page with the specified permissions.
+/// 以指定权限映射用户页。
 pub fn map_user_page(root_pa: usize, va: usize, pa: usize, flags: UserMapFlags) -> bool {
     let mut pte_flags = PTE_V | PTE_U | PTE_A;
     if flags.read {
@@ -753,7 +753,7 @@ pub fn map_user_page(root_pa: usize, va: usize, pa: usize, flags: UserMapFlags) 
     map_page(root_pa, va, pa, pte_flags)
 }
 
-/// Check whether a user virtual page is mapped.
+/// 检查用户虚拟页是否已映射。
 pub fn user_page_mapped(root_pa: usize, va: usize) -> bool {
     let Some(entry) = lookup_user_pte(root_pa, va) else {
         return false;
@@ -761,25 +761,25 @@ pub fn user_page_mapped(root_pa: usize, va: usize) -> bool {
     entry.is_valid() && entry.is_leaf() && (entry.flags() & PTE_U) != 0
 }
 
-/// Unmap a user virtual page.
+/// 取消映射用户虚拟页。
 pub fn unmap_user_page(root_pa: usize, va: usize) -> bool {
     if root_pa == 0 {
         return false;
     }
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+// 安全性： 原始指针来源于已校验地址或已分配内存。
     let l2 = unsafe { &mut *(root_pa as *mut PageTable) };
     let [l2_idx, l1_idx, l0_idx] = VirtAddr::new(va).sv39_indexes();
     let l2e = l2.entries[l2_idx];
     if !l2e.is_valid() || l2e.is_leaf() {
         return false;
     }
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+// 安全性： 原始指针来源于已校验地址或已分配内存。
     let l1 = unsafe { &mut *(l2e.ppn().addr().as_usize() as *mut PageTable) };
     let l1e = l1.entries[l1_idx];
     if !l1e.is_valid() || l1e.is_leaf() {
         return false;
     }
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+// 安全性： 原始指针来源于已校验地址或已分配内存。
     let l0 = unsafe { &mut *(l1e.ppn().addr().as_usize() as *mut PageTable) };
     let entry = &mut l0.entries[l0_idx];
     if !entry.is_valid() || !entry.is_leaf() {
@@ -805,7 +805,7 @@ pub fn unmap_user_page(root_pa: usize, va: usize) -> bool {
     true
 }
 
-/// Update permissions on a mapped user page.
+/// 更新已映射用户页的权限。
 pub fn protect_user_page(root_pa: usize, va: usize, flags: UserMapFlags) -> bool {
     let Some(entry) = lookup_user_pte_mut(root_pa, va) else {
         return false;
@@ -836,7 +836,7 @@ pub fn protect_user_page(root_pa: usize, va: usize, flags: UserMapFlags) -> bool
     true
 }
 
-/// Allocate a new user root page table (based on the kernel root).
+/// 基于内核根页表分配新的用户根页表。
 pub fn alloc_user_root() -> Option<usize> {
     let kernel_root_pa = kernel_root_pa();
     if kernel_root_pa == 0 {
@@ -847,9 +847,9 @@ pub fn alloc_user_root() -> Option<usize> {
     if current_root != kernel_root_pa {
         switch_root(kernel_root_pa);
     }
-    // SAFETY: allocate a fresh root page table and copy kernel mappings.
+    // 安全性： 分配新的根页表并复制内核映射。
     let root = unsafe { alloc_page_table()? };
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+// 安全性： 原始指针来源于已校验地址或已分配内存。
     let kernel_root = unsafe { &*(kernel_root_pa as *const PageTable) };
     root.entries = kernel_root.entries;
     if current_root != kernel_root_pa {
@@ -879,7 +879,7 @@ fn set_refcount(pa: usize, count: u16) -> bool {
     let Some(idx) = frame_index(pa) else {
         return false;
     };
-    // SAFETY: early boot single-hart; refcount table is only touched here.
+    // 安全性： 早期单核阶段；引用计数表仅在此处访问。
     unsafe {
         FRAME_REFCOUNT[idx] = count;
     }
@@ -890,7 +890,7 @@ fn retain_frame(pa: usize) -> bool {
     let Some(idx) = frame_index(pa) else {
         return false;
     };
-    // SAFETY: early boot single-hart; refcount table is only touched here.
+    // 安全性： 早期单核阶段；引用计数表仅在此处访问。
     unsafe {
         let current = FRAME_REFCOUNT[idx];
         if current < u16::MAX {
@@ -904,7 +904,7 @@ fn release_frame(pa: usize) -> bool {
     let Some(idx) = frame_index(pa) else {
         return false;
     };
-    // SAFETY: early boot single-hart; refcount table is only touched here.
+    // 安全性： 早期单核阶段；引用计数表仅在此处访问。
     unsafe {
         let current = FRAME_REFCOUNT[idx];
         if current == 0 {
@@ -922,7 +922,7 @@ fn release_frame(pa: usize) -> bool {
 
 fn frame_refcount(pa: usize) -> Option<u16> {
     let idx = frame_index(pa)?;
-    // SAFETY: early boot single-hart; refcount table is only touched here.
+    // 安全性： 早期单核阶段；引用计数表仅在此处访问。
     unsafe { Some(FRAME_REFCOUNT[idx]) }
 }
 
@@ -931,13 +931,13 @@ where
     F: FnOnce() -> R,
 {
     let sstatus: usize;
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+// 安全性： 原始指针来源于已校验地址或已分配内存。
     unsafe {
         asm!("csrr {0}, sstatus", out(reg) sstatus);
         asm!("csrci sstatus, 0x2");
     }
     let ret = f();
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+// 安全性： 原始指针来源于已校验地址或已分配内存。
     unsafe {
         asm!("csrw sstatus, {0}", in(reg) sstatus);
     }
@@ -945,7 +945,7 @@ where
 }
 
 fn push_free_frame(pa: usize) -> bool {
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+// 安全性： 原始指针来源于已校验地址或已分配内存。
     with_no_irq(|| unsafe {
         if FRAME_FREE_LEN >= MAX_FRAMES {
             return false;
@@ -957,7 +957,7 @@ fn push_free_frame(pa: usize) -> bool {
 }
 
 fn pop_free_frame() -> Option<usize> {
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+// 安全性： 原始指针来源于已校验地址或已分配内存。
     with_no_irq(|| unsafe {
         if FRAME_FREE_LEN == 0 {
             return None;
@@ -987,7 +987,7 @@ fn table_has_user_l1(table: &PageTable) -> bool {
             }
             continue;
         }
-        // SAFETY: entry points to a valid next-level table page.
+        // 安全性： 条目指向有效的下一级页表页。
         let l0 = unsafe { &*(entry.ppn().addr().as_usize() as *const PageTable) };
         if table_has_user_l0(l0) {
             return true;
@@ -996,16 +996,16 @@ fn table_has_user_l1(table: &PageTable) -> bool {
     false
 }
 
-/// Clone user mappings from a parent page table for fork/clone.
+/// 为 fork/clone 从父页表复制用户映射。
 pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
     if parent_root_pa == 0 {
         return None;
     }
     // 基于内核映射创建子根页表，避免直接复用父进程页表页。
     let child_root_pa = alloc_user_root()?;
-    // SAFETY: parent/child root page tables are valid in early boot.
+    // 安全性： 早期阶段父/子根页表有效。
     let parent_root = unsafe { &mut *(parent_root_pa as *mut PageTable) };
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+// 安全性： 原始指针来源于已校验地址或已分配内存。
     let child_root = unsafe { &mut *(child_root_pa as *mut PageTable) };
     let mut ok = true;
 
@@ -1029,12 +1029,12 @@ pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
             }
             continue;
         }
-        // SAFETY: entry points to a valid next-level table page.
+        // 安全性： 条目指向有效的下一级页表页。
         let parent_l1 = unsafe { &mut *(parent_l2e.ppn().addr().as_usize() as *mut PageTable) };
         if !table_has_user_l1(parent_l1) {
             continue;
         }
-        // SAFETY: allocate a fresh L1 page table for the child.
+        // 安全性： 为子进程分配新的 L1 页表。
         let Some(child_l1) = (unsafe { alloc_page_table() }) else {
             ok = false;
             break 'l2;
@@ -1063,12 +1063,12 @@ pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
                 }
                 continue;
             }
-            // SAFETY: entry points to a valid next-level table page.
+            // 安全性： 条目指向有效的下一级页表页。
             let parent_l0 = unsafe { &mut *(parent_l1e.ppn().addr().as_usize() as *mut PageTable) };
             if !table_has_user_l0(parent_l0) {
                 continue;
             }
-            // SAFETY: allocate a fresh L0 page table for the child.
+            // 安全性： 为子进程分配新的 L0 页表。
             let Some(child_l0) = (unsafe { alloc_page_table() }) else {
                 ok = false;
                 break 'l2;
@@ -1104,7 +1104,7 @@ pub fn clone_user_root(parent_root_pa: usize) -> Option<usize> {
     Some(child_root_pa)
 }
 
-/// Release a user page table and associated user pages.
+/// 释放用户页表及其关联的用户页。
 pub fn release_user_root(root_pa: usize) {
     if root_pa == 0 {
         return;
@@ -1113,9 +1113,9 @@ pub fn release_user_root(root_pa: usize) {
     if kernel_root_pa == 0 || root_pa == kernel_root_pa {
         return;
     }
-    // SAFETY: early boot single-hart; page tables are stable during release.
+    // 安全性： 早期单核阶段；释放期间页表保持稳定。
     let root = unsafe { &mut *(root_pa as *mut PageTable) };
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+// 安全性： 原始指针来源于已校验地址或已分配内存。
     let kernel_root = unsafe { &*(kernel_root_pa as *const PageTable) };
 
     for l2_idx in 0..SV39_ENTRIES {
@@ -1131,7 +1131,7 @@ pub fn release_user_root(root_pa: usize) {
             continue;
         }
         let l1_pa = l2e.ppn().addr().as_usize();
-        // SAFETY: entry points to a valid next-level table page.
+        // 安全性： 条目指向有效的下一级页表页。
         let l1 = unsafe { &mut *(l1_pa as *mut PageTable) };
         for l1_idx in 0..SV39_ENTRIES {
             let l1e = l1.entries[l1_idx];
@@ -1143,7 +1143,7 @@ pub fn release_user_root(root_pa: usize) {
                 continue;
             }
             let l0_pa = l1e.ppn().addr().as_usize();
-            // SAFETY: entry points to a valid next-level table page.
+            // 安全性： 条目指向有效的下一级页表页。
             let l0 = unsafe { &mut *(l0_pa as *mut PageTable) };
             for l0_idx in 0..SV39_ENTRIES {
                 let l0e = l0.entries[l0_idx];
@@ -1163,13 +1163,13 @@ pub fn release_user_root(root_pa: usize) {
     flush_tlb();
 }
 
-/// Switch the active page table to the provided root.
+/// 切换活动页表到给定根表。
 pub fn switch_root(root_pa: usize) {
     if root_pa == 0 {
         return;
     }
     let satp_value = satp_for_root(root_pa);
-    // SAFETY: switching satp requires sfence.vma to synchronize TLB.
+    // 安全性： 切换 satp 需要 sfence.vma 同步 TLB。
     unsafe {
         asm!("csrw satp, {0}", in(reg) satp_value);
         asm!("sfence.vma");
@@ -1180,7 +1180,7 @@ fn map_page(root_pa: usize, va: usize, pa: usize, flags: usize) -> bool {
     if root_pa == 0 {
         return false;
     }
-    // SAFETY: early boot uses identity mapping; root page table is valid.
+    // 安全性： 早期启动使用恒等映射；根页表有效。
     let l2 = unsafe { &mut *(root_pa as *mut PageTable) };
     let [l2_idx, l1_idx, l0_idx] = VirtAddr::new(va).sv39_indexes();
     let l1 = match ensure_table(&mut l2.entries[l2_idx]) {
@@ -1208,7 +1208,7 @@ fn lookup_user_pte_mut(root_pa: usize, va: usize) -> Option<&'static mut PageTab
     if root_pa == 0 {
         return None;
     }
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+// 安全性： 原始指针来源于已校验地址或已分配内存。
     let l2 = unsafe { &mut *(root_pa as *mut PageTable) };
     let [l2_idx, l1_idx, l0_idx] = VirtAddr::new(va).sv39_indexes();
     let l2e = l2.entries[l2_idx];
@@ -1218,7 +1218,7 @@ fn lookup_user_pte_mut(root_pa: usize, va: usize) -> Option<&'static mut PageTab
     if l2e.is_leaf() {
         return Some(&mut l2.entries[l2_idx]);
     }
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+// 安全性： 原始指针来源于已校验地址或已分配内存。
     let l1 = unsafe { &mut *(l2e.ppn().addr().as_usize() as *mut PageTable) };
     let l1e = l1.entries[l1_idx];
     if !l1e.is_valid() {
@@ -1227,7 +1227,7 @@ fn lookup_user_pte_mut(root_pa: usize, va: usize) -> Option<&'static mut PageTab
     if l1e.is_leaf() {
         return Some(&mut l1.entries[l1_idx]);
     }
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+// 安全性： 原始指针来源于已校验地址或已分配内存。
     let l0 = unsafe { &mut *(l1e.ppn().addr().as_usize() as *mut PageTable) };
     Some(&mut l0.entries[l0_idx])
 }
@@ -1261,7 +1261,7 @@ fn init_frame_allocator(region: MemoryRegion) {
         return;
     }
 
-// SAFETY: raw pointers are derived from validated addresses or allocations.
+// 安全性： 原始指针来源于已校验地址或已分配内存。
     let kernel_end = unsafe { &ekernel as *const u8 as usize };
     let mapped_end = base.saturating_add(min(size, IDENTITY_MAP_SIZE));
     let start = align_up(max(kernel_end, base), PAGE_SIZE);
@@ -1273,7 +1273,7 @@ fn init_frame_allocator(region: MemoryRegion) {
     }
 
     let allocator = BumpFrameAllocator::new(PhysAddr::new(start), PhysAddr::new(end));
-    // SAFETY: 仅在早期单核初始化时写入，全局只初始化一次。
+    // 安全性： 仅在早期单核初始化时写入，全局只初始化一次。
     unsafe {
         FRAME_ALLOC.write(allocator);
     }
@@ -1281,7 +1281,7 @@ fn init_frame_allocator(region: MemoryRegion) {
     FRAME_BASE.store(start, Ordering::Relaxed);
     let count = (end - start) / PAGE_SIZE;
     FRAME_COUNT.store(min(count, MAX_FRAMES), Ordering::Relaxed);
-    // SAFETY: early boot single-hart; reset free list length.
+    // 安全性： 早期单核阶段；重置空闲链表长度。
     unsafe {
         FRAME_FREE_LEN = 0;
     }
@@ -1295,7 +1295,7 @@ fn init_frame_allocator(region: MemoryRegion) {
 }
 
 unsafe fn setup_kernel_page_table(region: MemoryRegion) -> Option<usize> {
-    // SAFETY: 仅在早期单核启动阶段调用。
+    // 安全性： 仅在早期单核启动阶段调用。
     if region.size == 0 {
         return None;
     }
@@ -1350,7 +1350,7 @@ unsafe fn setup_kernel_page_table(region: MemoryRegion) -> Option<usize> {
 
 unsafe fn enable_paging(root_pa: usize) {
     let satp_value = SATP_MODE_SV39 | (root_pa >> PAGE_SHIFT);
-    // SAFETY: 早期阶段仅单核执行，恒等映射保证切换后地址可用。
+    // 安全性： 早期阶段仅单核执行，恒等映射保证切换后地址可用。
     asm!("csrw satp, {0}", in(reg) satp_value);
     asm!("sfence.vma");
 }
@@ -1371,7 +1371,7 @@ const fn virt_to_phys(addr: usize) -> usize {
 #[inline]
 fn read_satp() -> usize {
     let value: usize;
-    // SAFETY: reading satp does not modify machine state.
+    // 安全性： 读取 satp 不会修改机器状态。
     unsafe {
         asm!("csrr {0}, satp", out(reg) value);
     }

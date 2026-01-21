@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-//! smoltcp-based network stack glue.
+//! 基于 smoltcp 的网络栈适配层。
 
 use core::mem::MaybeUninit;
 use core::ptr;
@@ -27,7 +27,7 @@ const MAX_SOCKETS: usize = 8;
 const SOCKET_STORAGE_LEN: usize = MAX_SOCKETS + 1;
 const ICMP_META_LEN: usize = 4;
 const ICMP_BUF_LEN: usize = 256;
-// Increase TCP buffers to reduce window exhaustion during perf tests.
+// 增大 TCP 缓冲区以减少性能测试中的窗口耗尽。
 const TCP_BUF_LEN: usize = 65536;
 const UDP_BUF_LEN: usize = 2048;
 const UDP_META_LEN: usize = 4;
@@ -84,7 +84,7 @@ struct SmolTxToken<'a> {
     dev: &'a dyn NetDevice,
 }
 
-/// Socket identifier used by the network stack.
+/// 网络栈使用的 socket 标识。
 pub type SocketId = usize;
 
 impl Device for SmolDevice {
@@ -99,8 +99,8 @@ impl Device for SmolDevice {
     }
 
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
-        // Loopback frames take priority to wake local TCP listeners.
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+        // 回环帧优先处理，用于唤醒本地 TCP 监听。
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
         let loopback_len = unsafe { LOOPBACK_QUEUE.pop(&mut RX_BUF) };
         if let Some(len) = loopback_len {
             let _ = NET_RX_SEEN.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire);
@@ -109,10 +109,10 @@ impl Device for SmolDevice {
         if !self.dev.poll() {
             return None;
         }
-        // SAFETY: single-token receive; buffer is reused once token is consumed.
+        // 安全性： 单次接收 token；token 消耗后复用缓冲区。
         let len = unsafe { self.dev.recv(&mut RX_BUF).ok()? };
         let _ = NET_RX_SEEN.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire);
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
         record_arp_reply(unsafe { &RX_BUF[..len] });
         Some((SmolRxToken { len }, SmolTxToken { dev: self.dev }))
     }
@@ -127,7 +127,7 @@ impl RxToken for SmolRxToken {
     where
         F: FnOnce(&mut [u8]) -> R,
     {
-        // SAFETY: the RX buffer remains valid until the token is dropped.
+        // 安全性： 接收缓冲区在 token 被释放前保持有效。
         let slice = unsafe { &mut RX_BUF[..self.len] };
         f(slice)
     }
@@ -141,7 +141,7 @@ impl TxToken for SmolTxToken<'_> {
         if len > NET_BUF_SIZE {
             return f(&mut []);
         }
-        // SAFETY: TX buffer is used by a single token at a time.
+        // 安全性： 发送缓冲区一次只由一个 token 使用。
         let buf = unsafe { &mut TX_BUF[..len] };
         let result = f(buf);
         let mac = EthernetAddress(self.dev.mac_address());
@@ -149,7 +149,7 @@ impl TxToken for SmolTxToken<'_> {
             return result;
         }
         if should_loopback(buf) {
-            // SAFETY: single-hart; loopback queue is only touched here and in receive.
+            // 安全性： 单核阶段；回环队列仅在此处与 receive 中访问。
             unsafe {
                 LOOPBACK_QUEUE.push(buf);
             }
@@ -170,10 +170,10 @@ struct NetState {
     ping_seq: u16,
 }
 
-// SAFETY: global net state is serialized by single-hart boot and idle loop.
+// 安全性： 全局网络状态由单核启动与空闲循环串行化。
 static mut NET_STATE: Option<NetState> = None;
 
-/// Initialize the network stack with the provided device.
+/// 使用给定设备初始化网络栈。
 pub fn init(dev: &'static dyn NetDevice) -> Result<(), NetError> {
     if NET_READY.load(Ordering::Acquire) {
         return Ok(());
@@ -184,11 +184,11 @@ pub fn init(dev: &'static dyn NetDevice) -> Result<(), NetError> {
     let ip = IpCidr::new(IpAddress::v4(NET_IPV4_ADDR[0], NET_IPV4_ADDR[1], NET_IPV4_ADDR[2], NET_IPV4_ADDR[3]), NET_IPV4_PREFIX);
 
     let mut device = SmolDevice { dev };
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let mut sockets = unsafe { SocketSet::new(&mut SOCKET_STORAGE[..]) };
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let icmp_rx = unsafe { IcmpPacketBuffer::new(&mut ICMP_RX_META[..], &mut ICMP_RX_BUF[..]) };
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let icmp_tx = unsafe { IcmpPacketBuffer::new(&mut ICMP_TX_META[..], &mut ICMP_TX_BUF[..]) };
     let icmp_socket = IcmpSocket::new(icmp_rx, icmp_tx);
     let icmp_handle = sockets.add(icmp_socket);
@@ -217,7 +217,7 @@ pub fn init(dev: &'static dyn NetDevice) -> Result<(), NetError> {
         ping_seq: 1,
     };
 
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     unsafe {
         NET_STATE = Some(state);
     }
@@ -226,17 +226,17 @@ pub fn init(dev: &'static dyn NetDevice) -> Result<(), NetError> {
     Ok(())
 }
 
-/// Notify the stack that a device IRQ arrived.
+/// 通知网络栈设备中断已到达。
 pub fn notify_irq() {
     NET_NEED_POLL.store(true, Ordering::Release);
 }
 
-/// Request a poll of the stack from the scheduler/idle loop.
+/// 请求调度器/空闲循环轮询网络栈。
 pub fn request_poll() {
     NET_NEED_POLL.store(true, Ordering::Release);
 }
 
-/// Network events emitted by the stack during poll.
+/// 网络栈在轮询期间产生的事件。
 pub enum NetEvent {
     IcmpEchoReply { seq: u16, from: IpAddress },
     ArpReply { from: Ipv4Address },
@@ -252,7 +252,7 @@ pub enum NetEvent {
     Activity,
 }
 
-/// Poll the network stack and return an optional event.
+/// 轮询网络栈并返回可选事件。
 pub fn poll(now_ms: u64) -> Option<NetEvent> {
     if !NET_READY.load(Ordering::Acquire) {
         return None;
@@ -271,7 +271,7 @@ pub fn poll(now_ms: u64) -> Option<NetEvent> {
         return None;
     }
     let timestamp = Instant::from_millis(now_ms as i64);
-    // SAFETY: NET_STATE is only mutated here after init.
+    // 安全性： NET_STATE 在初始化后仅在此处修改。
     let Some(state) = (unsafe { NET_STATE.as_mut() }) else {
         return None;
     };
@@ -359,7 +359,7 @@ pub fn poll(now_ms: u64) -> Option<NetEvent> {
 }
 
 fn has_pending_tcp(state: &mut NetState) -> bool {
-    // SAFETY: socket table access is serialized by the single-hart runtime.
+    // 安全性： socket 表访问由单核运行时串行化。
     unsafe {
         for slot in SOCKET_TABLE.iter() {
             if !slot.used || slot.kind != AxSocketKind::Tcp {
@@ -376,7 +376,7 @@ fn has_pending_tcp(state: &mut NetState) -> bool {
     false
 }
 
-/// Run a one-shot TCP loopback test.
+/// 运行一次性 TCP 回环测试。
 pub fn tcp_loopback_test_once() -> Result<(), NetError> {
     if !NET_READY.load(Ordering::Acquire) {
         return Err(NetError::NotReady);
@@ -517,18 +517,18 @@ fn run_tcp_loopback() -> Result<(), NetError> {
     static mut CLIENT_RX_BUF: [u8; 1024] = [0; 1024];
     static mut CLIENT_TX_BUF: [u8; 1024] = [0; 1024];
 
-    // SAFETY: loopback buffers are static and only used by this self-test.
+    // 安全性： 回环缓冲区为静态，仅用于该自测。
     let server_rx = unsafe { TcpSocketBuffer::new(&mut SERVER_RX_BUF[..]) };
-    // SAFETY: loopback buffers are static and only used by this self-test.
+    // 安全性： 回环缓冲区为静态，仅用于该自测。
     let server_tx = unsafe { TcpSocketBuffer::new(&mut SERVER_TX_BUF[..]) };
-    // SAFETY: loopback buffers are static and only used by this self-test.
+    // 安全性： 回环缓冲区为静态，仅用于该自测。
     let client_rx = unsafe { TcpSocketBuffer::new(&mut CLIENT_RX_BUF[..]) };
-    // SAFETY: loopback buffers are static and only used by this self-test.
+    // 安全性： 回环缓冲区为静态，仅用于该自测。
     let client_tx = unsafe { TcpSocketBuffer::new(&mut CLIENT_TX_BUF[..]) };
 
     let server_socket = TcpSocket::new(server_rx, server_tx);
     let client_socket = TcpSocket::new(client_rx, client_tx);
-    // SAFETY: loopback storage is static and only used by this self-test.
+    // 安全性： 回环存储为静态，仅用于该自测。
     let mut sockets = unsafe { SocketSet::new(&mut LOOPBACK_STORAGE[..]) };
     let server_handle = sockets.add(server_socket);
     let client_handle = sockets.add(client_socket);
@@ -600,7 +600,7 @@ fn run_tcp_loopback() -> Result<(), NetError> {
     Err(NetError::Invalid)
 }
 
-/// Send a single ICMP echo request to the gateway.
+/// 向网关发送一次 ICMP 回显请求。
 pub fn ping_gateway_once() -> Result<(), NetError> {
     if !NET_READY.load(Ordering::Acquire) {
         return Err(NetError::NotReady);
@@ -610,7 +610,7 @@ pub fn ping_gateway_once() -> Result<(), NetError> {
     Ok(())
 }
 
-/// Send a single ARP probe to the gateway.
+/// 向网关发送一次 ARP 探测。
 pub fn arp_probe_gateway_once() -> Result<(), NetError> {
     if !NET_READY.load(Ordering::Acquire) {
         return Err(NetError::NotReady);
@@ -653,7 +653,7 @@ const EMPTY_SOCKET_SLOT: SocketSlot = SocketSlot {
 
 static mut SOCKET_TABLE: [SocketSlot; MAX_SOCKETS] = [EMPTY_SOCKET_SLOT; MAX_SOCKETS];
 
-/// Create a TCP/UDP socket and return its socket id.
+/// 创建 TCP/UDP socket 并返回其 id。
 pub fn socket_create(domain: i32, sock_type: i32, _protocol: i32) -> Result<SocketId, NetError> {
     if !NET_READY.load(Ordering::Acquire) {
         return Err(NetError::NotReady);
@@ -666,23 +666,23 @@ pub fn socket_create(domain: i32, sock_type: i32, _protocol: i32) -> Result<Sock
         2 => AxSocketKind::Udp,
         _ => return Err(NetError::Unsupported),
     };
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let slot = reserve_socket_slot(kind).ok_or(NetError::NoMem)?;
     let handle = match kind {
         AxSocketKind::Tcp => {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
             let rx = unsafe { TcpSocketBuffer::new(&mut TCP_RX_BUF[slot][..]) };
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
             let tx = unsafe { TcpSocketBuffer::new(&mut TCP_TX_BUF[slot][..]) };
             state.sockets.add(TcpSocket::new(rx, tx))
         }
         AxSocketKind::Udp => {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
             let rx = unsafe {
                 UdpPacketBuffer::new(&mut UDP_RX_META[slot][..], &mut UDP_RX_BUF[slot][..])
             };
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
             let tx = unsafe {
                 UdpPacketBuffer::new(&mut UDP_TX_META[slot][..], &mut UDP_TX_BUF[slot][..])
             };
@@ -693,9 +693,9 @@ pub fn socket_create(domain: i32, sock_type: i32, _protocol: i32) -> Result<Sock
     Ok(slot)
 }
 
-/// Bind a socket to a local address/port.
+/// 将 socket 绑定到本地地址/端口。
 pub fn socket_bind(id: SocketId, addr: IpAddress, port: u16) -> Result<(), NetError> {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
     match kind {
@@ -718,9 +718,9 @@ pub fn socket_bind(id: SocketId, addr: IpAddress, port: u16) -> Result<(), NetEr
     }
 }
 
-/// Connect a socket to a remote address/port.
+/// 将 socket 连接到远端地址/端口。
 pub fn socket_connect(id: SocketId, addr: IpAddress, port: u16) -> Result<(), NetError> {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
     match kind {
@@ -757,9 +757,9 @@ pub fn socket_connect(id: SocketId, addr: IpAddress, port: u16) -> Result<(), Ne
     }
 }
 
-/// Place a TCP socket into listening state.
+/// 将 TCP socket 置为监听状态。
 pub fn socket_listen(id: SocketId, _backlog: usize) -> Result<(), NetError> {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
     match kind {
@@ -777,9 +777,9 @@ pub fn socket_listen(id: SocketId, _backlog: usize) -> Result<(), NetError> {
     }
 }
 
-/// Accept an incoming connection from a listening socket.
+/// 从监听 socket 接受传入连接。
 pub fn socket_accept(id: SocketId) -> Result<(SocketId, SocketId, Option<(IpAddress, u16)>), NetError> {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
     let AxSocketKind::Tcp = kind else {
@@ -801,9 +801,9 @@ pub fn socket_accept(id: SocketId) -> Result<(SocketId, SocketId, Option<(IpAddr
     let remote = socket.remote_endpoint().map(|ep| (ep.addr, ep.port));
     let local_port = socket_local_port(id)?;
     let listener_id = reserve_socket_slot(AxSocketKind::Tcp).ok_or(NetError::NoMem)?;
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let rx = unsafe { TcpSocketBuffer::new(&mut TCP_RX_BUF[listener_id][..]) };
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let tx = unsafe { TcpSocketBuffer::new(&mut TCP_TX_BUF[listener_id][..]) };
     let listener_handle = state.sockets.add(TcpSocket::new(rx, tx));
     set_socket_handle(listener_id, listener_handle);
@@ -818,9 +818,9 @@ pub fn socket_accept(id: SocketId) -> Result<(SocketId, SocketId, Option<(IpAddr
     Ok((id, listener_id, remote))
 }
 
-/// Send data on a socket.
+/// 在 socket 上发送数据。
 pub fn socket_send(id: SocketId, buf: &[u8], addr: Option<(IpAddress, u16)>) -> Result<usize, NetError> {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
     let sent = match kind {
@@ -861,12 +861,12 @@ pub fn socket_send(id: SocketId, buf: &[u8], addr: Option<(IpAddress, u16)>) -> 
     Ok(sent)
 }
 
-/// Receive data from a socket.
+/// 从 socket 接收数据。
 pub fn socket_recv(
     id: SocketId,
     buf: &mut [u8],
 ) -> Result<(usize, Option<(IpAddress, u16)>), NetError> {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
     match kind {
@@ -905,19 +905,19 @@ pub fn socket_recv(
     }
 }
 
-/// TCP receive window metrics captured during polling.
+/// 轮询过程中采集的 TCP 接收窗口指标。
 pub struct TcpRecvWindow {
-    /// Available receive window.
+    /// 可用接收窗口。
     pub window: usize,
-    /// Total receive buffer capacity.
+    /// 接收缓冲区总容量。
     pub capacity: usize,
-    /// Bytes currently queued in the receive buffer.
+    /// 接收缓冲区当前排队的字节数。
     pub queued: usize,
 }
 
-/// Fetch the latest receive window event for a socket.
+/// 获取 socket 最新的接收窗口事件。
 pub fn socket_recv_window_event(id: SocketId) -> Result<Option<TcpRecvWindow>, NetError> {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
     if kind != AxSocketKind::Tcp {
@@ -927,7 +927,7 @@ pub fn socket_recv_window_event(id: SocketId) -> Result<Option<TcpRecvWindow>, N
     let capacity = socket.recv_capacity();
     let queued = socket.recv_queue();
     let window = capacity.saturating_sub(queued);
-    // SAFETY: socket table access is serialized by the single-hart runtime.
+    // 安全性： socket 表访问由单核运行时串行化。
     unsafe {
         let Some(slot) = SOCKET_TABLE.get_mut(id) else {
             return Err(NetError::Invalid);
@@ -952,7 +952,7 @@ pub fn socket_recv_window_event(id: SocketId) -> Result<Option<TcpRecvWindow>, N
 }
 
 fn poll_tcp_window_event(state: &mut NetState) -> Option<NetEvent> {
-    // SAFETY: socket table access is serialized by the single-hart runtime.
+    // 安全性： socket 表访问由单核运行时串行化。
     unsafe {
         for (id, slot) in SOCKET_TABLE.iter_mut().enumerate() {
             if !slot.used || slot.kind != AxSocketKind::Tcp {
@@ -982,9 +982,9 @@ fn poll_tcp_window_event(state: &mut NetState) -> Option<NetEvent> {
     None
 }
 
-/// Poll socket readiness for the requested events.
+/// 轮询 socket 对请求事件的就绪状态。
 pub fn socket_poll(id: SocketId, events: u16) -> Result<u16, NetError> {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
     let mut revents = 0u16;
@@ -1040,9 +1040,9 @@ pub fn socket_poll(id: SocketId, events: u16) -> Result<u16, NetError> {
     Ok(revents)
 }
 
-/// Close a socket and release its resources.
+/// 关闭 socket 并释放资源。
 pub fn socket_close(id: SocketId) -> Result<(), NetError> {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
     let _ = state.sockets.remove(handle);
@@ -1053,9 +1053,9 @@ pub fn socket_close(id: SocketId) -> Result<(), NetError> {
     }
 }
 
-/// Shutdown a socket for reading and/or writing.
+/// 关闭 socket 的读和/或写。
 pub fn socket_shutdown(id: SocketId, how: usize) -> Result<(), NetError> {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
     match kind {
@@ -1077,9 +1077,9 @@ pub fn socket_shutdown(id: SocketId, how: usize) -> Result<(), NetError> {
     }
 }
 
-/// Return the local endpoint for a socket.
+/// 返回 socket 的本地端点。
 pub fn socket_local_endpoint(id: SocketId) -> Result<(IpAddress, u16), NetError> {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
     match kind {
@@ -1097,9 +1097,9 @@ pub fn socket_local_endpoint(id: SocketId) -> Result<(IpAddress, u16), NetError>
     }
 }
 
-/// Return the remote endpoint for a socket.
+/// 返回 socket 的远端端点。
 pub fn socket_remote_endpoint(id: SocketId) -> Result<Option<(IpAddress, u16)>, NetError> {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     let state = unsafe { NET_STATE.as_mut() }.ok_or(NetError::NotReady)?;
     let (kind, handle) = socket_handle(id).ok_or(NetError::Invalid)?;
     match kind {
@@ -1115,9 +1115,9 @@ pub fn socket_remote_endpoint(id: SocketId) -> Result<Option<(IpAddress, u16)>, 
     }
 }
 
-/// Return true if the socket is mid-connection.
+/// 若 socket 正在连接中则返回 true。
 pub fn socket_connecting(id: SocketId) -> Result<bool, NetError> {
-    // SAFETY: single-hart early stage, socket table is serialized.
+    // 安全性： 早期单核阶段，socket 表访问已串行化。
     unsafe {
         let slot = SOCKET_TABLE.get(id).ok_or(NetError::Invalid)?;
         if !slot.used {
@@ -1127,9 +1127,9 @@ pub fn socket_connecting(id: SocketId) -> Result<bool, NetError> {
     }
 }
 
-/// Take and clear the pending socket error, if any.
+/// 取出并清除挂起的 socket 错误（若有）。
 pub fn socket_take_error(id: SocketId) -> Result<Option<NetError>, NetError> {
-    // SAFETY: single-hart early stage, socket table is serialized.
+    // 安全性： 早期单核阶段，socket 表访问已串行化。
     unsafe {
         let slot = SOCKET_TABLE.get_mut(id).ok_or(NetError::Invalid)?;
         if !slot.used {
@@ -1141,7 +1141,7 @@ pub fn socket_take_error(id: SocketId) -> Result<Option<NetError>, NetError> {
 }
 
 fn reserve_socket_slot(kind: AxSocketKind) -> Option<SocketId> {
-    // SAFETY: single-hart early stage, socket table is serialized.
+    // 安全性： 早期单核阶段，socket 表访问已串行化。
     unsafe {
         for (idx, slot) in SOCKET_TABLE.iter_mut().enumerate() {
             if !slot.used {
@@ -1161,7 +1161,7 @@ fn reserve_socket_slot(kind: AxSocketKind) -> Option<SocketId> {
 }
 
 fn set_socket_handle(id: SocketId, handle: SocketHandle) {
-    // SAFETY: socket slot is reserved and unique for this id.
+    // 安全性： 该 id 的 socket 槽位已保留且唯一。
     unsafe {
         if let Some(slot) = SOCKET_TABLE.get_mut(id) {
             slot.handle.write(handle);
@@ -1170,7 +1170,7 @@ fn set_socket_handle(id: SocketId, handle: SocketHandle) {
 }
 
 fn set_socket_local_port(id: SocketId, port: u16) -> Result<(), NetError> {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     unsafe {
         let Some(slot) = SOCKET_TABLE.get_mut(id) else {
             return Err(NetError::Invalid);
@@ -1184,7 +1184,7 @@ fn set_socket_local_port(id: SocketId, port: u16) -> Result<(), NetError> {
 }
 
 fn set_socket_listening(id: SocketId, listening: bool) -> Result<(), NetError> {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     unsafe {
         let Some(slot) = SOCKET_TABLE.get_mut(id) else {
             return Err(NetError::Invalid);
@@ -1198,7 +1198,7 @@ fn set_socket_listening(id: SocketId, listening: bool) -> Result<(), NetError> {
 }
 
 fn socket_is_listening(id: SocketId) -> Result<bool, NetError> {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     unsafe {
         let Some(slot) = SOCKET_TABLE.get(id) else {
             return Err(NetError::Invalid);
@@ -1211,7 +1211,7 @@ fn socket_is_listening(id: SocketId) -> Result<bool, NetError> {
 }
 
 fn socket_local_port(id: SocketId) -> Result<u16, NetError> {
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     unsafe {
         let Some(slot) = SOCKET_TABLE.get(id) else {
             return Err(NetError::Invalid);
@@ -1229,7 +1229,7 @@ fn socket_local_port(id: SocketId) -> Result<u16, NetError> {
 }
 
 fn socket_handle(id: SocketId) -> Option<(AxSocketKind, SocketHandle)> {
-    // SAFETY: SocketHandle is a plain index and can be copied by value.
+    // 安全性： SocketHandle 只是索引，可按值拷贝。
     unsafe {
         let slot = SOCKET_TABLE.get(id)?;
         if !slot.used {
@@ -1241,7 +1241,7 @@ fn socket_handle(id: SocketId) -> Option<(AxSocketKind, SocketHandle)> {
 }
 
 fn release_socket_slot(id: SocketId) {
-    // SAFETY: single-hart early stage, socket table is serialized.
+    // 安全性： 早期单核阶段，socket 表访问已串行化。
     unsafe {
         if let Some(slot) = SOCKET_TABLE.get_mut(id) {
             slot.used = false;
@@ -1256,7 +1256,7 @@ fn release_socket_slot(id: SocketId) {
 }
 
 fn set_socket_connecting(id: SocketId, connecting: bool) -> Result<(), NetError> {
-    // SAFETY: single-hart early stage, socket table is serialized.
+    // 安全性： 早期单核阶段，socket 表访问已串行化。
     unsafe {
         let slot = SOCKET_TABLE.get_mut(id).ok_or(NetError::Invalid)?;
         if !slot.used {
@@ -1268,7 +1268,7 @@ fn set_socket_connecting(id: SocketId, connecting: bool) -> Result<(), NetError>
 }
 
 fn set_socket_error(id: SocketId, err: Option<NetError>) -> Result<(), NetError> {
-    // SAFETY: single-hart early stage, socket table is serialized.
+    // 安全性： 早期单核阶段，socket 表访问已串行化。
     unsafe {
         let slot = SOCKET_TABLE.get_mut(id).ok_or(NetError::Invalid)?;
         if !slot.used {
@@ -1330,7 +1330,7 @@ fn try_loopback_arp(frame: &[u8], mac: EthernetAddress) -> bool {
         target_hardware_addr: source_hardware_addr,
         target_protocol_addr: source_protocol_addr,
     };
-    // SAFETY: single-hart; buffer reused for loopback replies.
+    // 安全性： 单核阶段；缓冲区用于回环回复并被复用。
     let buf = unsafe { &mut ARP_TX_BUF[..] };
     {
         let mut eth = EthernetFrame::new_unchecked(&mut buf[..]);
@@ -1340,7 +1340,7 @@ fn try_loopback_arp(frame: &[u8], mac: EthernetAddress) -> bool {
         let mut arp = ArpPacket::new_unchecked(eth.payload_mut());
         reply.emit(&mut arp);
     }
-// SAFETY: static buffers/state are initialized and accessed under net state lock.
+// 安全性： 静态缓冲/状态在网络状态锁保护下初始化与访问。
     unsafe {
         LOOPBACK_QUEUE.push(&buf[..ARP_FRAME_LEN]);
     }
@@ -1444,7 +1444,7 @@ fn send_arp_probe(state: &mut NetState) {
     };
     let frame_len = eth.buffer_len() + arp.buffer_len();
     let total_len = core::cmp::max(frame_len, 60);
-    // SAFETY: single-hart early use; ARP probe is one-shot and reuses a static buffer.
+    // 安全性： 早期单核阶段；ARP 探测为一次性并复用静态缓冲区。
     let buf = unsafe { &mut ARP_TX_BUF[..total_len] };
     buf.fill(0);
     {

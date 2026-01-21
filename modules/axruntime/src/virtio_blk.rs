@@ -1,4 +1,4 @@
-//! VirtIO block device (MMIO) driver.
+//! VirtIO 块设备（MMIO）驱动。
 
 use core::cell::UnsafeCell;
 use core::hint::spin_loop;
@@ -72,10 +72,10 @@ static VIRTIO_QUEUE: QueueCell = QueueCell::new();
 #[repr(align(512))]
 struct BounceBuf([u8; SECTOR_SIZE]);
 
-// SAFETY: 单队列同步 I/O；通过锁保证同一时刻只有一个请求使用缓冲区。
+// 安全性： 单队列同步 I/O；通过锁保证同一时刻只有一个请求使用缓冲区。
 static mut VIRTIO_BLK_BOUNCE: BounceBuf = BounceBuf([0; SECTOR_SIZE]);
 
-/// VirtIO block device wrapper implementing BlockDevice.
+/// 实现 BlockDevice 的 VirtIO 块设备封装。
 pub struct VirtioBlkDevice;
 
 impl BlockDevice for VirtioBlkDevice {
@@ -104,7 +104,7 @@ impl BlockDevice for VirtioBlkDevice {
     }
 }
 
-/// Initialize the virtio-blk device from DTB entries.
+/// 根据 DTB 条目初始化 virtio-blk 设备。
 pub fn init(virtio_mmio: &[VirtioMmioDevice]) {
     if VIRTIO_BLK_READY.load(Ordering::Acquire) {
         return;
@@ -120,7 +120,7 @@ pub fn init(virtio_mmio: &[VirtioMmioDevice]) {
     }
 }
 
-/// Return the initialized virtio-blk device, if any.
+/// 返回已初始化的 virtio-blk 设备（若存在）。
 pub fn device() -> Option<&'static VirtioBlkDevice> {
     if VIRTIO_BLK_READY.load(Ordering::Acquire) {
         Some(&VIRTIO_BLK_DEVICE)
@@ -168,7 +168,7 @@ fn try_init_device(base: usize, irq: u32) -> bool {
     mmio_write32(base, MMIO_QUEUE_NUM, queue_size as u32);
 
     let queue = VIRTIO_QUEUE.get();
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
     unsafe {
         ptr::write_bytes(queue as *mut VirtioBlkQueue, 0, 1);
     }
@@ -232,7 +232,7 @@ fn submit_request(req_type: u32, block_id: BlockId, buf: &mut [u8]) -> VfsResult
             queue.status = 0xff;
 
         let req_addr = mm::kernel_virt_to_phys(queue.req_addr()) as u64;
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
         let buf_addr = unsafe {
             let bounce = &mut VIRTIO_BLK_BOUNCE.0;
             if req_type == VIRTIO_BLK_T_OUT {
@@ -265,9 +265,9 @@ fn submit_request(req_type: u32, block_id: BlockId, buf: &mut [u8]) -> VfsResult
                 next: 0,
             };
 
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
         let avail_idx = unsafe { ptr::read_volatile(&queue.avail.idx) };
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
         unsafe {
             ptr::write_volatile(
                 &mut queue.avail.ring[(avail_idx as usize) % queue_size],
@@ -275,7 +275,7 @@ fn submit_request(req_type: u32, block_id: BlockId, buf: &mut [u8]) -> VfsResult
             );
         }
         fence(Ordering::SeqCst);
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
         unsafe {
             ptr::write_volatile(&mut queue.avail.idx, avail_idx.wrapping_add(1));
         }
@@ -287,12 +287,12 @@ fn submit_request(req_type: u32, block_id: BlockId, buf: &mut [u8]) -> VfsResult
             drop(_guard);
             wait_for_completion(queue, &mut last_used);
 
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
             unsafe { ptr::read_volatile(&queue.status) }
         };
 
         if req_type == VIRTIO_BLK_T_IN {
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
             unsafe {
                 buf[..SECTOR_SIZE].copy_from_slice(&VIRTIO_BLK_BOUNCE.0);
             }
@@ -307,7 +307,7 @@ fn submit_request(req_type: u32, block_id: BlockId, buf: &mut [u8]) -> VfsResult
     }
 }
 
-/// Handle a virtio-blk IRQ and wake waiting tasks.
+/// 处理 virtio-blk 中断并唤醒等待任务。
 pub fn handle_irq(irq: u32) -> bool {
     let expected = VIRTIO_BLK_IRQ.load(Ordering::Acquire) as u32;
     if expected == 0 || expected != irq {
@@ -414,7 +414,7 @@ impl QueueCell {
     }
 
     fn get(&self) -> &mut VirtioBlkQueue {
-        // SAFETY: 仅通过全局自旋锁串行访问。
+        // 安全性： 仅通过全局自旋锁串行访问。
         unsafe { &mut *self.inner.get() }
     }
 }
@@ -455,12 +455,12 @@ impl Drop for SpinGuard<'_> {
 }
 
 fn mmio_read32(base: usize, offset: usize) -> u32 {
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
     unsafe { ptr::read_volatile((base + offset) as *const u32) }
 }
 
 fn mmio_write32(base: usize, offset: usize, value: u32) {
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
     unsafe { ptr::write_volatile((base + offset) as *mut u32, value) }
 }
 
@@ -492,7 +492,7 @@ fn wait_for_queue_event() {
 
 fn wait_for_completion(queue: &VirtioBlkQueue, last_used: &mut u16) {
     loop {
-// SAFETY: queue/MMIO memory is mapped and protected by driver invariants.
+// 安全性： 队列/MMIO 内存已映射，且由驱动不变式保护。
         let used_idx = unsafe { ptr::read_volatile(&queue.used.idx) };
         if used_idx != *last_used {
             *last_used = used_idx;
